@@ -21,6 +21,7 @@
 - (void)setThrottle:(double)val;
 - (void)shiftUp;
 - (void)shiftDown;
+- (void)setGear:(int)targetGear;
 - (void)toggleClutch;
 
 // Data Getters

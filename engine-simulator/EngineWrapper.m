@@ -176,6 +176,7 @@
 
 - (void)shiftUp { _targetGear = _gear + 1; }
 - (void)shiftDown { _targetGear = _gear - 1; }
+- (void)setGear:(int)targetGear { _targetGear = targetGear; }
 
 - (void)toggleClutch {
     // Simple toggle logic
