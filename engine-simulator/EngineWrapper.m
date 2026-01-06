@@ -39,6 +39,7 @@
     if (self) {
         [self setupEngine];
     }
+    _targetGear = -1;
     return self;
 }
 

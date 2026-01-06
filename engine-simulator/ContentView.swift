@@ -286,8 +286,8 @@ struct ContentView: View {
                             HStack {
                                 Text("IDLE").modifier(RetroFont(size: 10)).foregroundColor(.gray)
                                 Slider(value: $vm.throttlePosition, in: 0...1)
-                                    .accentColor(.orange) // Replaced .retroOrange
-                                Text("WOT").modifier(RetroFont(size: 10)).foregroundColor(.red) // Replaced .retroRed
+                                    .accentColor(.orange)
+                                Text("WOT").modifier(RetroFont(size: 10)).foregroundColor(.red)
                             }
                             .frame(height: 30)
                         }
@@ -302,9 +302,9 @@ struct ContentView: View {
                         }
                         
                         RetroPanel("GEAR") {
-                            Text(vm.gear == 0 ? "N" : "\(vm.gear)")
+                            Text(vm.gear == -1 ? "N" : "\(vm.gear + 1)")
                                 .font(.system(size: 90, weight: .black, design: .rounded))
-                                .foregroundColor(vm.gear == 0 ? .green : .orange) // Replaced .retroOrange
+                                .foregroundColor(vm.gear == -1 ? .green : .orange)
                                 .frame(maxWidth: .infinity)
                                 .frame(height: 100)
                         }
@@ -422,7 +422,7 @@ struct Engine3DView: NSViewRepresentable {
         cameraNode.camera?.zNear = 0.001
         cameraNode.camera?.zFar = 1000.0
 //        cameraNode.position = SCNVector3(x: -0.95, y: 0.57, z: 0.6)
-        cameraNode.position = SCNVector3(x: -0.95, y: 0.57, z: 0.6)
+        cameraNode.position = SCNVector3(x: 0, y: 0, z: 0)
         cameraNode.look(at: SCNVector3(0, 0, 0))
         scene.rootNode.addChildNode(cameraNode)
 
@@ -511,13 +511,15 @@ struct Engine3DView: NSViewRepresentable {
     // MARK: - Engine Assembly Builder
     func createEngineAssembly(coordinator: Coordinator) -> SCNNode {
         let assembly = SCNNode()
+        
+        assembly.eulerAngles.x = -.pi / 2
+        assembly.eulerAngles.y = .pi / 2
+        assembly.position = SCNVector3(x: -0.172, y: 0.15, z: -0.75)
 
         // Inline-4 configuration
         let cylinderCount = 4
         let cylinderSpacing: Float = 0.115  // Spacing along crankshaft axis (Y)
-        
-        let pistonAlignmentOffset: Float = 0.05
-
+    
         // Phase offsets for inline-4 firing order (1-3-4-2)
         // Crank throws at: 0°, 180°, 180°, 0° (pairs fire together)
         let phaseOffsets: [Double] = [0, .pi, .pi, 0]
@@ -587,29 +589,16 @@ struct Engine3DView: NSViewRepresentable {
             if let rod = loadOBJModel(named: "Piston - Connecting_Rod") {
                 rod.name = "rod_\(i)"
                 
-                // 1. Get the real bounds of the model
-                let (min, max) = rod.boundingBox
-                let cX = (min.x + max.x) / 2
-                let cY = (min.y + max.y) / 2
-                let cZ = (min.z + max.z) / 2
+                // Get the real bounds of the model
+                let (minB, maxB) = rod.boundingBox
+                let cX = (minB.x + maxB.x) / 2
+                let cY = (minB.y + maxB.y) / 2
+                let topToMiddleOfTopHole = 0.031778
 
-                // 2. Set Pivot:
-                // Start at the geometric center (cZ), then move DOWN by half the rod length.
-                // This assumes the rod is aligned on Z and "rodLength" is accurate.
-                // We pivot at the Big End so we can attach it to the crank.
-                rod.pivot = SCNMatrix4MakeTranslation(cX, cY, cZ - CGFloat(Float(rodLength / 2)))
-                // Set pivot at big end (bottom of rod) for rotation
-                rod.pivot = SCNMatrix4MakeTranslation(0, 0, CGFloat(-Float(rodLength / 2)))
-
-//                // Get the real bounds of the model
-//                let (minB, maxB) = rod.boundingBox
-//                let cX = (minB.x + maxB.x) / 2
-//                let cY = (minB.y + maxB.y) / 2
-//
-//                // Set pivot at SMALL END (top of rod / wrist pin end)
-//                // The rod will be positioned at the wrist pin and rotate from there
-//                // Small end is at maxB.z (top), so pivot there
-//                rod.pivot = SCNMatrix4MakeTranslation(cX, cY, maxB.z)
+                // Set pivot at SMALL END (top of rod / wrist pin end)
+                // The rod will be positioned at the wrist pin and rotate from there
+                // Small end is at maxB.z (top), so pivot there
+                rod.pivot = SCNMatrix4MakeTranslation(cX, cY, maxB.z - topToMiddleOfTopHole)
 
                 cylinderAssembly.addChildNode(rod)
                 coordinator.connectingRodNodes.append(rod)
@@ -690,31 +679,34 @@ struct Engine3DView: NSViewRepresentable {
             let underRoot = L * L - r * r * sinTheta * sinTheta
             let pistonZ = r * cosTheta + sqrt(max(underRoot, 0))
 
+            // Calculate the actual piston Z position
+            let pistonActualZ = Float(pistonBaseY - (L + r) + pistonZ)
+
             // Update piston position (moves along Z axis - up/down in cylinder)
             if index < pistonNodes.count {
-                pistonNodes[index].position.z = CGFloat(Float(pistonBaseY - (L + r) + pistonZ))
+                pistonNodes[index].position.z = CGFloat(pistonActualZ)
             }
 
             // Connecting rod angle from vertical
             // φ = arcsin(r·sin(θ) / L)
-            let rodAngle = asin(min(max(r * sinTheta / L, -1), 1))
+            // Negative sign: when crank rotates and big end moves +X,
+            // the rod tilts so small end is at -X relative to big end
+            let rodAngle = -asin(min(max(r * sinTheta / L, -1), 1))
 
-            // Big end position (attached to crank throw)
-            let bigEndX = r * sinTheta
-            let bigEndZ = r * cosTheta
-
-            // Update connecting rod position and rotation
+            // Update connecting rod - pivot is at SMALL END (wrist pin)
+            // Position the rod at the wrist pin location (same Z as piston)
+            // The rod rotates around its small end, swinging the big end down to the crank
             if index < connectingRodNodes.count {
-                // Position rod at big end location
-                connectingRodNodes[index].position.x = CGFloat(Float(bigEndX))
-                connectingRodNodes[index].position.z = CGFloat(Float(bigEndZ))
-                // Rotate rod around Y axis
+                // Position at wrist pin (X=0 in cylinder frame, Z=piston position)
+                connectingRodNodes[index].position.x = 0
+                connectingRodNodes[index].position.z = CGFloat(pistonActualZ)
+                // Rotate around Y axis - rod rocks in X-Z plane
                 connectingRodNodes[index].eulerAngles.y = CGFloat(Float(rodAngle))
             }
 
             // Wrist pin follows piston
             if index < wristPinNodes.count {
-                wristPinNodes[index].position.z = CGFloat(Float(pistonBaseY - (L + r) + pistonZ))
+                wristPinNodes[index].position.z = CGFloat(pistonActualZ)
             }
         }
     }
