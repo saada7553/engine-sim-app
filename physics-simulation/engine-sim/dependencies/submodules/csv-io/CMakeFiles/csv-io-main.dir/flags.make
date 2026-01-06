@@ -6,7 +6,7 @@ CXX_DEFINES = -DATG_ENGINE_SIM_PIRANHA_ENABLED
 
 CXX_INCLUDES = 
 
-CXX_FLAGSarm64 = -O3 -DNDEBUG -ffast-math -march=native -std=gnu++11 -arch arm64 -isysroot /Library/Developer/CommandLineTools/SDKs/MacOSX26.1.sdk -mcpu=apple-m1 -fvectorize -fslp-vectorize
+CXX_FLAGSarm64 = -g -std=gnu++11 -arch arm64 -isysroot /Library/Developer/CommandLineTools/SDKs/MacOSX26.1.sdk -mcpu=apple-m1 -fvectorize -fslp-vectorize
 
-CXX_FLAGS = -O3 -DNDEBUG -ffast-math -march=native -std=gnu++11 -arch arm64 -isysroot /Library/Developer/CommandLineTools/SDKs/MacOSX26.1.sdk -mcpu=apple-m1 -fvectorize -fslp-vectorize
+CXX_FLAGS = -g -std=gnu++11 -arch arm64 -isysroot /Library/Developer/CommandLineTools/SDKs/MacOSX26.1.sdk -mcpu=apple-m1 -fvectorize -fslp-vectorize
 

@@ -1,1 +1,1 @@
-/Library/Developer/CommandLineTools/usr/bin/c++ -O3 -DNDEBUG -ffast-math -march=native -arch arm64 -isysroot /Library/Developer/CommandLineTools/SDKs/MacOSX26.1.sdk -Wl,-search_paths_first -Wl,-headerpad_max_install_names "CMakeFiles/csv-io-main.dir/src/main.cpp.o" -o csv-io-main  ../../../lib/libcsv-io.a
+/Library/Developer/CommandLineTools/usr/bin/c++ -g -arch arm64 -isysroot /Library/Developer/CommandLineTools/SDKs/MacOSX26.1.sdk -Wl,-search_paths_first -Wl,-headerpad_max_install_names "CMakeFiles/csv-io-main.dir/src/main.cpp.o" -o csv-io-main  ../../../lib/libcsv-io.a

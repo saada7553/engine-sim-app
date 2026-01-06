@@ -6,7 +6,7 @@ CXX_DEFINES = -DATG_ENGINE_SIM_PIRANHA_ENABLED -DBOOST_ATOMIC_NO_LIB -DBOOST_FIL
 
 CXX_INCLUDES = -I/Users/saad/Desktop/engine-simulator/physics-simulation/engine-sim/dependencies/submodules/piranha -I/Users/saad/Desktop/engine-simulator/physics-simulation/engine-sim/dependencies/submodules/piranha/dependencies/libraries/flex/include -I/Users/saad/Desktop/engine-simulator/physics-simulation/engine-sim/dependencies/submodules/piranha/include -isystem /opt/homebrew/include
 
-CXX_FLAGSarm64 = -O3 -DNDEBUG -ffast-math -march=native -std=gnu++17 -arch arm64 -isysroot /Library/Developer/CommandLineTools/SDKs/MacOSX26.1.sdk -mcpu=apple-m1 -fvectorize -fslp-vectorize
+CXX_FLAGSarm64 = -g -std=gnu++17 -arch arm64 -isysroot /Library/Developer/CommandLineTools/SDKs/MacOSX26.1.sdk -mcpu=apple-m1 -fvectorize -fslp-vectorize
 
-CXX_FLAGS = -O3 -DNDEBUG -ffast-math -march=native -std=gnu++17 -arch arm64 -isysroot /Library/Developer/CommandLineTools/SDKs/MacOSX26.1.sdk -mcpu=apple-m1 -fvectorize -fslp-vectorize
+CXX_FLAGS = -g -std=gnu++17 -arch arm64 -isysroot /Library/Developer/CommandLineTools/SDKs/MacOSX26.1.sdk -mcpu=apple-m1 -fvectorize -fslp-vectorize
 
