@@ -11,11 +11,29 @@
 // C++ Includes
 #include "transmission.h"
 #include "simulator.h"
+#include "engine.h"
+#include "units.h"
+#include "constants.h"
 #include "scripting/include/compiler.h"
 #include "macOS_audio_unit.h"
 #include "s_audio_file.h"
+#include "oscilloscope_cluster.h"
 #include <thread>
 #include <atomic>
+#include <cmath>
+
+@interface EngineWrapper ()
+@property (atomic, strong) EngineState *latestState;
+@end
+
+@implementation ScopePoint
+@end
+
+@implementation ScopeData
+@end
+
+@implementation EngineState
+@end
 
 @implementation EngineWrapper {
     // C++ Objects stored as instance variables
@@ -24,6 +42,7 @@
     Vehicle* _vehicle;
     Transmission* _transmission;
     MacOSAudioAdapter* _audioAdapter;
+    OscilloscopeCluster* _oscilloscopeCluster; 
     
     int _rpm;
     int _gear;
@@ -32,11 +51,15 @@
     // Threading
     std::thread* _simThread;
     std::atomic<bool> _running;
+
+    // Scope Filtering State
+    double _updateTimer;
 }
 
 - (instancetype)init {
     self = [super init];
     if (self) {
+        _updateTimer = 0.0;
         [self setupEngine];
     }
     _targetGear = -1;
@@ -65,9 +88,6 @@
         NSLog(@"Fix: Go to Build Phases -> Copy Bundle Resources and add main.mr");
         return;
     }
-    
-//    physics_simulation sim{};
-//    sim.HelloWorld("is this working? ");
         
     es_script::Compiler compiler;
     compiler.initialize();
@@ -121,10 +141,13 @@
        waveFile.DestroyInternalBuffer();
    }
     _sim->startAudioRenderingThread();
-    
     _audioAdapter = new MacOSAudioAdapter();
     _audioAdapter->Initialize(&_sim->synthesizer());
     _audioAdapter->Start();
+
+    _oscilloscopeCluster = new OscilloscopeCluster();
+    _oscilloscopeCluster->initialize();
+    _oscilloscopeCluster->setSimulator(_sim);
     
     // 4. Start Physics Loop in Background Thread
     _running = true;
@@ -134,19 +157,36 @@
             const auto targetFrameTime = std::chrono::microseconds(static_cast<int>(1000000.0 / targetFrameRate));
             auto frameStart = std::chrono::steady_clock::now();
             
-            
-//            _engine->setSpeedControl();
-//            _sim->getTransmission()->setClutchPressure();
             if (_gear != _targetGear)
-                _sim->getTransmission()->changeGear(_targetGear); 
-            
+                _sim->getTransmission()->changeGear(_targetGear);
+                                    
             _sim->startFrame(1.0 / 30.0);
-            while (_sim->simulateStep()) { }
+            while (_sim->simulateStep()) {
+
+                // --- GATHER DATA (ScopePoint Implementation) ---
+                EngineState *state = [[EngineState alloc] init];
+                Engine *engine = _sim->getEngine();
+                
+                // 1. Basic Stats
+                state.rpm = _rpm;
+                state.gear = _gear;
+                state.vehicleSpeed = _vehicle->getSpeed();
+                state.clutchPressure = _sim->getTransmission()->getClutchPressure();
+                state.isIgnitionOn = engine->getIgnitionModule()->m_enabled;
+                state.isStarterOn = _sim->m_starterMotor.m_enabled;
+                state.fuelConsumed = engine->getTotalVolumeFuelConsumed();
+                state.distanceTravelled = _vehicle->getTravelledDistance();
+                
+                // Update C++ Oscilloscopes
+                _oscilloscopeCluster->sample();
+                
+                self.latestState = state;
+                
+            }
             _sim->endFrame();
             
             _rpm = _engine->getRpm();
             _gear = _sim->getTransmission()->getGear();
-            
             auto frameEnd = std::chrono::steady_clock::now();
             auto frameDuration = frameEnd - frameStart;
             if (frameDuration < targetFrameTime) {
@@ -156,6 +196,64 @@
             }
         }
     });
+}
+
+- (EngineState *)pollState {
+    return self.latestState;
+}
+
+- (ScopeData *)getScopeData:(EngineScopeType)type {
+    if (!_oscilloscopeCluster) return nil;
+    
+    Oscilloscope *scope = nullptr;
+    switch (type) {
+        case EngineScopeTypeTorque: scope = _oscilloscopeCluster->getTorqueScope(); break;
+        case EngineScopeTypePower: scope = _oscilloscopeCluster->getPowerScope(); break;
+        case EngineScopeTypeTotalExhaustFlow: scope = _oscilloscopeCluster->getTotalExhaustFlowOscilloscope(); break;
+        case EngineScopeTypeIntakeFlow: scope = _oscilloscopeCluster->getIntakeFlowOscilloscope(); break;
+        case EngineScopeTypeExhaustFlow: scope = _oscilloscopeCluster->getExhaustFlowOscilloscope(); break;
+        case EngineScopeTypeIntakeValveLift: scope = _oscilloscopeCluster->getIntakeValveLiftOscilloscope(); break;
+        case EngineScopeTypeExhaustValveLift: scope = _oscilloscopeCluster->getExhaustValveLiftOscilloscope(); break;
+        case EngineScopeTypeCylinderPressure: scope = _oscilloscopeCluster->getCylinderPressureScope(); break;
+        case EngineScopeTypeCylinderMolecules: scope = _oscilloscopeCluster->getCylinderMoleculesScope(); break;
+        case EngineScopeTypeSparkAdvance: scope = _oscilloscopeCluster->getSparkAdvanceScope(); break;
+        case EngineScopeTypePV: scope = _oscilloscopeCluster->getPvScope(); break;
+    }
+    
+    if (!scope) return nil;
+    
+    ScopeData *data = [[ScopeData alloc] init];
+    data.xMin = scope->m_xMin;
+    data.xMax = scope->m_xMax;
+    data.yMin = scope->m_yMin;
+    data.yMax = scope->m_yMax;
+    
+    NSMutableArray<ScopePoint *> *points = [NSMutableArray array];
+    
+    // The C++ oscilloscope uses a circular buffer.
+    // We need to reconstruct the linear order from the circular buffer.
+    // Logic matches C++ render loop: start = (m_writeIndex - m_pointCount + m_bufferSize) % m_bufferSize
+    
+    int bufferSize = scope->getBufferSize();
+    int pointCount = scope->getPointCount();
+    int writeIndex = scope->getWriteIndex();
+    Oscilloscope::DataPoint *rawPoints = scope->getDataPoints();
+    
+    if (pointCount > 0 && rawPoints != nullptr) {
+        int start = (writeIndex - pointCount + bufferSize) % bufferSize;
+        
+        for (int i = 0; i < pointCount; ++i) {
+            int idx = (start + i) % bufferSize;
+            Oscilloscope::DataPoint p = rawPoints[idx];
+            ScopePoint *sp = [[ScopePoint alloc] init];
+            sp.x = p.x;
+            sp.y = p.y;
+            [points addObject:sp];
+        }
+    }
+    
+    data.points = points;
+    return data;
 }
 
 // --- Controls Exposed to Swift ---
@@ -196,6 +294,8 @@
 - (double)getEngineRedline { return units::toRpm(_engine->getRedline()); }
 - (double)getTotalVolumeFuelConsumed { return _engine->getTotalVolumeFuelConsumed(); }
 - (void)resetFuelConsumption { _engine->resetFuelConsumption(); }
+- (double)getTimestep { return 1.0 / _sim->getTimestep(); }
+- (double)getTotalExhaustFlow { return _sim->getTotalExhaustFlow(); }
 
 - (void)dealloc {
     _running = false;

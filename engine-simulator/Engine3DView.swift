@@ -11,8 +11,7 @@ import ModelIO
 import SceneKit.ModelIO
 
 struct Engine3DView: NSViewRepresentable {
-    var rpm: Double
-    var throttlePosition: Double
+    @ObservedObject var vm: EngineViewModel
 
     func makeNSView(context: Context) -> SCNView {
         let scnView = SCNView()
@@ -67,8 +66,8 @@ struct Engine3DView: NSViewRepresentable {
     }
 
     func updateNSView(_ nsView: SCNView, context: Context) {
-        context.coordinator.currentRPM = rpm
-        context.coordinator.throttlePosition = throttlePosition
+        context.coordinator.currentRPM = vm.rpm
+        context.coordinator.throttlePosition = vm.throttlePosition
     }
 
     func makeCoordinator() -> Coordinator {
