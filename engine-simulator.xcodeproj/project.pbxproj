@@ -50,9 +50,9 @@
 			children = (
 				936883BD2F05053500D070C3 /* assets */,
 				936883B32F04F62A00D070C3 /* es */,
-				93685E5A2F04D7E300D070C3 /* engine-simulator */,
 				9368825E2F04DBCD00D070C3 /* Frameworks */,
 				93685E592F04D7E300D070C3 /* Products */,
+				93685E5A2F04D7E300D070C3 /* engine-simulator */,
 			);
 			sourceTree = "<group>";
 		};
@@ -289,10 +289,7 @@
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GCC_INPUT_FILETYPE = sourcecode.cpp.objcpp;
 				GENERATE_INFOPLIST_FILE = YES;
-				HEADER_SEARCH_PATHS = (
-					"/Users/saad/Local/scripts/engine-sim/**",
-					"$(PROJECT_DIR)/**",
-				);
+				HEADER_SEARCH_PATHS = "$(PROJECT_DIR)/**";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -300,7 +297,7 @@
 				);
 				LIBRARY_SEARCH_PATHS = (
 					"$(inherited)",
-					"$(PROJECT_DIR)/**",
+					"$(PROJECT_DIR)/physics-simulation/engine-sim/build-debug/**",
 					"$(PROJECT_DIR)/engine-simulator",
 					/opt/homebrew/lib,
 				);
@@ -334,10 +331,7 @@
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GCC_INPUT_FILETYPE = sourcecode.cpp.objcpp;
 				GENERATE_INFOPLIST_FILE = YES;
-				HEADER_SEARCH_PATHS = (
-					"/Users/saad/Local/scripts/engine-sim/**",
-					"$(PROJECT_DIR)/**",
-				);
+				HEADER_SEARCH_PATHS = "$(PROJECT_DIR)/**";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -345,7 +339,7 @@
 				);
 				LIBRARY_SEARCH_PATHS = (
 					"$(inherited)",
-					"$(PROJECT_DIR)/**",
+					"$(PROJECT_DIR)/physics-simulation/engine-sim/build/**",
 					"$(PROJECT_DIR)/engine-simulator",
 					/opt/homebrew/lib,
 				);

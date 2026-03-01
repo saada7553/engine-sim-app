@@ -25,6 +25,7 @@ struct TileView: View {
     var body: some View {
         GeometryReader { geometry in
             ZStack {
+                Color.black
                 getView()
                 if browserMode != .operational {
                     hoverModeView(geometry)
@@ -41,23 +42,58 @@ struct TileView: View {
             return AnyView(SelectView(tile: tile))
         case .engine3DView:
             return AnyView(Engine3DView(vm: tile.engineVm))
+
+        // Gauges
         case .speedometerGauge:
             return AnyView(UniversalGauge(
                 engineVm: tile.engineVm,
-                maxValue: 260.0,
-                label: "VELOCITY",
-                units: "KM/H",
-                color: .orange
+                config: GaugePresets.speedometer(),
+                valueKeyPath: \.vehicleSpeed
             ))
         case .rpmGauge:
             return AnyView(UniversalGauge(
                 engineVm: tile.engineVm,
-                maxValue: tile.engineVm.redline,
-                label: "X1000 RPM",
-                units: "",
-                color: .red,
-                isRPM: true
+                config: GaugePresets.tachometer(redline: tile.engineVm.redline),
+                valueKeyPath: \.rpm
             ))
+        case .manifoldPressureGauge:
+            return AnyView(UniversalGauge(
+                engineVm: tile.engineVm,
+                config: GaugePresets.manifoldPressure(),
+                valueKeyPath: \.manifoldPressure
+            ))
+        case .volumetricEfficiencyGauge:
+            return AnyView(UniversalGauge(
+                engineVm: tile.engineVm,
+                config: GaugePresets.volumetricEfficiency(),
+                valueKeyPath: \.volumetricEfficiency
+            ))
+        case .airScfmGauge:
+            return AnyView(UniversalGauge(
+                engineVm: tile.engineVm,
+                config: GaugePresets.airScfm(),
+                valueKeyPath: \.intakeFlowRate
+            ))
+        case .intakeAfrGauge:
+            return AnyView(UniversalGauge(
+                engineVm: tile.engineVm,
+                config: GaugePresets.intakeAfr(),
+                valueKeyPath: \.intakeAFR
+            ))
+        case .exhaustO2Gauge:
+            return AnyView(UniversalGauge(
+                engineVm: tile.engineVm,
+                config: GaugePresets.exhaustO2(),
+                valueKeyPath: \.exhaustO2
+            ))
+        case .cylinderPressureGauge:
+            return AnyView(UniversalGauge(
+                engineVm: tile.engineVm,
+                config: GaugePresets.cylinderPressure(),
+                valueKeyPath: \.cylinderPressure
+            ))
+
+        // Controls
         case .systemControls:
             return AnyView(SystemControlView(vm: tile.engineVm))
         case .transmissionControls:

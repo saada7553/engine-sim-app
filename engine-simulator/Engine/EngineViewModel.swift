@@ -21,6 +21,14 @@ class EngineViewModel: ObservableObject {
     @Published var distanceTravelled: Double = 0.0
     @Published var fuelConsumed: Double = 0.0
     @Published var redline: Double
+
+    // Gauge Data
+    @Published var manifoldPressure: Double = 0.0      // inHg (gauge pressure)
+    @Published var intakeFlowRate: Double = 0.0        // SCFM
+    @Published var volumetricEfficiency: Double = 0.0  // Percentage (calculated)
+    @Published var cylinderPressure: Double = 0.0      // PSI
+    @Published var intakeAFR: Double = 0.0             // Air-Fuel Ratio
+    @Published var exhaustO2: Double = 0.0             // O2 percentage
     
     // Inputs
     @Published var throttlePosition: Double = 0.0 {
@@ -50,7 +58,15 @@ class EngineViewModel: ObservableObject {
                 self.vehicleSpeed = state.vehicleSpeed
                 self.distanceTravelled = state.distanceTravelled
                 self.fuelConsumed = state.fuelConsumed
-                
+
+                // Gauge data (calculated in C++ with proper engine values)
+                self.manifoldPressure = state.manifoldPressure
+                self.intakeFlowRate = state.intakeFlowRate
+                self.volumetricEfficiency = state.volumetricEfficiency
+                self.cylinderPressure = state.cylinderPressure
+                self.intakeAFR = state.intakeAFR
+                self.exhaustO2 = state.exhaustO2
+
                 // Pass engine wrapper to oscilloscope manager for sampling
                 self.oscilloscopeManager.sample(from: engine)
             }

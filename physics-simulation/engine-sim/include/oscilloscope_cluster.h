@@ -1,12 +1,10 @@
 #ifndef ATG_ENGINE_SIM_OSCILLOSCOPE_CLUSTER_H
 #define ATG_ENGINE_SIM_OSCILLOSCOPE_CLUSTER_H
 
-#include "ui_element.h"
-
 #include "simulator.h"
 #include "oscilloscope.h"
 
-class OscilloscopeCluster : public UiElement {
+class OscilloscopeCluster {
     private:
         static constexpr int MaxLayeredScopes = 5;
 
@@ -14,13 +12,7 @@ class OscilloscopeCluster : public UiElement {
         OscilloscopeCluster();
         virtual ~OscilloscopeCluster();
 
-        virtual void initialize(EngineSimApplication *app);
-        virtual void destroy();
-        virtual void signal(UiElement *element, Event event);
-
-        virtual void update(float dt);
-        virtual void render();
-
+        virtual void initialize();
         void sample();
         void setSimulator(Simulator *simulator);
 
@@ -34,15 +26,11 @@ class OscilloscopeCluster : public UiElement {
         Oscilloscope *getSparkAdvanceScope() const { return m_sparkAdvanceScope; }
         Oscilloscope *getCylinderMoleculesScope() const { return m_cylinderMoleculesScope; }
         Oscilloscope *getPvScope() const { return m_pvScope; }
+        Oscilloscope *getTorqueScope() const { return m_torqueScope; }
+        Oscilloscope *getPowerScope() const { return m_powerScope; }
         void setDynoMaxRange(double redline) { m_torqueScope->m_xMax = redline + 500; m_powerScope->m_xMax = redline + 500; }
 
     protected:
-        void renderScope(
-            Oscilloscope *osc,
-            const Bounds &bounds,
-            const std::string &title,
-            bool overlay=false);
-
         Simulator *m_simulator;
         Oscilloscope
             *m_torqueScope,

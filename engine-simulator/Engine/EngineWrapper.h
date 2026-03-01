@@ -25,6 +25,14 @@
 @property (nonatomic, assign) double fuelConsumed;
 @property (nonatomic, assign) double distanceTravelled;
 
+// Gauge data properties
+@property (nonatomic, assign) double manifoldPressure;       // inHg (gauge pressure)
+@property (nonatomic, assign) double intakeFlowRate;         // SCFM
+@property (nonatomic, assign) double volumetricEfficiency;   // Percentage
+@property (nonatomic, assign) double cylinderPressure;       // PSI (cylinder 0)
+@property (nonatomic, assign) double intakeAFR;              // Air-Fuel Ratio
+@property (nonatomic, assign) double exhaustO2;              // O2 percentage
+
 @end
 
 typedef NS_ENUM(NSInteger, EngineScopeType) {

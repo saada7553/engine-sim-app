@@ -166,7 +166,7 @@
                 // --- GATHER DATA (ScopePoint Implementation) ---
                 EngineState *state = [[EngineState alloc] init];
                 Engine *engine = _sim->getEngine();
-                
+
                 // 1. Basic Stats
                 state.rpm = _rpm;
                 state.gear = _gear;
@@ -176,6 +176,46 @@
                 state.isStarterOn = _sim->m_starterMotor.m_enabled;
                 state.fuelConsumed = engine->getTotalVolumeFuelConsumed();
                 state.distanceTravelled = _vehicle->getTravelledDistance();
+
+                // 2. Gauge Data
+                // Manifold pressure (convert to inHg gauge pressure relative to atmosphere)
+                double ambientPressure = units::pressure(1.0, units::atm);
+                double ambientTemperature = units::celcius(25.0);
+                double manifoldPressurePa = engine->getManifoldPressure();
+                double gaugePressure = std::fmin(manifoldPressurePa - ambientPressure, 0.0);
+                state.manifoldPressure = units::convert(gaugePressure, units::inHg);
+
+                // Intake flow rate (SCFM - Standard Cubic Feet per Minute)
+                double actualAirPerSecond = engine->getIntakeFlowRate();
+                state.intakeFlowRate = units::convert(actualAirPerSecond, units::scfm);
+
+                // Volumetric Efficiency calculation (same as C++ right_gauge_cluster.cpp)
+                // VE = (actual air flow) / (theoretical air flow) * 100
+                // Theoretical = 0.5 * (P * V) / (R * T) * (RPM / 60)
+                double rpm = std::fmax(engine->getRpm(), 0.0);
+                double theoreticalAirPerRevolution = 0.5 * (ambientPressure * engine->getDisplacement())
+                    / (constants::R * ambientTemperature);
+                double theoreticalAirPerSecond = theoreticalAirPerRevolution * rpm / 60.0;
+                double volumetricEfficiency = (std::abs(theoreticalAirPerSecond) < 1E-3)
+                    ? 0.0
+                    : (actualAirPerSecond / theoreticalAirPerSecond);
+                state.volumetricEfficiency = 100.0 * volumetricEfficiency;
+
+                // Cylinder pressure for first cylinder (PSI)
+                if (engine->getCylinderCount() > 0) {
+                    state.cylinderPressure = units::convert(
+                        engine->getChamber(0)->m_system.pressure(),
+                        units::psi
+                    );
+                } else {
+                    state.cylinderPressure = 0.0;
+                }
+
+                // Air-Fuel Ratio
+                state.intakeAFR = engine->getIntakeAfr();
+
+                // Exhaust O2 percentage (multiply by 100 to get percentage)
+                state.exhaustO2 = engine->getExhaustO2() * 100.0;
                 
                 // Update C++ Oscilloscopes
                 _oscilloscopeCluster->sample();

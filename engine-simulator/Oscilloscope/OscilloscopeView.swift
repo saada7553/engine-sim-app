@@ -6,589 +6,326 @@
 import SwiftUI
 import Combine
 
-// MARK: - Base Oscilloscope View
+// MARK: - Helper Functions
 
-/// Generic oscilloscope display view that renders data from OscilloscopeManager
+private func calculateGridLines(minVal: Double, maxVal: Double, size: CGFloat) -> [Double] {
+    let range = maxVal - minVal
+    guard range > 0 else { return [] }
+
+    let targetSteps = max(2, Int(size / 40))
+    let roughStep = range / Double(targetSteps)
+    let magnitude = pow(10, floor(log10(roughStep)))
+    let normalizedStep = roughStep / magnitude
+
+    let step: Double
+    if normalizedStep < 1.5 { step = 1.0 * magnitude }
+    else if normalizedStep < 3.0 { step = 2.0 * magnitude }
+    else if normalizedStep < 7.0 { step = 5.0 * magnitude }
+    else { step = 10.0 * magnitude }
+
+    var lines: [Double] = []
+    var current = ceil(minVal / step) * step
+    while current <= maxVal + (step * 0.001) {
+        if current >= minVal - (step * 0.001) { lines.append(current) }
+        current += step
+    }
+    return lines
+}
+
+private func formatValue(_ value: Double) -> String {
+    if abs(value) >= 1000 { return String(format: "%.1fk", value / 1000) }
+    else if abs(value) < 0.01 && value != 0 { return String(format: "%.3f", value) }
+    else { return String(format: "%.1f", value) }
+}
+
+private func convertY(_ val: Double, bounds: (min: Double, max: Double), height: CGFloat) -> CGFloat {
+    let range = bounds.max - bounds.min
+    guard range != 0 else { return height / 2 }
+    return height * (1.0 - CGFloat((val - bounds.min) / range))
+}
+
+private func convertX(_ val: Double, bounds: (min: Double, max: Double), width: CGFloat) -> CGFloat {
+    let range = bounds.max - bounds.min
+    guard range != 0 else { return 0 }
+    return CGFloat((val - bounds.min) / range) * width
+}
+
+// MARK: - Main View
+
 struct OscilloscopeView: View {
     @ObservedObject var manager: OscilloscopeManager
-    let config: OscilloscopeConfig
-
+    let configs: [OscilloscopeConfig]
+    
     var showTitle: Bool = true
     var showAxisLabels: Bool = true
     var detachmentThreshold: CGFloat = 100.0
 
+    // Convenience init for single channel
+    init(manager: OscilloscopeManager, config: OscilloscopeConfig, showTitle: Bool = true, showAxisLabels: Bool = true) {
+        self.manager = manager
+        self.configs = [config]
+        self.showTitle = showTitle
+        self.showAxisLabels = showAxisLabels
+    }
+
+    // Main init for multiple channels
+    init(manager: OscilloscopeManager, configs: [OscilloscopeConfig], showTitle: Bool = true, showAxisLabels: Bool = true) {
+        self.manager = manager
+        self.configs = configs
+        self.showTitle = showTitle
+        self.showAxisLabels = showAxisLabels
+    }
+
+    private var unifiedBounds: (xMin: Double, xMax: Double, yMin: Double, yMax: Double) {
+        let allBounds = configs.map { manager.getAxisBounds(for: $0.type, config: $0) }
+        return (
+            xMin: allBounds.map(\.xMin).min() ?? 0,
+            xMax: allBounds.map(\.xMax).max() ?? 1,
+            yMin: allBounds.map(\.yMin).min() ?? 0,
+            yMax: allBounds.map(\.yMax).max() ?? 1
+        )
+    }
+
     var body: some View {
         GeometryReader { geometry in
-            let bounds = manager.getAxisBounds(for: config.type, config: config)
-            let points = manager.getPoints(for: config.type, config: config)
+            let bounds = unifiedBounds
             let gridY = calculateGridLines(minVal: bounds.yMin, maxVal: bounds.yMax, size: geometry.size.height)
             let gridX = calculateGridLines(minVal: bounds.xMin, maxVal: bounds.xMax, size: geometry.size.width)
 
             ZStack(alignment: .topLeading) {
-                // Background
-                Color.black.opacity(0.8)
+                Color.black.opacity(0.8) // Background
 
-                // Grid
-                Path { path in
-                    // Horizontal lines
-                    for val in gridY {
-                        let y = convertY(val, bounds: bounds, size: geometry.size)
-                        path.move(to: CGPoint(x: 0, y: y))
-                        path.addLine(to: CGPoint(x: geometry.size.width, y: y))
+                drawGrid(geometry: geometry, bounds: bounds, gridX: gridX, gridY: gridY)
+                
+                // Traces
+                ForEach(configs.indices, id: \.self) { i in
+                    let config = configs[i]
+                    let points = manager.getPoints(for: config.type, config: config)
+                    
+                    Canvas { context, size in
+                        drawTrace(context: context, points: points, bounds: bounds, size: size, config: config)
                     }
-
-                    // Vertical lines
-                    for val in gridX {
-                        let x = convertX(val, bounds: bounds, size: geometry.size)
-                        path.move(to: CGPoint(x: x, y: 0))
-                        path.addLine(to: CGPoint(x: x, y: geometry.size.height))
-                    }
-                }
-                .stroke(Color.gray.opacity(0.3), lineWidth: 0.5)
-
-                // Zero Line
-                if bounds.yMin < 0 && bounds.yMax > 0 {
-                    let zeroY = convertY(0, bounds: bounds, size: geometry.size)
-                    Path { path in
-                        path.move(to: CGPoint(x: 0, y: zeroY))
-                        path.addLine(to: CGPoint(x: geometry.size.width, y: zeroY))
-                    }
-                    .stroke(config.color.opacity(0.5), lineWidth: 0.5)
+                    .clipped()
                 }
 
-                // Oscilloscope Trace with fading (matches C++ line width/opacity fading)
-                // C++ fades older points by making them thinner: width = lineWidth * max(s, 0.5)
-                // where s = i / totalPoints (0 = oldest, 1 = newest)
-                Canvas { context, size in
-                    drawOscilloscopeTrace(
-                        context: context,
-                        points: points,
-                        bounds: bounds,
-                        size: size,
-                        color: config.color,
-                        baseLineWidth: config.lineWidth,
-                        drawReverse: config.drawReverse
-                    )
-                }
-                .clipped()
-
-                // Y-Axis Labels
-                if showAxisLabels {
-                    ForEach(gridY, id: \.self) { val in
-                        Text(formatValue(val))
-                            .font(.system(size: 9, design: .monospaced))
-                            .foregroundColor(.gray)
-                            .position(x: 20, y: convertY(val, bounds: bounds, size: geometry.size) - 6)
-                    }
-                }
-
-                // Title
-                if showTitle {
-                    VStack {
-                        HStack {
-                            Spacer()
-                            Text(config.type.displayName)
-                                .font(.system(size: 10, weight: .medium, design: .monospaced))
-                                .foregroundColor(config.color)
-                                .padding(4)
-                                .background(Color.black.opacity(0.6))
-                                .cornerRadius(4)
-                        }
-                        Spacer()
-                    }
-                    .padding(6)
-                }
-
-                // Axis Labels
-                if showAxisLabels {
-                    VStack {
-                        Spacer()
-                        HStack {
-                            Spacer()
-                            Text("\(config.xAxisLabel) / \(config.yAxisLabel)")
-                                .font(.system(size: 8, design: .monospaced))
-                                .foregroundColor(.gray.opacity(0.7))
-                                .padding(4)
-                        }
-                    }
-                    .padding(4)
-                }
+                if showAxisLabels { drawAxisLabels(gridY: gridY, bounds: bounds, geometry: geometry) }
+                if showTitle { drawLegend() }
+                if showAxisLabels { drawCornerLabel() }
             }
         }
         .cornerRadius(8)
-        .overlay(
-            RoundedRectangle(cornerRadius: 8)
-                .stroke(Color.gray.opacity(0.3), lineWidth: 1)
-        )
+        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.gray.opacity(0.3), lineWidth: 1))
     }
 
-    // MARK: - Helpers
+    // MARK: - Subviews & Drawing
 
-    private func calculateGridLines(minVal: Double, maxVal: Double, size: CGFloat) -> [Double] {
-        let range = maxVal - minVal
-        guard range > 0 else { return [] }
-
-        let targetSteps = max(2, Int(size / 40))
-        let roughStep = range / Double(targetSteps)
-
-        let magnitude = pow(10, floor(log10(roughStep)))
-        let normalizedStep = roughStep / magnitude
-
-        let step: Double
-        if normalizedStep < 1.5 { step = 1.0 * magnitude }
-        else if normalizedStep < 3.0 { step = 2.0 * magnitude }
-        else if normalizedStep < 7.0 { step = 5.0 * magnitude }
-        else { step = 10.0 * magnitude }
-
-        var lines: [Double] = []
-        var current = ceil(minVal / step) * step
-
-        while current <= maxVal + (step * 0.001) {
-            if current >= minVal - (step * 0.001) {
-                lines.append(current)
+    private func drawGrid(geometry: GeometryProxy, bounds: (xMin: Double, xMax: Double, yMin: Double, yMax: Double), gridX: [Double], gridY: [Double]) -> some View {
+        ZStack {
+            Path { path in
+                for val in gridY {
+                    let y = convertY(val, bounds: (bounds.yMin, bounds.yMax), height: geometry.size.height)
+                    path.move(to: CGPoint(x: 0, y: y))
+                    path.addLine(to: CGPoint(x: geometry.size.width, y: y))
+                }
+                for val in gridX {
+                    let x = convertX(val, bounds: (bounds.xMin, bounds.xMax), width: geometry.size.width)
+                    path.move(to: CGPoint(x: x, y: 0))
+                    path.addLine(to: CGPoint(x: x, y: geometry.size.height))
+                }
             }
-            current += step
-        }
+            .stroke(Color.gray.opacity(0.3), lineWidth: 0.5)
 
-        return lines
-    }
-
-    private func formatValue(_ value: Double) -> String {
-        if abs(value) >= 1000 {
-            return String(format: "%.1fk", value / 1000)
-        } else if abs(value) < 0.01 && value != 0 {
-            return String(format: "%.3f", value)
-        } else {
-            return String(format: "%.1f", value)
+            if bounds.yMin < 0 && bounds.yMax > 0 {
+                Path { path in
+                    let y = convertY(0, bounds: (bounds.yMin, bounds.yMax), height: geometry.size.height)
+                    path.move(to: CGPoint(x: 0, y: y))
+                    path.addLine(to: CGPoint(x: geometry.size.width, y: y))
+                }
+                .stroke(Color.gray.opacity(0.5), lineWidth: 0.5)
+            }
         }
     }
 
-    private func convertY(_ val: Double, bounds: (xMin: Double, xMax: Double, yMin: Double, yMax: Double), size: CGSize) -> CGFloat {
-        let range = bounds.yMax - bounds.yMin
-        guard range != 0 else { return size.height / 2 }
-        return size.height * (1.0 - CGFloat((val - bounds.yMin) / range))
-    }
-
-    private func convertX(_ val: Double, bounds: (xMin: Double, xMax: Double, yMin: Double, yMax: Double), size: CGSize) -> CGFloat {
-        let range = bounds.xMax - bounds.xMin
-        guard range != 0 else { return 0 }
-        return CGFloat((val - bounds.xMin) / range) * size.width
-    }
-
-    /// Draw oscilloscope trace with C++ style fading (older = thinner/more transparent)
-    /// Matches C++ oscilloscope.cpp render() behavior
-    private func drawOscilloscopeTrace(
-        context: GraphicsContext,
-        points: [CGPoint],
-        bounds: (xMin: Double, xMax: Double, yMin: Double, yMax: Double),
-        size: CGSize,
-        color: Color,
-        baseLineWidth: CGFloat,
-        drawReverse: Bool
-    ) {
+    private func drawTrace(context: GraphicsContext, points: [CGPoint], bounds: (xMin: Double, xMax: Double, yMin: Double, yMax: Double), size: CGSize, config: OscilloscopeConfig) {
         guard points.count > 1 else { return }
-
-        let totalPoints = CGFloat(points.count)
-
-        // Convert all points to screen coordinates
-        let screenPoints: [CGPoint] = points.map { point in
-            let x = convertX(point.x, bounds: bounds, size: size)
-            let y = convertY(point.y, bounds: bounds, size: size)
-            return CGPoint(x: x, y: y)
+        
+        let screenPoints = points.map { point in
+            CGPoint(
+                x: convertX(point.x, bounds: (bounds.xMin, bounds.xMax), width: size.width),
+                y: convertY(point.y, bounds: (bounds.yMin, bounds.yMax), height: size.height)
+            )
         }
 
-        var prevScreenPoint = screenPoints[0]
+        var prev = screenPoints[0]
         var lastDetached = false
+        let total = CGFloat(points.count)
 
         for i in 1..<screenPoints.count {
-            let currentScreenPoint = screenPoints[i]
-
-            // Calculate s = normalized position (0 = oldest, 1 = newest)
-            // Matches C++ s = (float)(i) / (n0 + n1)
-            let s = CGFloat(i) / totalPoints
-
-            // Detachment logic (matches C++ exactly):
-            // detached = prev.x > p_i.x || abs(p_i.x - prev.x) > pixelsToUnits(100)
-            let xWentBack = prevScreenPoint.x > currentScreenPoint.x
-            let largeGap = abs(currentScreenPoint.x - prevScreenPoint.x) > detachmentThreshold
+            let current = screenPoints[i]
+            let s = CGFloat(i) / total
+            
+            let xWentBack = prev.x > current.x
+            let largeGap = abs(current.x - prev.x) > detachmentThreshold
             let detached = xWentBack || largeGap
-
-            // Only draw line segment if not detached (or if drawReverse mode)
-            let shouldDraw = drawReverse || (!detached && !lastDetached)
-
-            if shouldDraw {
-                // Calculate line width (matches C++ exactly):
-                // width = lineWidth * max(pixelsToUnits(1.0) * s, pixelsToUnits(0.5))
-                // Simplified: width = baseLineWidth * max(s, 0.5)
-                var lineWidth = baseLineWidth * max(s, 0.3)
-
-                // C++ adds extra width for newest 5%:
-                // if (s > 0.95f) width += pixelsToUnits(((s - 0.95f) / 0.05f) * 2)
-                if s > 0.95 {
-                    lineWidth += ((s - 0.95) / 0.05) * 2.0
-                }
-
-                // Calculate opacity (older = more transparent)
-                let opacity = max(s, 0.75)
-
-                // Draw line segment
+            
+            if config.drawReverse || (!detached && !lastDetached) {
+                var width = config.lineWidth * max(s, 0.3)
+                if s > 0.95 { width += ((s - 0.95) / 0.05) * 2.0 }
+                
                 var path = Path()
-                path.move(to: prevScreenPoint)
-                path.addLine(to: currentScreenPoint)
-
-                context.stroke(
-                    path,
-                    with: .color(color.opacity(Double(opacity))),
-                    lineWidth: lineWidth
-                )
+                path.move(to: prev)
+                path.addLine(to: current)
+                
+                context.stroke(path, with: .color(config.color.opacity(max(s, 0.75))), lineWidth: width)
             }
-
+            
             lastDetached = detached
-            prevScreenPoint = currentScreenPoint
+            prev = current
         }
     }
 
-    // Legacy path function (kept for reference, but Canvas version is used)
-    private func oscilloscopePath(points: [CGPoint], bounds: (xMin: Double, xMax: Double, yMin: Double, yMax: Double), size: CGSize) -> Path {
-        var path = Path()
-        guard !points.isEmpty else { return path }
-
-        var lastPoint: CGPoint? = nil
-        var lastX: Double? = nil
-
-        for point in points {
-            let x = convertX(point.x, bounds: bounds, size: size)
-            let y = convertY(point.y, bounds: bounds, size: size)
-            let currentPoint = CGPoint(x: x, y: y)
-
-            if let last = lastPoint, let prevX = lastX {
-                let xJumpedBack = point.x < prevX
-                let largeGap = abs(currentPoint.x - last.x) > detachmentThreshold
-                let detached = !config.drawReverse && (xJumpedBack || largeGap)
-
-                if detached {
-                    path.move(to: currentPoint)
-                } else {
-                    path.addLine(to: currentPoint)
-                }
-            } else {
-                path.move(to: currentPoint)
-            }
-
-            lastPoint = currentPoint
-            lastX = point.x
+    private func drawAxisLabels(gridY: [Double], bounds: (xMin: Double, xMax: Double, yMin: Double, yMax: Double), geometry: GeometryProxy) -> some View {
+        ForEach(gridY, id: \.self) { val in
+            Text(formatValue(val))
+                .font(.system(size: 9, design: .monospaced))
+                .foregroundColor(.gray)
+                .position(x: 20, y: convertY(val, bounds: (bounds.yMin, bounds.yMax), height: geometry.size.height) - 6)
         }
+    }
 
-        return path
+    private func drawLegend() -> some View {
+        VStack {
+            HStack {
+                Spacer()
+                HStack(spacing: 12) {
+                    ForEach(configs.indices, id: \.self) { i in
+                        HStack(spacing: 4) {
+                            Circle().fill(configs[i].color).frame(width: 8, height: 8)
+                            Text(configs[i].type.displayName)
+                        }
+                    }
+                }
+                .font(.system(size: 10, weight: .medium, design: .monospaced))
+                .foregroundColor(.white)
+                .padding(4)
+                .background(Color.black.opacity(0.6))
+                .cornerRadius(4)
+            }
+            Spacer()
+        }
+        .padding(6)
+    }
+
+    private func drawCornerLabel() -> some View {
+        VStack {
+            Spacer()
+            HStack {
+                Spacer()
+                let xLabel = configs.first?.xAxisLabel ?? ""
+                let yLabels = Set(configs.map { $0.yAxisLabel }).sorted().joined(separator: ", ")
+                Text("\(xLabel) / \(yLabels)")
+                    .font(.system(size: 8, design: .monospaced))
+                    .foregroundColor(.gray.opacity(0.7))
+                    .padding(4)
+            }
+        }
+        .padding(4)
     }
 }
 
-// MARK: - Specialized Oscilloscope Views
+// MARK: - Specialized Views
 
-/// Torque vs RPM oscilloscope (dyno curve)
 struct TorqueOscilloscopeView: View {
     @ObservedObject var manager: OscilloscopeManager
-
-    var body: some View {
-        OscilloscopeView(
-            manager: manager,
-            config: .standard(for: .torque)
-        )
-    }
+    var body: some View { OscilloscopeView(manager: manager, config: .standard(for: .torque)) }
 }
 
-/// Power vs RPM oscilloscope (dyno curve)
 struct PowerOscilloscopeView: View {
     @ObservedObject var manager: OscilloscopeManager
-
-    var body: some View {
-        OscilloscopeView(
-            manager: manager,
-            config: .standard(for: .power)
-        )
-    }
+    var body: some View { OscilloscopeView(manager: manager, config: .standard(for: .power)) }
 }
 
-/// Combined dyno view showing both torque and power curves
 struct DynoOscilloscopeView: View {
     @ObservedObject var manager: OscilloscopeManager
-
     var body: some View {
-        ZStack {
-            OscilloscopeView(
-                manager: manager,
-                config: .standard(for: .torque),
-                showTitle: false
-            )
-
-            OscilloscopeView(
-                manager: manager,
-                config: .standard(for: .power),
-                showTitle: false
-            )
-            .background(Color.clear)
-
-            // Custom title showing both
-            VStack {
-                HStack {
-                    Spacer()
-                    HStack(spacing: 12) {
-                        HStack(spacing: 4) {
-                            Circle().fill(Color.orange).frame(width: 8, height: 8)
-                            Text("Torque")
-                        }
-                        HStack(spacing: 4) {
-                            Circle().fill(Color.pink).frame(width: 8, height: 8)
-                            Text("Power")
-                        }
-                    }
-                    .font(.system(size: 10, weight: .medium, design: .monospaced))
-                    .foregroundColor(.white)
-                    .padding(4)
-                    .background(Color.black.opacity(0.6))
-                    .cornerRadius(4)
-                }
-                Spacer()
-            }
-            .padding(6)
-        }
+        OscilloscopeView(manager: manager, configs: [.standard(for: .torque), .standard(for: .power)])
     }
 }
 
-/// Spark advance vs RPM oscilloscope
 struct SparkAdvanceOscilloscopeView: View {
     @ObservedObject var manager: OscilloscopeManager
-
-    var body: some View {
-        OscilloscopeView(
-            manager: manager,
-            config: .standard(for: .sparkAdvance)
-        )
-    }
+    var body: some View { OscilloscopeView(manager: manager, config: .standard(for: .sparkAdvance)) }
 }
 
-/// Total exhaust flow oscilloscope (cycle-synced)
 struct TotalExhaustFlowOscilloscopeView: View {
     @ObservedObject var manager: OscilloscopeManager
-
-    var body: some View {
-        OscilloscopeView(
-            manager: manager,
-            config: .standard(for: .totalExhaustFlow)
-        )
-    }
+    var body: some View { OscilloscopeView(manager: manager, config: .standard(for: .totalExhaustFlow)) }
 }
 
-/// Exhaust flow oscilloscope (cycle-synced)
 struct ExhaustFlowOscilloscopeView: View {
     @ObservedObject var manager: OscilloscopeManager
-
-    var body: some View {
-        OscilloscopeView(
-            manager: manager,
-            config: .standard(for: .exhaustFlow)
-        )
-    }
+    var body: some View { OscilloscopeView(manager: manager, config: .standard(for: .exhaustFlow)) }
 }
 
-/// Intake flow oscilloscope (cycle-synced)
 struct IntakeFlowOscilloscopeView: View {
     @ObservedObject var manager: OscilloscopeManager
-
-    var body: some View {
-        OscilloscopeView(
-            manager: manager,
-            config: .standard(for: .intakeFlow)
-        )
-    }
+    var body: some View { OscilloscopeView(manager: manager, config: .standard(for: .intakeFlow)) }
 }
 
-/// Combined intake/exhaust flow view
 struct FlowOscilloscopeView: View {
     @ObservedObject var manager: OscilloscopeManager
-
     var body: some View {
-        ZStack {
-            OscilloscopeView(
-                manager: manager,
-                config: .standard(for: .exhaustFlow),
-                showTitle: false
-            )
-
-            OscilloscopeView(
-                manager: manager,
-                config: .standard(for: .intakeFlow),
-                showTitle: false
-            )
-            .background(Color.clear)
-
-            // Custom title
-            VStack {
-                HStack {
-                    Spacer()
-                    HStack(spacing: 12) {
-                        HStack(spacing: 4) {
-                            Circle().fill(Color.orange).frame(width: 8, height: 8)
-                            Text("Exhaust")
-                        }
-                        HStack(spacing: 4) {
-                            Circle().fill(Color.blue).frame(width: 8, height: 8)
-                            Text("Intake")
-                        }
-                    }
-                    .font(.system(size: 10, weight: .medium, design: .monospaced))
-                    .foregroundColor(.white)
-                    .padding(4)
-                    .background(Color.black.opacity(0.6))
-                    .cornerRadius(4)
-                }
-                Spacer()
-            }
-            .padding(6)
-        }
+        OscilloscopeView(manager: manager, configs: [.standard(for: .exhaustFlow), .standard(for: .intakeFlow)])
     }
 }
 
-/// Exhaust valve lift oscilloscope (cycle-synced)
 struct ExhaustValveLiftOscilloscopeView: View {
     @ObservedObject var manager: OscilloscopeManager
-
-    var body: some View {
-        OscilloscopeView(
-            manager: manager,
-            config: .standard(for: .exhaustValveLift)
-        )
-    }
+    var body: some View { OscilloscopeView(manager: manager, config: .standard(for: .exhaustValveLift)) }
 }
 
-/// Intake valve lift oscilloscope (cycle-synced)
 struct IntakeValveLiftOscilloscopeView: View {
     @ObservedObject var manager: OscilloscopeManager
-
-    var body: some View {
-        OscilloscopeView(
-            manager: manager,
-            config: .standard(for: .intakeValveLift)
-        )
-    }
+    var body: some View { OscilloscopeView(manager: manager, config: .standard(for: .intakeValveLift)) }
 }
 
-/// Combined valve lift view
 struct ValveLiftOscilloscopeView: View {
     @ObservedObject var manager: OscilloscopeManager
-
     var body: some View {
-        ZStack {
-            OscilloscopeView(
-                manager: manager,
-                config: .standard(for: .exhaustValveLift),
-                showTitle: false
-            )
-
-            OscilloscopeView(
-                manager: manager,
-                config: .standard(for: .intakeValveLift),
-                showTitle: false
-            )
-            .background(Color.clear)
-
-            // Custom title
-            VStack {
-                HStack {
-                    Spacer()
-                    HStack(spacing: 12) {
-                        HStack(spacing: 4) {
-                            Circle().fill(Color.orange).frame(width: 8, height: 8)
-                            Text("Exhaust")
-                        }
-                        HStack(spacing: 4) {
-                            Circle().fill(Color.blue).frame(width: 8, height: 8)
-                            Text("Intake")
-                        }
-                    }
-                    .font(.system(size: 10, weight: .medium, design: .monospaced))
-                    .foregroundColor(.white)
-                    .padding(4)
-                    .background(Color.black.opacity(0.6))
-                    .cornerRadius(4)
-                }
-                Spacer()
-            }
-            .padding(6)
-        }
+        OscilloscopeView(manager: manager, configs: [.standard(for: .exhaustValveLift), .standard(for: .intakeValveLift)])
     }
 }
 
-/// Cylinder pressure oscilloscope (cycle-synced)
 struct CylinderPressureOscilloscopeView: View {
     @ObservedObject var manager: OscilloscopeManager
-
-    var body: some View {
-        OscilloscopeView(
-            manager: manager,
-            config: .standard(for: .cylinderPressure)
-        )
-    }
+    var body: some View { OscilloscopeView(manager: manager, config: .standard(for: .cylinderPressure)) }
 }
 
-/// Cylinder molecules oscilloscope (cycle-synced)
 struct CylinderMoleculesOscilloscopeView: View {
     @ObservedObject var manager: OscilloscopeManager
-
-    var body: some View {
-        OscilloscopeView(
-            manager: manager,
-            config: .standard(for: .cylinderMolecules)
-        )
-    }
+    var body: some View { OscilloscopeView(manager: manager, config: .standard(for: .cylinderMolecules)) }
 }
 
-/// Pressure-Volume diagram oscilloscope (parametric)
 struct PVOscilloscopeView: View {
     @ObservedObject var manager: OscilloscopeManager
-
-    var body: some View {
-        OscilloscopeView(
-            manager: manager,
-            config: .standard(for: .PV)
-        )
-    }
+    var body: some View { OscilloscopeView(manager: manager, config: .standard(for: .PV)) }
 }
 
-// MARK: - Oscilloscope Selector View
-
-/// A view that can display any oscilloscope type based on selection
 struct SelectableOscilloscopeView: View {
     @ObservedObject var manager: OscilloscopeManager
     let type: EngineScopeType
-
-    var body: some View {
-        OscilloscopeView(
-            manager: manager,
-            config: .standard(for: type)
-        )
-    }
+    var body: some View { OscilloscopeView(manager: manager, config: .standard(for: type)) }
 }
-
-// MARK: - Preview
 
 #if DEBUG
 struct OscilloscopeView_Previews: PreviewProvider {
     static var previews: some View {
         let manager = OscilloscopeManager()
-
         VStack(spacing: 10) {
-            TorqueOscilloscopeView(manager: manager)
-                .frame(height: 150)
-
-            CylinderPressureOscilloscopeView(manager: manager)
-                .frame(height: 150)
-
-            PVOscilloscopeView(manager: manager)
-                .frame(height: 150)
+            TorqueOscilloscopeView(manager: manager).frame(height: 150)
+            DynoOscilloscopeView(manager: manager).frame(height: 150)
         }
-        .padding()
-        .background(Color.black)
+        .padding().background(Color.black)
     }
 }
 #endif

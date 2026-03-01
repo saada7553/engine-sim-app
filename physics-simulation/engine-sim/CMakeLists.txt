@@ -58,6 +58,8 @@ add_library(engine-sim STATIC
     src/leveling_filter.cpp
     src/low_pass_filter.cpp
     src/macOS_audio_unit.cpp
+    src/oscilloscope.cpp
+    src/oscilloscope_cluster.cpp
     src/part.cpp
     src/piston.cpp
     src/piston_engine_simulator.cpp
@@ -104,6 +106,8 @@ add_library(engine-sim STATIC
     include/leveling_filter.h
     include/low_pass_filter.h
     include/macOS_audio_unit.h
+    include/oscilloscope.h
+    include/oscilloscope_cluster.h
     include/part.h
     include/piston.h
     include/piston_engine_simulator.h

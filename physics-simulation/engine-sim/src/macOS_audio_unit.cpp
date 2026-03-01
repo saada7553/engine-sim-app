@@ -99,8 +99,8 @@ OSStatus MacOSAudioAdapter::RenderCallback(
     // This removes data from the RingBuffer, signaling the synth thread to wake up.
     int samplesRead = adapter->m_synth->readAudioOutput(framesToRead, localBuffer);
 
-    if (samplesRead < framesToRead)
-        std::cout << samplesRead << '/' << framesToRead << std::endl; 
+//    if (samplesRead < framesToRead)
+//        std::cout << samplesRead << '/' << framesToRead << std::endl; 
 
     // for (int i = 0; i < samplesRead; ++i) {
     //     std::cout << localBuffer[i] << std::endl;

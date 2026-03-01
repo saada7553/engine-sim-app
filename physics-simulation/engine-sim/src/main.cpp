@@ -214,7 +214,7 @@ int main() {
     
     // Default States
     sim->getEngine()->getIgnitionModule()->m_enabled = true; 
-    sim->m_starterMotor.m_enabled = true;
+    sim->m_starterMotor.m_enabled = false;
     sim->m_dyno.m_enabled = false;
     
     engine->calculateDisplacement();
@@ -427,18 +427,24 @@ int main() {
         double targetMs = 1000.0 / targetFrameRate;
 
         // Clear line using spaces padding at end
-        std::cout << "\r"
-                    << "RPM: " << std::fixed << std::setprecision(0) << std::setw(5) << rpm << " | "
-                    << "THR: " << std::fixed << std::setprecision(2) << currentThrottle << " | "
-                    << "FREQ: " << std::setprecision(0) << std::setw(5) << sim->getSimulationFrequency() << " | "
-                    << "MS: " << std::setprecision(1) << std::setw(5) << frameMs << "/" << std::setprecision(1) << targetMs << " | "
-                    << "Gear: " << std::setprecision(0) << std::setw(2) << gear << " | "
-                    << (sim->m_starterMotor.m_enabled ? "[S]" : "   ")
-                    << (sim->getEngine()->getIgnitionModule()->m_enabled ? "[I]" : "   ")
-                    << "                    "
-                    << std::flush;
+        // std::cout << "\r"
+        //             << "RPM: " << std::fixed << std::setprecision(0) << std::setw(5) << rpm << " | "
+        //             << "THR: " << std::fixed << std::setprecision(2) << currentThrottle << " | "
+        //             << "FREQ: " << std::setprecision(0) << std::setw(5) << sim->getSimulationFrequency() << " | "
+        //             << "MS: " << std::setprecision(1) << std::setw(5) << frameMs << "/" << std::setprecision(1) << targetMs << " | "
+        //             << "Gear: " << std::setprecision(0) << std::setw(2) << gear << " | "
+        //             << (sim->m_starterMotor.m_enabled ? "[S]" : "   ")
+        //             << (sim->getEngine()->getIgnitionModule()->m_enabled ? "[I]" : "   ")
+        //             << "                    "
+        //             << std::flush;
 
         iteration++;
+
+        double cycleAngle = engine->getCrankshaft(0)->getCycleAngle();
+        if (!engine->isSpinningCw()) {
+            cycleAngle = 4 * constants::pi - cycleAngle;
+        }
+        std::cout << cycleAngle << std::endl; 
 
         // Proper frame timing - sleep only for remaining time to hit target frame rate
         auto frameEnd = std::chrono::steady_clock::now();

@@ -34,12 +34,22 @@ enum SplitDirection: Codable {
 
 enum TileType: String, Codable, CaseIterable, Identifiable {
     case engine3DView = "Engine 3D"
+
+    // Gauges
     case speedometerGauge = "Speedometer"
     case rpmGauge = "RPM Gauge"
+    case manifoldPressureGauge = "Manifold Pressure"
+    case volumetricEfficiencyGauge = "Volumetric Efficiency"
+    case airScfmGauge = "Air SCFM"
+    case intakeAfrGauge = "Intake AFR"
+    case exhaustO2Gauge = "Exhaust O2"
+    case cylinderPressureGauge = "Cylinder Pressure"
+
+    // Controls
     case systemControls = "System Controls"
     case transmissionControls = "Transmission"
     case throttleControl = "Throttle"
-    
+
     // Oscilloscopes
     case torqueOscilloscope = "Torque Scope"
     case powerOscilloscope = "Power Scope"

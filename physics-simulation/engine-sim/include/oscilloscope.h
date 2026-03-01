@@ -1,9 +1,7 @@
 #ifndef ATG_ENGINE_SIM_OSCILLOSCOPE_H
 #define ATG_ENGINE_SIM_OSCILLOSCOPE_H
 
-#include "ui_element.h"
-
-class Oscilloscope : public UiElement {
+class Oscilloscope {
     public:
         struct DataPoint {
             double x, y;
@@ -12,20 +10,9 @@ class Oscilloscope : public UiElement {
     public:
         Oscilloscope();
         virtual ~Oscilloscope();
-
-        virtual void initialize(EngineSimApplication *app);
         virtual void destroy();
 
-        virtual void update(float dt);
-        virtual void render();
-        void render(const Bounds &bounds);
-
-        Point dataPointToRenderPosition(
-            const DataPoint &p,
-            const Bounds &bounds) const;
-
         void addDataPoint(double x, double y);
-
         void setBufferSize(int n);
         void reset();
 
@@ -41,12 +28,14 @@ class Oscilloscope : public UiElement {
         double m_lineWidth;
         bool m_drawReverse;
         bool m_drawZero;
-
-        ysVector i_color;
+        
+        DataPoint *getDataPoints() const { return m_points; }
+        int getWriteIndex() const { return m_writeIndex; }
+        int getBufferSize() const { return m_bufferSize; }
+        int getPointCount() const { return m_pointCount; }
 
     protected:
         DataPoint *m_points;
-        Point *m_renderBuffer;
         int m_writeIndex;
         int m_bufferSize;
         int m_pointCount;
