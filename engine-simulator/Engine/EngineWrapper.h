@@ -33,6 +33,9 @@
 @property (nonatomic, assign) double intakeAFR;              // Air-Fuel Ratio
 @property (nonatomic, assign) double exhaustO2;              // O2 percentage
 
+// Dynamometer state
+@property (nonatomic, assign) BOOL dynoEnabled;
+
 @end
 
 typedef NS_ENUM(NSInteger, EngineScopeType) {
@@ -76,6 +79,10 @@ typedef NS_ENUM(NSInteger, EngineScopeType) {
 - (void)shiftDown;
 - (void)setGear:(int)targetGear;
 - (void)toggleClutch;
+
+// Dynamometer controls
+- (void)setDynoEnabled:(BOOL)enabled;
+- (BOOL)isDynoEnabled;
 
 // Data Getters
 - (double)getRPM;

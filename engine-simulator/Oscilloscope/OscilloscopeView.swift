@@ -55,25 +55,40 @@ private func convertX(_ val: Double, bounds: (min: Double, max: Double), width: 
 struct OscilloscopeView: View {
     @ObservedObject var manager: OscilloscopeManager
     let configs: [OscilloscopeConfig]
-    
+
     var showTitle: Bool = true
     var showAxisLabels: Bool = true
+    /// When true each channel keeps its own Y scale (channel 0 -> left axis,
+    /// channel 1 -> right axis) instead of sharing one unified scale.
+    var independentAxes: Bool = false
+    /// When true the peak of each channel is marked with the RPM it occurred at.
+    var showPeaks: Bool = false
     var detachmentThreshold: CGFloat = 100.0
 
+    private let gridDivisions = 5
+
     // Convenience init for single channel
-    init(manager: OscilloscopeManager, config: OscilloscopeConfig, showTitle: Bool = true, showAxisLabels: Bool = true) {
+    init(manager: OscilloscopeManager, config: OscilloscopeConfig,
+         showTitle: Bool = true, showAxisLabels: Bool = true,
+         independentAxes: Bool = false, showPeaks: Bool = false) {
         self.manager = manager
         self.configs = [config]
         self.showTitle = showTitle
         self.showAxisLabels = showAxisLabels
+        self.independentAxes = independentAxes
+        self.showPeaks = showPeaks
     }
 
     // Main init for multiple channels
-    init(manager: OscilloscopeManager, configs: [OscilloscopeConfig], showTitle: Bool = true, showAxisLabels: Bool = true) {
+    init(manager: OscilloscopeManager, configs: [OscilloscopeConfig],
+         showTitle: Bool = true, showAxisLabels: Bool = true,
+         independentAxes: Bool = false, showPeaks: Bool = false) {
         self.manager = manager
         self.configs = configs
         self.showTitle = showTitle
         self.showAxisLabels = showAxisLabels
+        self.independentAxes = independentAxes
+        self.showPeaks = showPeaks
     }
 
     private var unifiedBounds: (xMin: Double, xMax: Double, yMin: Double, yMax: Double) {
@@ -86,35 +101,136 @@ struct OscilloscopeView: View {
         )
     }
 
+    /// X range shared by every channel.
+    private var sharedXBounds: (min: Double, max: Double) {
+        let allBounds = configs.map { manager.getAxisBounds(for: $0.type, config: $0) }
+        return (allBounds.map(\.xMin).min() ?? 0, allBounds.map(\.xMax).max() ?? 1)
+    }
+
+    private func channelYBounds(_ index: Int) -> (min: Double, max: Double) {
+        let b = manager.getAxisBounds(for: configs[index].type, config: configs[index])
+        return (b.yMin, b.yMax)
+    }
+
     var body: some View {
         GeometryReader { geometry in
-            let bounds = unifiedBounds
-            let gridY = calculateGridLines(minVal: bounds.yMin, maxVal: bounds.yMax, size: geometry.size.height)
-            let gridX = calculateGridLines(minVal: bounds.xMin, maxVal: bounds.xMax, size: geometry.size.width)
-
             ZStack(alignment: .topLeading) {
-                Color.appBackground // Background
-
-                drawGrid(geometry: geometry, bounds: bounds, gridX: gridX, gridY: gridY)
-                
-                // Traces
-                ForEach(configs.indices, id: \.self) { i in
-                    let config = configs[i]
-                    let points = manager.getPoints(for: config.type, config: config)
-                    
-                    Canvas { context, size in
-                        drawTrace(context: context, points: points, bounds: bounds, size: size, config: config)
-                    }
-                    .clipped()
+                Color.appBackground
+                if independentAxes {
+                    independentChart(geometry)
+                } else {
+                    unifiedChart(geometry)
                 }
-
-                if showAxisLabels { drawAxisLabels(gridY: gridY, bounds: bounds, geometry: geometry) }
                 if showTitle { drawLegend() }
                 if showAxisLabels { drawCornerLabel() }
             }
         }
         .cornerRadius(8)
         .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.gray.opacity(0.3), lineWidth: 1))
+    }
+
+    // MARK: - Chart Variants
+
+    private func unifiedChart(_ geometry: GeometryProxy) -> some View {
+        let bounds = unifiedBounds
+        let gridY = calculateGridLines(minVal: bounds.yMin, maxVal: bounds.yMax, size: geometry.size.height)
+        let gridX = calculateGridLines(minVal: bounds.xMin, maxVal: bounds.xMax, size: geometry.size.width)
+
+        return ZStack(alignment: .topLeading) {
+            drawGrid(geometry: geometry, bounds: bounds, gridX: gridX, gridY: gridY)
+
+            ForEach(configs.indices, id: \.self) { i in
+                let config = configs[i]
+                let points = manager.getPoints(for: config.type, config: config)
+                Canvas { context, size in
+                    drawTrace(context: context, points: points, bounds: bounds, size: size, config: config)
+                }
+                .clipped()
+            }
+
+            if showAxisLabels { drawAxisLabels(gridY: gridY, bounds: bounds, geometry: geometry) }
+        }
+    }
+
+    private func independentChart(_ geometry: GeometryProxy) -> some View {
+        let x = sharedXBounds
+        let gridX = calculateGridLines(minVal: x.min, maxVal: x.max, size: geometry.size.width)
+        let gridY = (0...gridDivisions).map { Double($0) / Double(gridDivisions) }
+
+        return ZStack(alignment: .topLeading) {
+            drawGrid(geometry: geometry,
+                     bounds: (xMin: x.min, xMax: x.max, yMin: 0, yMax: 1),
+                     gridX: gridX, gridY: gridY)
+
+            ForEach(configs.indices, id: \.self) { i in
+                let config = configs[i]
+                let y = channelYBounds(i)
+                let points = manager.getPoints(for: config.type, config: config)
+                Canvas { context, size in
+                    drawTrace(context: context, points: points,
+                              bounds: (xMin: x.min, xMax: x.max, yMin: y.min, yMax: y.max),
+                              size: size, config: config)
+                }
+                .clipped()
+            }
+
+            if showAxisLabels { independentAxisLabels(geometry: geometry) }
+            if showPeaks { peakAnnotations(geometry: geometry, xBounds: x) }
+        }
+    }
+
+    private func independentAxisLabels(geometry: GeometryProxy) -> some View {
+        ZStack(alignment: .topLeading) {
+            ForEach(configs.indices, id: \.self) { i in
+                let y = channelYBounds(i)
+                let labelX: CGFloat = (i == 0) ? 22 : geometry.size.width - 22
+
+                ForEach(0...gridDivisions, id: \.self) { d in
+                    let frac = Double(d) / Double(gridDivisions)
+                    let value = y.min + (y.max - y.min) * frac
+                    Text(formatValue(value))
+                        .font(.system(size: 9, design: .monospaced))
+                        .foregroundColor(.gray)
+                        .position(x: labelX,
+                                  y: geometry.size.height * (1.0 - CGFloat(frac)) - 6)
+                }
+
+                Text(configs[i].yAxisLabel)
+                    .font(.system(size: 9, weight: .bold, design: .monospaced))
+                    .foregroundColor(.gray)
+                    .position(x: labelX, y: 8)
+            }
+        }
+    }
+
+    private func peakAnnotations(geometry: GeometryProxy, xBounds x: (min: Double, max: Double)) -> some View {
+        ZStack(alignment: .topLeading) {
+            ForEach(configs.indices, id: \.self) { i in
+                let config = configs[i]
+                let y = channelYBounds(i)
+                let points = manager.getPoints(for: config.type, config: config)
+                if let peak = points.max(by: { $0.y < $1.y }), peak.y > 0 {
+                    let px = convertX(Double(peak.x), bounds: (x.min, x.max), width: geometry.size.width)
+                    let py = convertY(Double(peak.y), bounds: (y.min, y.max), height: geometry.size.height)
+
+                    Circle()
+                        .fill(config.color)
+                        .overlay(Circle().stroke(Color.white, lineWidth: 1))
+                        .frame(width: 7, height: 7)
+                        .position(x: px, y: py)
+
+                    Text("PEAK \(config.type.displayName.uppercased()) \(Int(peak.y.rounded())) \(config.yAxisLabel) @ \(Int(peak.x.rounded())) RPM")
+                        .font(.system(size: 8, weight: .bold, design: .monospaced))
+                        .foregroundColor(config.color)
+                        .padding(.horizontal, 4)
+                        .padding(.vertical, 2)
+                        .background(Color.black.opacity(0.65))
+                        .cornerRadius(3)
+                        .position(x: min(max(px, 86), geometry.size.width - 86),
+                                  y: max(py - 14, 14))
+                }
+            }
+        }
     }
 
     // MARK: - Subviews & Drawing
@@ -245,10 +361,40 @@ struct PowerOscilloscopeView: View {
     var body: some View { OscilloscopeView(manager: manager, config: .standard(for: .power)) }
 }
 
+/// Dyno chart: torque and power over RPM. Reuses the shared OscilloscopeView
+/// in its independent-axes mode; once a run ends it shows peak callouts, and
+/// an idle hint is overlaid on the empty graph until the first run has data.
 struct DynoOscilloscopeView: View {
+    @ObservedObject var engineVm: EngineViewModel
     @ObservedObject var manager: OscilloscopeManager
+
+    init(engineVm: EngineViewModel) {
+        self.engineVm = engineVm
+        self.manager = engineVm.oscilloscopeManager
+    }
+
+    private var hasNoData: Bool {
+        manager.torque.isEmpty && manager.power.isEmpty
+    }
+
     var body: some View {
-        OscilloscopeView(manager: manager, configs: [.standard(for: .torque), .standard(for: .power)])
+        ZStack {
+            OscilloscopeView(
+                manager: manager,
+                configs: [.standard(for: .torque), .standard(for: .power)],
+                independentAxes: true,
+                showPeaks: !engineVm.dynoEnabled
+            )
+            if !engineVm.dynoEnabled && hasNoData {
+                Text("ENABLE DYNO (D) TO RUN")
+                    .modifier(RetroFont(size: 11))
+                    .foregroundColor(.gray)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .background(Color.black.opacity(0.55))
+                    .cornerRadius(6)
+            }
+        }
     }
 }
 
@@ -323,7 +469,7 @@ struct OscilloscopeView_Previews: PreviewProvider {
         let manager = OscilloscopeManager()
         VStack(spacing: 10) {
             TorqueOscilloscopeView(manager: manager).frame(height: 150)
-            DynoOscilloscopeView(manager: manager).frame(height: 150)
+            PowerOscilloscopeView(manager: manager).frame(height: 150)
         }
         .padding().background(Color.black)
     }

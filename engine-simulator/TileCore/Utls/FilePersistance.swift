@@ -71,6 +71,15 @@ final class FilePersistence {
         return items
     }
     
+    func delete(file: String) {
+        let url = url(for: file)
+        do {
+            try FileManager.default.removeItem(at: url)
+        } catch {
+            print("❌ Failed to delete \(file): \(error)")
+        }
+    }
+
     func listFiles() -> [String] {
         guard let files = try? FileManager.default.contentsOfDirectory(
             at: baseFolder,

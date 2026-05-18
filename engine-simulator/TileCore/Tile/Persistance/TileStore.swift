@@ -54,6 +54,18 @@ class TileStore: ObservableObject {
         loadLayouts() // Update the UI
     }
     
+    /// Layouts are persisted under randomly named files, so locate the file
+    /// whose decoded contents match the layout id before removing it.
+    func deleteLayout(_ layout: TileLayout) {
+        for file in filePersistance.listFiles() {
+            if let stored = filePersistance.load(TileLayout.self, from: file),
+               stored.id == layout.id {
+                filePersistance.delete(file: file)
+            }
+        }
+        loadLayouts()
+    }
+
     func loadLayouts() {
         let saved = filePersistance.load(TileLayout.self)
         layouts = saved

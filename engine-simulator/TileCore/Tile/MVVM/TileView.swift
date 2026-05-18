@@ -94,12 +94,8 @@ struct TileView: View {
             ))
 
         // Controls
-        case .systemControls:
-            return AnyView(SystemControlView(vm: tile.engineVm))
-        case .transmissionControls:
-            return AnyView(GearShiftView(vm: tile.engineVm))
-        case .throttleControl:
-            return AnyView(ThrottleView(vm: tile.engineVm))
+        case .engineControls:
+            return AnyView(EngineControlsView(vm: tile.engineVm))
             
         // Oscilloscopes
         case .torqueOscilloscope:
@@ -107,7 +103,7 @@ struct TileView: View {
         case .powerOscilloscope:
             return AnyView(PowerOscilloscopeView(manager: tile.engineVm.oscilloscopeManager))
         case .dynoOscilloscope:
-            return AnyView(DynoOscilloscopeView(manager: tile.engineVm.oscilloscopeManager))
+            return AnyView(DynoOscilloscopeView(engineVm: tile.engineVm))
         case .sparkAdvanceOscilloscope:
             return AnyView(SparkAdvanceOscilloscopeView(manager: tile.engineVm.oscilloscopeManager))
         case .totalExhaustFlowOscilloscope:

@@ -19,9 +19,7 @@ struct SelectView: View {
         .exhaustO2Gauge, .cylinderPressureGauge
     ]
 
-    private let controlTypes: [TileType] = [
-        .systemControls, .transmissionControls, .throttleControl
-    ]
+    private let controlTypes: [TileType] = [.engineControls]
 
     private let oscilloscopeTypes: [TileType] = [
         .torqueOscilloscope, .powerOscilloscope, .dynoOscilloscope,

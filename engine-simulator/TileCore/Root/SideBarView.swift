@@ -40,11 +40,13 @@ struct SideBarView: View {
                             LayoutRow(
                                 layout: layout,
                                 hotkey: index < 9 ? "\(index + 1)" : nil,
-                                isSelected: activeLayoutId == layout.id
-                            ) {
-                                activeLayoutId = layout.id
-                                rootViewModel.loadState(newRootData: layout.rootData)
-                            }
+                                isSelected: activeLayoutId == layout.id,
+                                action: {
+                                    activeLayoutId = layout.id
+                                    rootViewModel.loadState(newRootData: layout.rootData)
+                                },
+                                onDelete: { deleteLayout(layout) }
+                            )
                         }
                     }
                 }
@@ -69,6 +71,13 @@ struct SideBarView: View {
         } message: {
             Text("Enter a name for this workspace configuration.")
         }
+    }
+
+    private func deleteLayout(_ layout: TileLayout) {
+        if activeLayoutId == layout.id {
+            activeLayoutId = nil
+        }
+        tileStore.deleteLayout(layout)
     }
 }
 
@@ -156,45 +165,55 @@ struct LayoutRow: View {
     let hotkey: String?
     let isSelected: Bool
     let action: () -> Void
-    
+    let onDelete: () -> Void
+    @State private var isHovered = false
+
     var body: some View {
-        Button(action: action) {
-            HStack(spacing: 12) {
-                Circle()
-                    .fill(isSelected ? Color.sidebarAccent : Color.sidebarTextSecondary.opacity(0.3))
-                    .frame(width: 6, height: 6)
-                
-                Text(layout.name)
-                    .font(.system(size: 14))
-                    .foregroundColor(isSelected ? .white : .white.opacity(0.7))
-                
-                Spacer()
-                
-                if let hotkey = hotkey {
-                    HStack(spacing: 2) {
-                        Image(systemName: "command")
-                        Text(hotkey)
-                    }
-                    .font(.system(size: 10))
-                    .padding(.horizontal, 4)
-                    .padding(.vertical, 2)
-                    .background(Color.appBackground)
-                    .cornerRadius(4)
-                    .foregroundColor(.sidebarTextSecondary)
+        HStack(spacing: 12) {
+            Circle()
+                .fill(isSelected ? Color.sidebarAccent : Color.sidebarTextSecondary.opacity(0.3))
+                .frame(width: 6, height: 6)
+
+            Text(layout.name)
+                .font(.system(size: 14))
+                .foregroundColor(isSelected ? .white : .white.opacity(0.7))
+
+            Spacer()
+
+            if isHovered {
+                Button(action: onDelete) {
+                    Image(systemName: "trash")
+                        .font(.system(size: 11))
+                        .foregroundColor(.sidebarTextSecondary)
                 }
+                .buttonStyle(.plain)
+            } else if let hotkey = hotkey {
+                HStack(spacing: 2) {
+                    Image(systemName: "command")
+                    Text(hotkey)
+                }
+                .font(.system(size: 10))
+                .padding(.horizontal, 4)
+                .padding(.vertical, 2)
+                .background(Color.appBackground)
+                .cornerRadius(4)
+                .foregroundColor(.sidebarTextSecondary)
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-            .contentShape(Rectangle())
-            .background(isSelected ? Color.sidebarHighlight : Color.clear)
-            .cornerRadius(6)
-            .padding(.horizontal, 8)
         }
-        .buttonStyle(.plain)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .contentShape(Rectangle())
+        .background(isSelected ? Color.sidebarHighlight : Color.clear)
+        .cornerRadius(6)
+        .padding(.horizontal, 8)
+        .onTapGesture(perform: action)
+        .onHover { isHovered = $0 }
     }
 }
 
 struct SidebarFooter: View {
+    @State private var showingControls = false
+
     var body: some View {
         VStack(spacing: 0) {
             Divider().background(Color.white.opacity(0.05))
@@ -208,7 +227,18 @@ struct SidebarFooter: View {
                     .foregroundColor(.white)
                 }
                 .buttonStyle(.plain)
-                
+
+                Button(action: { showingControls.toggle() }) {
+                    Image(systemName: "keyboard")
+                        .font(.system(size: 13))
+                        .foregroundColor(.white)
+                }
+                .buttonStyle(.plain)
+                .padding(.leading, 12)
+                .popover(isPresented: $showingControls, arrowEdge: .bottom) {
+                    ControlsMenuView()
+                }
+
                 Spacer()
                 
                 Button(action: {}) {

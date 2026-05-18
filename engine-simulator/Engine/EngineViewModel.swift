@@ -9,9 +9,15 @@ import Foundation
 import SwiftUI
 import Combine
 
+// Rev ramp smoothing: each polling tick the throttle moves this fraction of
+// the remaining distance toward its target, so revs ease in and out smoothly.
+private let revAveragingFactor: Double = 0.35
+// Throttle below this is treated as fully idle and snapped to zero.
+private let revIdleThreshold: Double = 0.001
+
 class EngineViewModel: ObservableObject {
     private var engine: EngineWrapper?
-    
+
     // Live Data
     @Published var rpm: Double = 0.0
     @Published var gear: Int = 0 // 0=Neutral, -1=Reverse, 1-6=Gears
@@ -21,6 +27,16 @@ class EngineViewModel: ObservableObject {
     @Published var distanceTravelled: Double = 0.0
     @Published var fuelConsumed: Double = 0.0
     @Published var redline: Double
+
+    // Dynamometer sweep
+    @Published var dynoEnabled: Bool = false
+
+    // Throttle hold: latches the throttle so it stops decaying back to idle
+    @Published var throttleHeld: Bool = false
+
+    // Rev-engine ramp state
+    private var revTarget: Double = 0.0
+    private var revActive: Bool = false
 
     // Gauge Data
     @Published var manifoldPressure: Double = 0.0      // inHg (gauge pressure)
@@ -58,6 +74,7 @@ class EngineViewModel: ObservableObject {
                 self.vehicleSpeed = state.vehicleSpeed
                 self.distanceTravelled = state.distanceTravelled
                 self.fuelConsumed = state.fuelConsumed
+                self.dynoEnabled = state.dynoEnabled
 
                 // Gauge data
                 self.manifoldPressure = state.manifoldPressure
@@ -70,6 +87,8 @@ class EngineViewModel: ObservableObject {
                 // Pass engine wrapper to oscilloscope manager for sampling
                 self.oscilloscopeManager.sample(from: engine)
             }
+
+            self.advanceRevRamp()
         }
         RunLoop.main.add(timer, forMode: .common)
         self.timer = timer
@@ -81,6 +100,46 @@ class EngineViewModel: ObservableObject {
     
     func toggleIgnition() { engine?.toggleIgnition() }
     func toggleStarter() { engine?.toggleStarter() }
+
+    func toggleDyno() {
+        let newValue = !dynoEnabled
+        engine?.setDynoEnabled(newValue)
+        dynoEnabled = newValue
+    }
+
+    /// Latches the throttle at its current position so it no longer decays.
+    func toggleHold() {
+        throttleHeld.toggle()
+        if throttleHeld {
+            revActive = false   // freeze any in-progress rev ramp
+        }
+    }
+
+    /// Begin revving: throttle eases toward full while the rev key is held.
+    /// Manual revving overrides and cancels throttle hold.
+    func beginRev() {
+        throttleHeld = false
+        revTarget = 1.0
+        revActive = true
+    }
+
+    /// Release the rev key: throttle eases back down toward idle.
+    func endRev() {
+        revTarget = 0.0
+    }
+
+    /// Eases the throttle toward the current rev target. Runs every polling
+    /// tick while a rev is in progress; stops once idle is reached.
+    private func advanceRevRamp() {
+        guard revActive else { return }
+
+        throttlePosition += revAveragingFactor * (revTarget - throttlePosition)
+
+        if revTarget == 0.0 && throttlePosition < revIdleThreshold {
+            throttlePosition = 0.0
+            revActive = false
+        }
+    }
     func toggleClutch() {
         clutchPressed.toggle()
         engine?.toggleClutch()

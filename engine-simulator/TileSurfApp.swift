@@ -5,13 +5,17 @@ import WebKit
 struct TileSurfApp: App {
     @StateObject private var rootViewModel: RootViewModel
     @StateObject private var engineViewModel: EngineViewModel
-    
+    @State private var keyboardController: KeyboardController
+
     init() {
         let oscilloscopeManager = OscilloscopeManager()
         let engineViewModelInst = EngineViewModel(oscillioscopeManager: oscilloscopeManager)
         self._engineViewModel = StateObject(wrappedValue: engineViewModelInst)
         self._rootViewModel = StateObject(wrappedValue: RootViewModel(
             engineVm: engineViewModelInst, data: TileData(id: UUID(), type: .engine3DView))
+        )
+        self._keyboardController = State(
+            initialValue: KeyboardController(engineVm: engineViewModelInst)
         )
     }
     

@@ -22,6 +22,13 @@
 #include <atomic>
 #include <cmath>
 
+// --- Dynamometer tuning constants ---
+static const double kDynoTorqueThresholdFtLb = 1.0;  // ft-lb of torque required for the dyno to keep accelerating
+static const double kDynoRampRateRpm = 500.0;        // rpm/sec the dyno speed climbs while loaded
+static const double kFrameTimestep = 1.0 / 30.0;     // seconds per simulation frame
+static const double kDynoMinThrottle = 0.05;         // a run aborts if the throttle drops below this
+static const double kDynoRunStartedRpm = 500.0;      // dyno speed past which a run counts as underway
+
 @interface EngineWrapper ()
 @property (atomic, strong) EngineState *latestState;
 @end
@@ -47,6 +54,11 @@
     int _rpm;
     int _gear;
     int _targetGear;
+
+    // Dynamometer sweep state.
+    BOOL _dynoSweepRequested;
+    double _dynoSpeed;   // current dyno rotation speed (rad/s)
+    double _throttle;    // last commanded throttle position (0-1)
     
     // Threading
     std::thread* _simThread;
@@ -63,6 +75,9 @@
         [self setupEngine];
     }
     _targetGear = -1;
+    _dynoSweepRequested = NO;
+    _dynoSpeed = 0.0;
+    _throttle = 0.0;
     return self;
 }
 
@@ -159,7 +174,9 @@
             
             if (_gear != _targetGear)
                 _sim->getTransmission()->changeGear(_targetGear);
-                                    
+
+            [self updateDynoForFrame:kFrameTimestep];
+
             _sim->startFrame(1.0 / 30.0);
             while (_sim->simulateStep()) {
 
@@ -176,6 +193,7 @@
                 state.isStarterOn = _sim->m_starterMotor.m_enabled;
                 state.fuelConsumed = engine->getTotalVolumeFuelConsumed();
                 state.distanceTravelled = _vehicle->getTravelledDistance();
+                state.dynoEnabled = _dynoSweepRequested;
 
                 // 2. Gauge Data
                 // Manifold pressure (convert to inHg gauge pressure relative to atmosphere)
@@ -309,6 +327,7 @@
 }
 
 - (void)setThrottle:(double)val {
+    _throttle = val;
     _engine->setSpeedControl(val);
 }
 
@@ -320,6 +339,48 @@
     // Simple toggle logic
     double current = _sim->getTransmission()->getClutchPressure();
     _sim->getTransmission()->setClutchPressure(current > 0.5 ? 0.0 : 1.0);
+}
+
+- (void)setDynoEnabled:(BOOL)enabled { _dynoSweepRequested = enabled; }
+- (BOOL)isDynoEnabled { return _dynoSweepRequested; }
+
+// Drives the dyno sweep each frame: loads the engine and accelerates it,
+// disabling once the redline is reached.
+- (void)updateDynoForFrame:(double)dt {
+    Dynamometer &dyno = _sim->m_dyno;
+
+    if (_dynoSweepRequested) {
+        dyno.m_enabled = true;
+        dyno.m_hold = false;
+
+        const double torqueThreshold = units::torque(kDynoTorqueThresholdFtLb, units::ft_lb);
+        if (_sim->getFilteredDynoTorque() > torqueThreshold) {
+            _dynoSpeed += units::rpm(kDynoRampRateRpm) * dt;
+        } else {
+            _dynoSpeed *= 1.0 / (1.0 + dt);
+        }
+
+        // A run ends at the redline, or early if the driver lifts off the
+        // throttle once the sweep is underway.
+        const bool reachedRedline = _dynoSpeed > _engine->getRedline();
+        const bool throttleReleased =
+            _dynoSpeed > units::rpm(kDynoRunStartedRpm) && _throttle < kDynoMinThrottle;
+
+        if (reachedRedline || throttleReleased) {
+            _dynoSweepRequested = NO;
+            dyno.m_enabled = false;
+            _dynoSpeed = 0.0;
+        }
+    } else {
+        dyno.m_enabled = false;
+        dyno.m_hold = false;
+        _dynoSpeed = 0.0;
+    }
+
+    const double minSpeed = _engine->getDynoMinSpeed();
+    const double maxSpeed = _engine->getDynoMaxSpeed();
+    _dynoSpeed = std::fmax(minSpeed, std::fmin(_dynoSpeed, maxSpeed));
+    dyno.m_rotationSpeed = _dynoSpeed;
 }
 
 // --- Getters ---

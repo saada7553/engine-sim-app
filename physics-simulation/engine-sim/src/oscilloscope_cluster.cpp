@@ -25,6 +25,7 @@ OscilloscopeCluster::OscilloscopeCluster() {
 
     m_updatePeriod = 0.25f;
     m_updateTimer = 0.0f;
+    m_dynoWasSweeping = false;
 }
 
 OscilloscopeCluster::~OscilloscopeCluster() {
@@ -53,7 +54,9 @@ void OscilloscopeCluster::initialize() {
     m_torqueScope->m_yMax = 0.0f;
     m_torqueScope->m_lineWidth = 2.0f;
     m_torqueScope->m_drawReverse = false;
-    m_torqueScope->m_dynamicallyResizeX = true;
+    // X max is set explicitly to the last sampled RPM so the curve ends flush
+    // with the right edge instead of leaving the resize headroom as a gap.
+    m_torqueScope->m_dynamicallyResizeX = false;
 
     // Power
     m_powerScope->setBufferSize(100);
@@ -62,7 +65,7 @@ void OscilloscopeCluster::initialize() {
     m_powerScope->m_yMax = 0.0f;
     m_powerScope->m_lineWidth = 2.0f;
     m_powerScope->m_drawReverse = false;
-    m_powerScope->m_dynamicallyResizeX = true;
+    m_powerScope->m_dynamicallyResizeX = false;
 
     // Total exhaust flow
     m_totalExhaustFlowScope->setBufferSize(1024);
@@ -161,6 +164,15 @@ void OscilloscopeCluster::initialize() {
     m_powerUnits = "hp todo fix";
 }
 
+void OscilloscopeCluster::resetDynoScopes() {
+    m_torqueScope->reset();
+    m_powerScope->reset();
+    m_torqueScope->m_xMin = m_torqueScope->m_xMax = 0.0;
+    m_torqueScope->m_yMin = m_torqueScope->m_yMax = 0.0;
+    m_powerScope->m_xMin = m_powerScope->m_xMax = 0.0;
+    m_powerScope->m_yMin = m_powerScope->m_yMax = 0.0;
+}
+
 void OscilloscopeCluster::sample() {
     Engine *engine = m_simulator->getEngine();
     if (engine == nullptr) return;
@@ -202,18 +214,29 @@ void OscilloscopeCluster::sample() {
             std::sqrt(engine->getChamber(0)->m_system.pressure()));
     }
 
+    // Dyno torque & power curve. The scopes are reset when a new sweep starts,
+    // then sampled periodically for the duration of the sweep. Torque and power
+    // keep independent axes, so their bounds are not synced together.
+    const bool sweeping = m_simulator->m_dyno.m_enabled;
+    if (sweeping && !m_dynoWasSweeping) {
+        resetDynoScopes();
+        m_updateTimer = m_updatePeriod;
+    }
+    m_dynoWasSweeping = sweeping;
+
+    m_updateTimer += static_cast<float>(m_simulator->getTimestep());
+    if (sweeping && m_updateTimer >= m_updatePeriod) {
+        m_updateTimer = 0.0f;
+        const double rpm = units::toRpm(engine->getSpeed());
+        m_torqueScope->addDataPoint(rpm, m_simulator->getFilteredDynoTorque());
+        m_powerScope->addDataPoint(rpm, m_simulator->getDynoPower() / 1000.0);
+        m_torqueScope->m_xMax = m_powerScope->m_xMax = rpm;
+    }
+
     m_exhaustFlowScope->m_yMin = m_intakeFlowScope->m_yMin =
         std::fmin(m_intakeFlowScope->m_yMin, m_exhaustFlowScope->m_yMin);
     m_exhaustFlowScope->m_yMax = m_intakeFlowScope->m_yMax =
         std::fmax(m_intakeFlowScope->m_yMax, m_exhaustFlowScope->m_yMax);
-
-    m_torqueScope->m_yMin = m_powerScope->m_yMin =
-        std::fmin(m_torqueScope->m_yMin, m_powerScope->m_yMin);
-    m_torqueScope->m_yMax = m_powerScope->m_yMax =
-        std::fmax(m_torqueScope->m_yMax, m_powerScope->m_yMax);
-
-    m_powerScope->m_xMax = m_torqueScope->m_xMax =
-        std::fmax(m_powerScope->m_xMax, units::toRpm(engine->getSpeed()));
 }
 
 void OscilloscopeCluster::setSimulator(Simulator *simulator) {

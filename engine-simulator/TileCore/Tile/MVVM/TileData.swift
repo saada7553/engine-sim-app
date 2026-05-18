@@ -46,9 +46,7 @@ enum TileType: String, Codable, CaseIterable, Identifiable {
     case cylinderPressureGauge = "Cylinder Pressure"
 
     // Controls
-    case systemControls = "System Controls"
-    case transmissionControls = "Transmission"
-    case throttleControl = "Throttle"
+    case engineControls = "Engine Controls"
 
     // Oscilloscopes
     case torqueOscilloscope = "Torque Scope"

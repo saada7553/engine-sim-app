@@ -14,6 +14,7 @@ class OscilloscopeCluster {
 
         virtual void initialize();
         void sample();
+        void resetDynoScopes();
         void setSimulator(Simulator *simulator);
 
         Oscilloscope *getTotalExhaustFlowOscilloscope() const { return m_totalExhaustFlowScope; }
@@ -48,6 +49,7 @@ class OscilloscopeCluster {
             *m_currentFocusScopes[MaxLayeredScopes];
         float m_updatePeriod;
         float m_updateTimer;
+        bool m_dynoWasSweeping;
 
         double m_torque;
         double m_power;
