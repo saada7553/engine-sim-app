@@ -181,7 +181,7 @@ struct OscilloscopeConfig {
                 xMin: 0, xMax: 4 * .pi,
                 yMin: -10, yMax: 10,  // Thousandths of inch
                 dynamicallyResizeX: false,
-                dynamicallyResizeY: false,
+                dynamicallyResizeY: true,
                 drawReverse: false,
                 color: .orange,
                 lineWidth: 1.0,

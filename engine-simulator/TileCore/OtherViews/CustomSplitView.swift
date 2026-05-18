@@ -8,6 +8,12 @@
 import Foundation
 import SwiftUI
 
+class StyledSplitView: NSSplitView {
+    override var dividerColor: NSColor {
+        return NSColor(white: 0.2, alpha: 1.0)
+    }
+}
+
 struct CustomSplitView: NSViewRepresentable {
     @Binding var direction: SplitDirection?
     @Binding var children: [TileViewModel]?
@@ -18,7 +24,7 @@ struct CustomSplitView: NSViewRepresentable {
     let deleteTile: (TileViewModel) -> Void
     
     func makeNSView(context: Context) -> NSSplitView {
-        let splitView = NSSplitView()
+        let splitView = StyledSplitView()
         splitView.dividerStyle = .thick
         splitView.delegate = context.coordinator
         buildView(splitView)

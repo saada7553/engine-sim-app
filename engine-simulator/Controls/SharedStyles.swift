@@ -42,7 +42,7 @@ struct RetroPanel<Content: View>: View {
             
             // Content
             ZStack {
-                Color.black
+                Color.appBackground
                 content
                     .padding(8)
             }

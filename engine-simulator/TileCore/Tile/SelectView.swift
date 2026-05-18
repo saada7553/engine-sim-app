@@ -59,7 +59,7 @@ struct SelectView: View {
             }
         }
         .listStyle(PlainListStyle())
-        .background(Color.black)
+        .background(Color.appBackground)
     }
 
     private func tileButton(for type: TileType) -> some View {

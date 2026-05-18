@@ -21,7 +21,7 @@ struct ThrottleView: View {
                 
                 ClutchPlateVisualizer(isEngaged: !vm.clutchPressed)
                     .frame(height: 80)
-                    .background(Color.black.opacity(0.3))
+                    .background(Color.appBackground)
                     .cornerRadius(4)
                 
                 ClutchPedal(isPressed: Binding(get: { vm.clutchPressed }, set: { _ in vm.toggleClutch() }))
@@ -40,7 +40,7 @@ struct ThrottleView: View {
                 
                 ThrottleBodyVisualizer(openPercentage: vm.throttlePosition)
                     .frame(height: 80)
-                    .background(Color.black.opacity(0.3))
+                    .background(Color.appBackground)
                     .cornerRadius(4)
                 
                 PrecisionThrottleSlider(value: $vm.throttlePosition)
@@ -107,7 +107,7 @@ struct ClutchPlateVisualizer: View {
                 Path { p in
                     p.addRect(CGRect(x: 0, y: cy - 4, width: cx - 10, height: 8))
                     p.addRect(CGRect(x: cx + 10, y: cy - 4, width: w - (cx + 10), height: 8))
-                }.fill(Color.gray)
+                }.fill(Color.sidebarTextSecondary)
                 
                 RoundedRectangle(cornerRadius: 2)
                     .fill(LinearGradient(colors: [Color(white: 0.4), Color(white: 0.7), Color(white: 0.4)], startPoint: .top, endPoint: .bottom))
@@ -174,7 +174,7 @@ struct PrecisionThrottleSlider: View {
                     Rectangle().fill(Color.white.opacity(0.05))
                     HStack(spacing: 0) {
                         ForEach(0..<11) { i in
-                            Rectangle().fill(Color.gray.opacity(0.3)).frame(width: 1)
+                            Rectangle().fill(Color.sidebarTextSecondary.opacity(0.3)).frame(width: 1)
                             if i != 10 { Spacer() }
                         }
                     }

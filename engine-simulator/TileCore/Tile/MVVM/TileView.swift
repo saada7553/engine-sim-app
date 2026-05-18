@@ -25,7 +25,7 @@ struct TileView: View {
     var body: some View {
         GeometryReader { geometry in
             ZStack {
-                Color.black
+                Color.appBackground
                 getView()
                 if browserMode != .operational {
                     hoverModeView(geometry)

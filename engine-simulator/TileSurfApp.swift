@@ -5,7 +5,6 @@ import WebKit
 struct TileSurfApp: App {
     @StateObject private var rootViewModel: RootViewModel
     @StateObject private var engineViewModel: EngineViewModel
-    @State private var selection: String = "home"
     
     init() {
         let oscilloscopeManager = OscilloscopeManager()
@@ -20,14 +19,25 @@ struct TileSurfApp: App {
         WindowGroup {
             NavigationSplitView {
                 SideBarView(
-                    selection: $selection,
                     rootViewModel: rootViewModel
                 )
+                .navigationSplitViewColumnWidth(ideal: 260)
             } detail: {
                 detailView
             }
-            .background(Color.gray)
+            .background(Color.appBackground)
+            .toolbarBackground(Color.appBackground, for: .windowToolbar)
+            .toolbarColorScheme(.dark, for: .windowToolbar)
             .toolbarRole(.editor)
+            .onAppear {
+                DispatchQueue.main.async {
+                    if let window = NSApplication.shared.windows.first(where: { $0.isKeyWindow }) ?? NSApplication.shared.windows.first {
+                        if let screen = window.screen {
+                            window.setFrame(screen.visibleFrame, display: true)
+                        }
+                    }
+                }
+            }
             .onKeyPress { press in
                 handleKeyPress(press: press)
             }
@@ -39,13 +49,13 @@ struct TileSurfApp: App {
     
     var detailView: some View {
         ZStack {
-            if selection == "history" {
-                
-            } else if selection == "cookies" {
-                
-            } else {
+//            if selection == "history" {
+//                
+//            } else if selection == "cookies" {
+//                
+//            } else {
                 RootView(vm: rootViewModel)
-            }
+//            }
         }
         .navigationTitle("")
     }

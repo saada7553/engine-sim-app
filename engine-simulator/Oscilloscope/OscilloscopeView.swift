@@ -93,7 +93,7 @@ struct OscilloscopeView: View {
             let gridX = calculateGridLines(minVal: bounds.xMin, maxVal: bounds.xMax, size: geometry.size.width)
 
             ZStack(alignment: .topLeading) {
-                Color.black.opacity(0.8) // Background
+                Color.appBackground // Background
 
                 drawGrid(geometry: geometry, bounds: bounds, gridX: gridX, gridY: gridY)
                 

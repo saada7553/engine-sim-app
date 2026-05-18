@@ -20,7 +20,7 @@ struct Engine3DView: NSViewRepresentable {
         scnView.scene = scene
         scnView.allowsCameraControl = true
         scnView.defaultCameraController.interactionMode = .orbitAngleMapping
-        scnView.backgroundColor = NSColor.black
+        scnView.backgroundColor = NSColor(Color.appBackground)
         scnView.antialiasingMode = .multisampling4X
 
         scnView.isPlaying = true

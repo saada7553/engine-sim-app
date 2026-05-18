@@ -103,7 +103,7 @@ enum GaugePresets {
                 maxVelocity: 2.0
             ),
             bands: [],
-            needleColor: .orange,
+            needleColor: orange,
             tickColor: .white
         )
     }

@@ -66,8 +66,8 @@ class OscilloscopeManager: ObservableObject {
         // Convert ScopePoint (Obj-C) to CGPoint
         // data.points is [ScopePoint]
         let points = data.points.compactMap { point -> CGPoint? in
-             guard let p = point as? ScopePoint else { return nil }
-             return CGPoint(x: p.x, y: p.y)
+            let p = point as ScopePoint
+            return CGPoint(x: p.x, y: p.y)
         }
         
         switch type {

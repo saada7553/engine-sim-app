@@ -46,8 +46,8 @@ class EngineViewModel: ObservableObject {
         self.engine = newEngine
         self.redline = newEngine?.getEngineRedline() ?? 6500.0
         
-        // Setup Polling Timer (30 Hz)
-        self.timer = Timer.scheduledTimer(withTimeInterval: 1.0/30.0, repeats: true) { [weak self] _ in
+        // Setup Polling Timer (30 Hz) that runs even during UI interactions
+        let timer = Timer(timeInterval: 1.0/30.0, repeats: true) { [weak self] _ in
             guard let self = self, let engine = self.engine else { return }
             
             if let state = engine.pollState() {
@@ -59,7 +59,7 @@ class EngineViewModel: ObservableObject {
                 self.distanceTravelled = state.distanceTravelled
                 self.fuelConsumed = state.fuelConsumed
 
-                // Gauge data (calculated in C++ with proper engine values)
+                // Gauge data
                 self.manifoldPressure = state.manifoldPressure
                 self.intakeFlowRate = state.intakeFlowRate
                 self.volumetricEfficiency = state.volumetricEfficiency
@@ -71,6 +71,8 @@ class EngineViewModel: ObservableObject {
                 self.oscilloscopeManager.sample(from: engine)
             }
         }
+        RunLoop.main.add(timer, forMode: .common)
+        self.timer = timer
     }
     
     deinit {

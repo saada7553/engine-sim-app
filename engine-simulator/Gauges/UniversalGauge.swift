@@ -118,8 +118,8 @@ struct UniversalGauge: View {
                         // Draw center cap
                         let capSize = max(4.0, size * 0.03)
                         let capRect = CGRect(x: canvasCenter.x - capSize, y: canvasCenter.y - capSize, width: capSize * 2, height: capSize * 2)
-                        context.fill(Circle().path(in: capRect), with: .color(.black))
-                        context.stroke(Circle().path(in: capRect), with: .color(.gray), lineWidth: 1)
+                        context.fill(Circle().path(in: capRect), with: .color(.appBackground))
+                        context.stroke(Circle().path(in: capRect), with: .color(.sidebarTextSecondary), lineWidth: 1)
                     }
 
                     // Value display (using SwiftUI views for text)
@@ -335,5 +335,5 @@ struct UniversalGauge: View {
         )
         .frame(width: 300, height: 300)
     }
-    .background(Color.black)
+    .background(Color.appBackground)
 }

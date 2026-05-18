@@ -120,7 +120,7 @@ struct GaugeConfiguration {
         needleColor: Color = .red,
         tickColor: Color = .white,
         labelColor: Color = .gray,
-        backgroundColor: Color = .black
+        backgroundColor: Color = .appBackground
     ) {
         self.title = title
         self.unit = unit
