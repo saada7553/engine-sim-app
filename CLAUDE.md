@@ -39,4 +39,12 @@ You should also play this noise if you need my permission to do something / are 
 5) Do not redefine exsiting colors, read the color file and you should reuse the existing ones, if you need a new color that does not exist and is radically different from the exisitng ones, then you can add it.
 
 # Current TODOs:
-1) The c++ simulator reads engine information from .mr files. Research these files and determine what types of configuration options they enable for both the engine and transmissions. Create a report detailing what stuff we can allow the user to configure when making a new engine (I want to add a engine build / trans build UI). Do not make up options that are not supported by the current setup.
+1) The very first thing you need to do is request to play the sound notification so I can grant you permission for it.
+2) The c++ simulator reads engine information from .mr files. The docs/mr_config_report.md file outlines the configurations this file allows. 
+    - I want the user to be able to create new engines
+    - When the user clicks the + icon on the engines, a new build ui should pop up instead of the layout
+    - lets just focus on the engine for now. The user should be able to control every single engine related tunable parameter tha the mr file supports
+    - The UI should not be a generic macos UI, it needs to fit in with the theme of the app. Avoid making it look "AI generated" (too many icons / emojis / gradients)
+    - The UI should be inspiring, i.e a cool experience to select the number of pistons, layout, etc
+    - When the user selects all the configurables and presses save, a new entry should populate in the engines section, and the user should be able to select that new entry (it should just auto select by default)
+    - when the user selects that new entry, the simulation should restart witht that new engine. lets just use a standard transmission / vehicle specs that are currently being used, just like a placeholder. note that yohu will have to save the user defined stuff in some new MR file that will be read.

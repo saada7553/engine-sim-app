@@ -55,13 +55,24 @@ class EngineViewModel: ObservableObject {
     
     let oscilloscopeManager: OscilloscopeManager
     private var timer: Timer?
-    
+    private var selectionCancellable: AnyCancellable?
+
     init(oscillioscopeManager: OscilloscopeManager) {
         self.oscilloscopeManager = oscillioscopeManager
-        let newEngine = EngineWrapper()
+        let initialPath = EngineLibrary.shared.selectedEntry?.mrPath
+        let newEngine = initialPath.map { EngineWrapper(mrPath: $0) } ?? EngineWrapper()
         self.engine = newEngine
         self.redline = newEngine?.getEngineRedline() ?? 6500.0
-        
+
+        // Rebuild the EngineWrapper whenever the user picks a different engine.
+        self.selectionCancellable = EngineLibrary.shared.$selectedEngineId
+            .dropFirst()
+            .sink { [weak self] newId in
+                guard let self = self, let id = newId,
+                      let entry = EngineLibrary.shared.entry(for: id) else { return }
+                self.swapEngine(to: entry)
+            }
+
         // Setup Polling Timer (30 Hz) that runs even during UI interactions
         let timer = Timer(timeInterval: 1.0/30.0, repeats: true) { [weak self] _ in
             guard let self = self, let engine = self.engine else { return }
@@ -96,8 +107,34 @@ class EngineViewModel: ObservableObject {
     
     deinit {
         timer?.invalidate()
+        engine?.shutdown()
     }
-    
+
+    /// Tear down the current EngineWrapper and bring up a fresh one bound to
+    /// the selected entry's .mr file. Resets transient UI state so the gauges
+    /// don't carry stale values across the swap.
+    private func swapEngine(to entry: EngineEntry) {
+        engine?.shutdown()
+        engine = nil
+
+        // Reset transient state so old values don't bleed through during the swap.
+        rpm = 0
+        gear = 0
+        isIgnitionOn = false
+        isStarterOn = false
+        vehicleSpeed = 0
+        distanceTravelled = 0
+        fuelConsumed = 0
+        throttlePosition = 0
+        throttleHeld = false
+        revActive = false
+        revTarget = 0
+
+        let newEngine = EngineWrapper(mrPath: entry.mrPath)
+        engine = newEngine
+        redline = newEngine?.getEngineRedline() ?? 6500.0
+    }
+
     func toggleIgnition() { engine?.toggleIgnition() }
     func toggleStarter() { engine?.toggleStarter() }
 

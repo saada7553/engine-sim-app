@@ -10,28 +10,27 @@ import SwiftUI
 
 struct SideBarView: View {
     @ObservedObject private var tileStore: TileStore = .shared
+    @ObservedObject private var engineLibrary: EngineLibrary = .shared
     @ObservedObject var rootViewModel: RootViewModel
-    
+
     @State private var showingSaveLayoutAlert = false
     @State private var newLayoutName = ""
     @State private var activeLayoutId: UUID?
-    
-    // Mock data for engines as shown in concept
-    private let mockEngines = [
-        EngineInfo(name: "Chevy 350 V8", displacement: "5.7L", cylinders: 8, isLoaded: true),
-        EngineInfo(name: "Honda B16A", displacement: "1.6L", cylinders: 4, isLoaded: false),
-        EngineInfo(name: "Inline 4 demo", displacement: "2.0L", cylinders: 4, isLoaded: false)
-    ]
-    
+
     var body: some View {
         VStack(spacing: 0) {
             SidebarHeader()
-            
+
             ScrollView {
                 VStack(spacing: 24) {
-                    SidebarSection(title: "ENGINES", action: {}) {
-                        ForEach(mockEngines) { engine in
-                            EngineRow(engine: engine)
+                    SidebarSection(title: "ENGINES", action: { rootViewModel.startEngineBuild() }) {
+                        ForEach(engineLibrary.entries) { entry in
+                            EngineRow(
+                                entry: entry,
+                                isSelected: engineLibrary.selectedEngineId == entry.id,
+                                onSelect: { engineLibrary.selectedEngineId = entry.id },
+                                onDelete: { engineLibrary.deleteUserEngine(id: entry.id) }
+                            )
                         }
                     }
                     
@@ -134,29 +133,46 @@ struct SidebarSection<Content: View>: View {
 }
 
 struct EngineRow: View {
-    let engine: EngineInfo
-    
+    let entry: EngineEntry
+    let isSelected: Bool
+    let onSelect: () -> Void
+    let onDelete: () -> Void
+
+    @State private var isHovered = false
+
     var body: some View {
         HStack(spacing: 12) {
             Circle()
-                .fill(engine.isLoaded ? Color.sidebarAccent : Color.sidebarTextSecondary.opacity(0.3))
+                .fill(isSelected ? Color.sidebarAccent : Color.sidebarTextSecondary.opacity(0.3))
                 .frame(width: 6, height: 6)
-            
+
             VStack(alignment: .leading, spacing: 2) {
-                Text(engine.name)
+                Text(entry.name)
                     .font(.system(size: 14))
-                    .foregroundColor(engine.isLoaded ? .white : .white.opacity(0.7))
-                Text("\(engine.displacement) · \(engine.cylinders) cyl" + (engine.isLoaded ? " · loaded" : ""))
+                    .foregroundColor(isSelected ? .white : .white.opacity(0.7))
+                Text("\(entry.displacementLabel) · \(entry.cylinderCount) cyl" + (entry.isUserBuilt ? " · custom" : ""))
                     .font(.system(size: 11))
                     .foregroundColor(.sidebarTextSecondary)
             }
             Spacer()
+
+            if isHovered && entry.isUserBuilt {
+                Button(action: onDelete) {
+                    Image(systemName: "trash")
+                        .font(.system(size: 11))
+                        .foregroundColor(.sidebarTextSecondary)
+                }
+                .buttonStyle(.plain)
+            }
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
-        .background(engine.isLoaded ? Color.sidebarHighlight : Color.clear)
+        .contentShape(Rectangle())
+        .background(isSelected ? Color.sidebarHighlight : Color.clear)
         .cornerRadius(6)
         .padding(.horizontal, 8)
+        .onTapGesture(perform: onSelect)
+        .onHover { isHovered = $0 }
     }
 }
 
@@ -252,12 +268,3 @@ struct SidebarFooter: View {
     }
 }
 
-// MARK: - Models
-
-struct EngineInfo: Identifiable {
-    let id = UUID()
-    let name: String
-    let displacement: String
-    let cylinders: Int
-    let isLoaded: Bool
-}

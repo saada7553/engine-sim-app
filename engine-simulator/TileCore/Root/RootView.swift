@@ -10,17 +10,23 @@ import SwiftUI
 
 struct RootView: View {
     @ObservedObject public var vm: RootViewModel
-    
+
     var body: some View {
-        TileContainerView(
-            tile: vm.rootTile,
-            focusedTile: $vm.focusedTile,
-            browserMode: $vm.browserMode,
-            hoveredTile: $vm.hoveredTile,
-            hoverPosition: $vm.hoverPosition
-        ) { tile in
-            vm.deleteTile(tile)
-            vm.browserMode = .operational
+        Group {
+            if vm.isBuildingEngine {
+                EngineBuilderView(onClose: { vm.finishEngineBuild() })
+            } else {
+                TileContainerView(
+                    tile: vm.rootTile,
+                    focusedTile: $vm.focusedTile,
+                    browserMode: $vm.browserMode,
+                    hoveredTile: $vm.hoveredTile,
+                    hoverPosition: $vm.hoverPosition
+                ) { tile in
+                    vm.deleteTile(tile)
+                    vm.browserMode = .operational
+                }
+            }
         }
         .toolbar(removing: .title)
     }

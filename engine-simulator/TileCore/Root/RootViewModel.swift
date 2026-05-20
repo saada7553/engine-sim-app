@@ -17,9 +17,21 @@ class RootViewModel: ObservableObject, Observable {
     @Published var browserMode: BrowserMode = .operational
     @Published var hoveredTile: TileViewModel?
     @Published var hoverPosition: SplitDirection?
-    
+
+    /// While true, the detail area shows the engine builder instead of the tile layout.
+    @Published var isBuildingEngine: Bool = false
+
     /// Used for window management only.
     let id = UUID()
+
+    func startEngineBuild() {
+        browserMode = .operational
+        isBuildingEngine = true
+    }
+
+    func finishEngineBuild() {
+        isBuildingEngine = false
+    }
     
 //    init(engineVm: EngineViewModel) {
 //        let tile = TileViewModel(engineVm: engineVm)

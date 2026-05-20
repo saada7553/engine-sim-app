@@ -69,39 +69,77 @@ static const double kDynoMinThrottle = 0.05;         // throttle threshold that 
 }
 
 - (instancetype)init {
+    return [self initWithMRPath:nil];
+}
+
+- (instancetype)initWithMRPath:(NSString *)mrPath {
     self = [super init];
     if (self) {
         _updateTimer = 0.0;
-        [self setupEngine];
+        _targetGear = -1;
+        _dynoSweepRequested = NO;
+        _dynoRunStarted = NO;
+        _dynoSpeed = 0.0;
+        _throttle = 0.0;
+        _running = false;
+        _simThread = nullptr;
+        [self setupEngineWithMRPath:mrPath];
     }
-    _targetGear = -1;
-    _dynoSweepRequested = NO;
-    _dynoRunStarted = NO;
-    _dynoSpeed = 0.0;
-    _throttle = 0.0;
     return self;
 }
 
-- (void)setupEngine {
-    // 1. Compile Script (Hardcoded path for bundle resource later)
-    // Note: In a real app, you get the path from NSBundle
-    NSString *path = [[NSBundle mainBundle] pathForResource:@"main"
-                                                     ofType:@"mr"
-                                                inDirectory:@"assets"];
-    
+- (NSString *)writeLoaderWrapperFor:(NSString *)engineMRPath {
+    NSFileManager *fm = NSFileManager.defaultManager;
+    NSURL *supportDir = [[fm URLsForDirectory:NSApplicationSupportDirectory
+                                    inDomains:NSUserDomainMask] firstObject];
+    if (supportDir == nil) supportDir = [NSURL fileURLWithPath:NSTemporaryDirectory()];
+
+    NSString *bundleID = NSBundle.mainBundle.bundleIdentifier ?: @"engine-simulator";
+    NSURL *cacheDir = [[supportDir URLByAppendingPathComponent:bundleID isDirectory:YES]
+                                    URLByAppendingPathComponent:@"LoaderCache" isDirectory:YES];
+    [fm createDirectoryAtURL:cacheDir withIntermediateDirectories:YES attributes:nil error:nil];
+
+    NSURL *loaderURL = [cacheDir URLByAppendingPathComponent:@"current_loader.mr"];
+    NSString *contents = [NSString stringWithFormat:@"import \"%@\"\nmain()\n", engineMRPath];
+    NSError *err = nil;
+    BOOL ok = [contents writeToURL:loaderURL atomically:YES encoding:NSUTF8StringEncoding error:&err];
+    if (!ok) {
+        NSLog(@"writeLoaderWrapperFor: failed to write loader (%@)", err);
+        return nil;
+    }
+    return loaderURL.path;
+}
+
+- (void)setupEngineWithMRPath:(NSString *)mrPath {
     NSString *assetsPath =
     [[[NSBundle mainBundle] resourcePath]
         stringByAppendingPathComponent:@"assets"];
-    
+
     int rc = chdir([assetsPath UTF8String]);
     if (rc != 0) {
-        NSLog(assetsPath);
+        NSLog(@"%@", assetsPath);
         perror("chdir failed");
     }
-    
+
+    NSString *targetEngineMR = mrPath;
+    if (targetEngineMR == nil) {
+        // No explicit path: default to the bundle main.mr (which already wires set_engine).
+        NSString *bundleMain = [[NSBundle mainBundle] pathForResource:@"main"
+                                                               ofType:@"mr"
+                                                          inDirectory:@"assets"];
+        if (bundleMain == nil) {
+            NSLog(@"CRITICAL ERROR: 'main.mr' was not found in the App Bundle.");
+            return;
+        }
+        targetEngineMR = bundleMain;
+    }
+
+    // Engine .mr files define a `main` node but don't invoke it at top level —
+    // the bundle's `assets/main.mr` is what does that. Write a tiny loader
+    // wrapper that imports the chosen engine and calls main().
+    NSString *path = [self writeLoaderWrapperFor:targetEngineMR];
     if (path == nil) {
-        NSLog(@"CRITICAL ERROR: 'main.mr' was not found in the App Bundle.");
-        NSLog(@"Fix: Go to Build Phases -> Copy Bundle Resources and add main.mr");
+        NSLog(@"CRITICAL ERROR: failed to write loader wrapper for %@", targetEngineMR);
         return;
     }
         
@@ -408,14 +446,35 @@ static const double kDynoMinThrottle = 0.05;         // throttle threshold that 
 - (double)getTimestep { return 1.0 / _sim->getTimestep(); }
 - (double)getTotalExhaustFlow { return _sim->getTotalExhaustFlow(); }
 
+- (void)shutdown {
+    if (_running) {
+        _running = false;
+        if (_simThread && _simThread->joinable()) _simThread->join();
+        if (_simThread) {
+            delete _simThread;
+            _simThread = nullptr;
+        }
+    }
+
+    if (_audioAdapter) {
+        _audioAdapter->Stop();
+        delete _audioAdapter;
+        _audioAdapter = nullptr;
+    }
+
+    if (_oscilloscopeCluster) {
+        delete _oscilloscopeCluster;
+        _oscilloscopeCluster = nullptr;
+    }
+
+    if (_sim) {
+        _sim->destroy();
+        _sim = nullptr;
+    }
+}
+
 - (void)dealloc {
-    _running = false;
-    if (_simThread->joinable()) _simThread->join();
-    delete _simThread;
-    
-    _audioAdapter->Stop();
-    delete _audioAdapter;
-    _sim->destroy();
+    [self shutdown];
 }
 
 @end

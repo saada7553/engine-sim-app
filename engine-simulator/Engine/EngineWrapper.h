@@ -65,6 +65,15 @@ typedef NS_ENUM(NSInteger, EngineScopeType) {
 // Initializer
 - (instancetype)init;
 
+/// Initialize the simulator with an explicit absolute path to a .mr file.
+/// The C++ compiler still has its search paths anchored at the bundle's
+/// assets directory, so files outside the bundle can `import "engine_sim.mr"`.
+- (instancetype)initWithMRPath:(NSString *)mrPath;
+
+/// Stop the sim thread + audio synchronously so the wrapper can be replaced
+/// without waiting on ARC dealloc.
+- (void)shutdown;
+
 // Polling
 - (EngineState *)pollState;
 
