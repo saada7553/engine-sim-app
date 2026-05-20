@@ -108,10 +108,11 @@ enum ConnectingRodGeometry {
     }
 
     private static func rodMaterial() -> SCNMaterial {
+        // Connecting rod: bright forged steel (lighter than the crank).
         let m = SCNMaterial()
-        m.diffuse.contents = NSColor(calibratedWhite: 0.68, alpha: 1.0)
-        m.metalness.contents = 0.9
-        m.roughness.contents = 0.3
+        m.diffuse.contents = NSColor(calibratedRed: 0.78, green: 0.80, blue: 0.82, alpha: 1.0)
+        m.metalness.contents = 0.92
+        m.roughness.contents = 0.25
         m.lightingModel = .physicallyBased
         return m
     }

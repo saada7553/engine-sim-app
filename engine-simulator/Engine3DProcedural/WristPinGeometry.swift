@@ -28,10 +28,11 @@ enum WristPinGeometry {
     }
 
     private static func pinMaterial() -> SCNMaterial {
+        // Wrist pin: polished hardened steel — darker than rod, very shiny.
         let m = SCNMaterial()
-        m.diffuse.contents = NSColor(calibratedWhite: 0.6, alpha: 1.0)
-        m.metalness.contents = 0.95
-        m.roughness.contents = 0.2
+        m.diffuse.contents = NSColor(calibratedRed: 0.30, green: 0.32, blue: 0.36, alpha: 1.0)
+        m.metalness.contents = 0.98
+        m.roughness.contents = 0.12
         m.lightingModel = .physicallyBased
         return m
     }

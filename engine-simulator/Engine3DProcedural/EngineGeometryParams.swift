@@ -31,17 +31,21 @@ private let crankPinDiameterFactorOfBore: Double = 0.45
 /// Main bearing journal diameter relative to bore.
 private let mainJournalDiameterFactorOfBore: Double = 0.55
 
-/// Counterweight outer radius relative to crank throw (stroke/2).
-private let counterweightRadiusFactorOfThrow: Double = 1.5
+/// Max extent of the crank web/counterweight from the main journal centerline,
+/// expressed as a multiple of crank throw (stroke/2). The web outline (kidney
+/// shape) tip on the counterweight side reaches this distance from the journal.
+private let counterweightReachFactorOfThrow: Double = 1.8
 
-/// Counterweight thickness (along crank axis) relative to throw.
-private let counterweightThicknessFactorOfThrow: Double = 0.55
+/// Counterweight tip radius as a fraction of the total counterweight reach.
+/// Larger value = chunkier tip, narrower neck.
+private let counterweightTipRadiusFactorOfReach: Double = 0.55
 
-/// Crank-web thickness (the flat plate joining adjacent journals).
-private let crankWebThicknessFactorOfThrow: Double = 0.35
+/// Web slab thickness along the crank axis (Y), in bore units.
+private let crankWebPlateThicknessFactorOfBore: Double = 0.10
 
-/// Piston body height as a fraction of bore.
-private let pistonHeightFactorOfBore: Double = 0.75
+/// Pin-side boss radius in the web outline, as a fraction of crank throw.
+/// Ensures the web surrounds the rod pin with visible material.
+private let pinBossRadiusFactorOfThrow: Double = 0.55
 
 /// Connecting-rod big-end thickness (along the crank-pin axis) as a fraction
 /// of bore. This is the rod-bearing width that drives both rod rendering and
@@ -53,21 +57,40 @@ private let crankCaseSidePadding: Double = 0.25   // around counterweight reach
 private let crankCaseBottomPadding: Double = 0.18 // below counterweight reach
 private let crankCaseTopMargin: Double = 0.12     // above counterweight reach
 private let bankSlabHalfWidthFactorOfBore: Double = 0.85 // ± side padding for cylinder
-private let deckClearanceFactorOfBore: Double = 0.10     // block deck above piston-TDC
-private let blockEndsClearanceFactorOfBore: Double = 0.55 // along the crank axis (Y)
-private let counterweightReachFactor: Double = 1.35      // disc offset (0.35) + disc radius (1.0)
+private let pistonValveClearanceFactorOfBore: Double = 0.05 // min gap between piston-TDC and a fully-open valve
+// Each end needs at least bore/2 (piston radius) + margin so end cylinders
+// don't clip. Total per-axis margin = 2 × this × bore.
+private let blockEndsClearanceFactorOfBore: Double = 1.5
 
 // MARK: - Valvetrain proportions
+//
+// Layering from the deck up (in bank-local +Z):
+//   deck top → valve seat (just below deck) → stem extends up → cam base circle
+//   touches the stem top → head top sits above the cam's lobe-peak reach.
+// The valve stem length is the only free parameter; cam Z and head height are
+// derived so the stem top exactly meets the cam base circle and the head
+// comfortably encloses the lobe peak.
 
-private let cylinderHeadHeightFactorOfBore: Double = 0.85   // head extrudes this far above the deck
 private let camShaftRadiusFactorOfBore: Double = 0.07
 private let camLobeThicknessFactorOfBore: Double = 0.18
-private let camLocalZAboveDeckFactor: Double = 0.55         // cam centerline above the deck (× bore)
 private let cylinderHalfPlaceForCamFactor: Double = 0.36    // intake/exhaust cam X-offset (× bore)
 private let valveStemRadiusFactorOfBore: Double = 0.025
 private let valveHeadRadiusFactorOfBore: Double = 0.22
-private let valveStemLengthFactorOfBore: Double = 0.85
+private let valveStemLengthFactorOfBore: Double = 0.50      // visual stem length
+/// Small gap (× bore) between stem top and cam base circle so the relationship
+/// reads clearly. Stem length is shortened by this amount.
+private let stemCamGapFactorOfBore: Double = 0.025
+/// Disc thickness of the valve head (must match ValveGeometry.valveHeadThicknessFactorOfBore).
+let valveHeadThicknessFactorOfBore: Double = 0.04
 private let valveSeatBelowDeckFactor: Double = 0.04         // valve seat sits just below deck
+private let headTopMarginAboveCamFactor: Double = 0.20      // × bore: clearance above cam peak
+
+/// Maximum lift/base ratio for the rendered cam profile. The builder's 2D
+/// preview shows a pronounced lobe by using a constant 50px base + 4px/mm
+/// lift, giving ratios up to ~0.75 even for big lifts. We cap our visual
+/// baseRadius so lift/base never falls below this — the 3D lobe then reads
+/// as a real cam silhouette rather than a near-circle.
+private let camVisualLiftOverBaseTarget: Double = 0.65
 
 private let inchToM: Double = 0.0254
 private let mmToMVal: Double = 0.001  // duplicate alias for clarity in cam fields
@@ -77,7 +100,8 @@ struct CylinderPlacement {
     let bankIndex: Int           // 0 or 1
     let slotIndex: Int           // position along crank axis, 0-indexed
     let firingPosition: Int      // 0-indexed position in the firing-order sequence
-    let yOffset: Double          // meters from engine origin along crank axis
+    let yOffset: Double          // meters from engine origin along crank axis (includes bank-axial offset for V/Flat)
+    let slotCenterY: Double      // crank-throw Y for this cylinder's slot (= yOffset for inline; midpoint of paired banks for V/Flat)
     let bankAngleRad: Double     // signed rotation of this bank's bore axis from vertical
     let phaseOffsetRad: Double   // crank angle (rad) at which this piston reaches TDC, mod 2π
     let camPhaseOffsetRad: Double // cam angle (rad) at this cylinder's TDC compression
@@ -97,11 +121,27 @@ struct EngineGeometryParams {
     let wristPinLength: Double
     let crankPinDiameter: Double
     let mainJournalDiameter: Double
-    let counterweightRadius: Double
-    let counterweightThickness: Double
-    let crankWebThickness: Double
-    let pistonHeight: Double
     let rodBearingWidth: Double      // big-end (and small-end) thickness along pin axis
+
+    // Crank-throw layout
+    /// Half the Y-extent of the rod-bearing region on each throw. Inline engines
+    /// have one rod per throw (rodBearingWidth/2); V/Flat engines stack two rods
+    /// side by side (rodBearingWidth).
+    let rodSpanHalf: Double
+    /// Thickness of each crank-web slab along Y.
+    let crankWebPlateThickness: Double
+    /// Y position of each web's outer face relative to the slot center
+    /// (= rodSpanHalf + crankWebPlateThickness/2). Web nodes sit at slot ± this.
+    let crankWebCenterOffset: Double
+    /// Pin-side boss radius in the web outline.
+    let crankPinBossRadius: Double
+    /// X offset of the counterweight tip center from the main journal (throw-local).
+    let counterweightTipOffset: Double
+    /// Counterweight tip radius in the web outline.
+    let counterweightTipRadius: Double
+    /// Max extent of any crank-web feature from the main journal centerline.
+    /// Used for crankcase sizing so the counterweight reach never clips the case.
+    let counterweightReach: Double
 
     // Block envelope (axis-aligned bounding box in the assembly's local frame
     // BEFORE the world rotation that puts bore-axis world-up). These are
@@ -125,6 +165,10 @@ struct EngineGeometryParams {
     let bankSlabHalfWidth: Double    // X in bank-local frame
     let bankSlabBottomZ: Double      // Z in bank-local (= crankCaseTopZ for inline)
     let bankSlabTopZ: Double         // Z in bank-local (piston deck + clearance)
+    /// Length of a single bank's slab along Y. Equals the per-bank cylinder
+    /// span plus end clearance; shorter than `blockLength` on V/Flat engines
+    /// because each bank's bores cover only its own (shifted) slots.
+    let bankSlabLength: Double
 
     // Cylinder head (one per bank). Sits directly above the bank slab.
     let headHeight: Double           // Z extent above bankSlabTopZ
@@ -152,6 +196,10 @@ struct EngineGeometryParams {
     // Layout cache (for downstream consumers)
     let bankCount: Int
     let bankHalfAngleRad: Double
+    /// Axial (Y) offset applied per bank so paired V/Flat rods sit side-by-side
+    /// on a shared crank throw. Bank 0 shifts by -bankAxialShift, bank 1 by
+    /// +bankAxialShift. Zero for inline engines.
+    let bankAxialShift: Double
 
     // Per-cylinder placement (one entry per cylinder, indexed by cylinderNumber-1)
     let cylinders: [CylinderPlacement]
@@ -169,11 +217,27 @@ struct EngineGeometryParams {
         self.wristPinLength = bore * wristPinLengthFactorOfBore
         self.crankPinDiameter = bore * crankPinDiameterFactorOfBore
         self.mainJournalDiameter = bore * mainJournalDiameterFactorOfBore
-        self.counterweightRadius = crankThrow * counterweightRadiusFactorOfThrow
-        self.counterweightThickness = crankThrow * counterweightThicknessFactorOfThrow
-        self.crankWebThickness = crankThrow * crankWebThicknessFactorOfThrow
-        self.pistonHeight = bore * pistonHeightFactorOfBore
         self.rodBearingWidth = bore * rodBearingWidthFactorOfBore
+
+        // Throw layout: V/Flat engines stack two rod bearings on a single crank
+        // pin (offset cylinders, shared throw); inline engines have one per throw.
+        let bankCount = spec.layout.bankCount
+        let rodSpanHalfVal = (bankCount == 2) ? (bore * rodBearingWidthFactorOfBore)
+                                              : (bore * rodBearingWidthFactorOfBore / 2.0)
+        let webPlateThick = bore * crankWebPlateThicknessFactorOfBore
+        self.rodSpanHalf = rodSpanHalfVal
+        self.crankWebPlateThickness = webPlateThick
+        self.crankWebCenterOffset = rodSpanHalfVal + webPlateThick / 2.0
+
+        let cwReach = crankThrow * counterweightReachFactorOfThrow
+        let cwTipR = cwReach * counterweightTipRadiusFactorOfReach
+        self.counterweightReach = cwReach
+        self.counterweightTipRadius = cwTipR
+        self.counterweightTipOffset = cwReach - cwTipR
+        // Pin boss radius: enclose the crank pin with visible material, with a
+        // floor tied to crank throw so it scales reasonably with engine size.
+        self.crankPinBossRadius = max(self.crankPinDiameter / 2.0 + bore * 0.04,
+                                      crankThrow * pinBossRadiusFactorOfThrow)
 
         let layout = spec.layout
         self.bankCount = layout.bankCount
@@ -199,8 +263,10 @@ struct EngineGeometryParams {
         // For V/flat engines, offset bank 1 forward along the crank axis by one
         // rod-bearing width so the paired rods sit side-by-side on a shared crank
         // throw instead of intersecting. Bank 0 shifts backward by the same amount,
-        // keeping the engine centered.
+        // keeping the engine centered. The block slab and cylinder head follow the
+        // bank's shift downstream, so cylinder bores stay over their pistons.
         let bankAxialShift: Double = (layout.bankCount == 2) ? (bore * rodBearingWidthFactorOfBore / 2.0) : 0.0
+        self.bankAxialShift = bankAxialShift
 
         for cylNumber in 1...layout.cylinderCount {
             let position = firingPositionByCylinder[cylNumber] ?? (cylNumber - 1)
@@ -222,12 +288,14 @@ struct EngineGeometryParams {
             let bankSign: Double = (bankIndex == 0) ? 1.0 : -1.0
             let bankAxialOffset: Double = (bankIndex == 0) ? -bankAxialShift : +bankAxialShift
 
+            let slotCenter = firstSlotY + Double(slotIndex) * cylinderPitch
             placements.append(CylinderPlacement(
                 cylinderNumber: cylNumber,
                 bankIndex: bankIndex,
                 slotIndex: slotIndex,
                 firingPosition: position,
-                yOffset: firstSlotY + Double(slotIndex) * cylinderPitch + bankAxialOffset,
+                yOffset: slotCenter + bankAxialOffset,
+                slotCenterY: slotCenter,
                 bankAngleRad: bankSign * halfAngle,
                 phaseOffsetRad: phaseRad,
                 camPhaseOffsetRad: camPhaseRad
@@ -237,13 +305,20 @@ struct EngineGeometryParams {
         self.cylinders = placements
 
         // ----- Cylinder head + valvetrain proportions -----
-        self.headHeight = bore * cylinderHeadHeightFactorOfBore
-        self.headHalfWidth = bore * 1.05   // wider than the bank slab so cams fit inside
-        // headBottomZ/headTopZ are filled after we know bankSlabTopZ below
+        // Head dimensions in X are independent of cam Z; the height is derived
+        // below once the cam Z is known so the head always encloses the cam.
+        self.headHalfWidth = bore * 1.05
 
         self.camShaftRadius = bore * camShaftRadiusFactorOfBore
-        self.camBaseRadius = spec.camBaseRadiusIn * inchToM
-        self.camMaxLift = spec.camLiftMm * mmToMVal
+        let maxLift = spec.camLiftMm * mmToMVal
+        // Visual base radius: cap so lift/base stays at least camVisualLiftOverBaseTarget.
+        // The real cam base from EngineSpec is used as an upper bound; we never
+        // INFLATE it, only shrink when the lobe would otherwise look like a circle.
+        let realBaseR = spec.camBaseRadiusIn * inchToM
+        let cappedBaseR = maxLift / camVisualLiftOverBaseTarget
+        let camBaseR = min(realBaseR, cappedBaseR)
+        self.camBaseRadius = camBaseR
+        self.camMaxLift = maxLift
         self.camLobeThickness = bore * camLobeThicknessFactorOfBore
         self.intakeCamLocalX = bore * cylinderHalfPlaceForCamFactor
         self.exhaustCamLocalX = -bore * cylinderHalfPlaceForCamFactor
@@ -253,19 +328,27 @@ struct EngineGeometryParams {
 
         self.valveStemRadius = bore * valveStemRadiusFactorOfBore
         self.valveHeadRadius = bore * valveHeadRadiusFactorOfBore
-        self.valveStemLength = bore * valveStemLengthFactorOfBore
+        // Shorten the stem by stemCamGap so a tiny visible gap appears between
+        // the stem top and the cam base circle.
+        self.valveStemLength = bore * (valveStemLengthFactorOfBore - stemCamGapFactorOfBore)
 
         // ----- Block envelope (crankcase + per-bank slabs) -----
-        let counterweightReach = counterweightRadius * counterweightReachFactor
-        let ccBottom = -counterweightReach - bore * crankCaseBottomPadding
-        let ccTop = counterweightReach + bore * crankCaseTopMargin
+        let ccBottom = -self.counterweightReach - bore * crankCaseBottomPadding
+        let ccTop = self.counterweightReach + bore * crankCaseTopMargin
 
         // Crankcase X-extent must clear the counterweight swing in every direction.
-        let ccHalfWidth = counterweightReach + bore * crankCaseSidePadding
+        let ccHalfWidth = self.counterweightReach + bore * crankCaseSidePadding
 
-        // Bank slab: starts at the crankcase top, runs along the bank-local +Z to
-        // a point slightly above piston-TDC. Width is just enough to cover the bore.
-        let deckTop = deckHeight + bore * deckClearanceFactorOfBore
+        // Bank slab top (= block deck) must clear a fully-open valve by at
+        // least pistonValveClearance above piston-TDC. The valve head sits a
+        // tiny bit below the deck (valveSeatBelowDeckFactor × bore), and at
+        // max lift dips down by camMaxLift, so:
+        //   valveAtMaxLift = deckTop - valveSeatBelowDeck - camMaxLift
+        // We require valveAtMaxLift ≥ deckHeight + pistonValveClearance, giving
+        //   deckTop ≥ deckHeight + pistonValveClearance + valveSeatBelowDeck + camMaxLift.
+        let pistonValveClearance = bore * pistonValveClearanceFactorOfBore
+        let valveSeatBelowDeck = bore * valveSeatBelowDeckFactor
+        let deckTop = deckHeight + pistonValveClearance + valveSeatBelowDeck + maxLift
         let bankSlabHalfW = bore * bankSlabHalfWidthFactorOfBore
 
         self.crankCaseHalfWidth = ccHalfWidth
@@ -275,11 +358,27 @@ struct EngineGeometryParams {
         self.bankSlabBottomZ = ccTop
         self.bankSlabTopZ = deckTop
 
-        // Fill head + cam Z positions now that bankSlabTopZ is known.
+        // Each bank's slab spans only its own cylinders. Inline matches the
+        // crankcase length; V/Flat is shorter (just the bank's cylinder span).
+        let perBankSlotSpan = Double(usedSlotCount - 1) * cylinderPitch
+        self.bankSlabLength = perBankSlotSpan + bore * blockEndsClearanceFactorOfBore
+
+        // Derive cam Z and head height from the valve geometry so the stem top
+        // clears the cam base circle by `stemCamGap`. The valve node origin
+        // sits at the seat Z; inside it, the head disc occupies the first
+        // valveHeadThickness of +Z, and the stem extends above the head for
+        // `valveStemLength`. Cam base bottom = stemTop + stemCamGap.
+        let seatZ = deckTop - valveSeatBelowDeck
+        let valveHeadThickness = bore * valveHeadThicknessFactorOfBore
+        let stemTopZ = seatZ + valveHeadThickness + self.valveStemLength
+        let camZ = stemTopZ + bore * stemCamGapFactorOfBore + camBaseR
+        let headTop = camZ + camBaseR + maxLift + bore * headTopMarginAboveCamFactor
+
         self.headBottomZ = deckTop
-        self.headTopZ = deckTop + bore * cylinderHeadHeightFactorOfBore
-        self.camLocalZ = deckTop + bore * camLocalZAboveDeckFactor
-        self.valveSeatZ = deckTop - bore * valveSeatBelowDeckFactor
+        self.headTopZ = headTop
+        self.headHeight = headTop - deckTop
+        self.camLocalZ = camZ
+        self.valveSeatZ = seatZ
 
         // Overall AABB envelope (used only for camera framing).
         let firstY = placements.map(\.yOffset).min() ?? 0
@@ -288,14 +387,13 @@ struct EngineGeometryParams {
 
         // Compute max world-X extent after each bank's rotation around Y. The
         // head sits above the bank slab, so the highest point per bank is the
-        // outer-top corner of the head: (±headHalfWidth, ?, headTop) rotated.
-        let headTop = self.headTopZ
-        let bankCornerX = sin(halfAngle) * headTop + cos(halfAngle) * headHalfWidth
+        // outer-top corner of the head: (±headHalfWidth, ?, headTopZ) rotated.
+        let bankCornerX = sin(halfAngle) * self.headTopZ + cos(halfAngle) * headHalfWidth
         let envHalfWidth = max(ccHalfWidth, bankCornerX)
         self.blockWidth = envHalfWidth * 2.0
 
         // Z envelope spans the crankcase bottom to the head's highest reach.
-        let bankCornerZ = cos(halfAngle) * headTop + sin(halfAngle) * headHalfWidth
+        let bankCornerZ = cos(halfAngle) * self.headTopZ + sin(halfAngle) * headHalfWidth
         let envTopZ = max(ccTop, bankCornerZ)
         self.blockHeight = envTopZ - ccBottom
         self.blockCenterZ = (envTopZ + ccBottom) / 2.0
@@ -303,27 +401,42 @@ struct EngineGeometryParams {
 }
 
 // MARK: - Cam timing helpers
+//
+// All cam angles live in the SCNNode Y-rotation convention used to drive both
+// the crankshaft and the camshaft (eulerAngles.y, positive = CW viewed from
+// +Y). In that convention a feature initially at +X rotates by α ends up
+// pointing at direction (cos α, −sin α), so its "rotation angle" is α and the
+// follower (sitting at −Z below the cam) corresponds to α = +π/2.
+//
+// Derivation of intake/exhaust peaks for a cylinder at firing position p:
+//   compression TDC of cyl p happens at cam angle camPhaseOffset (= p·2π/N).
+//   Overlap TDC is one crank revolution later → cam = camPhaseOffset + π.
+//   Intake centerline (cam) = overlap + LSA/2 − advance.
+//   Exhaust centerline (cam) = overlap − LSA/2 − advance.
+//   The lobe is built with its peak at +X. Rotating the cam by `cam` puts
+//   the (already-pre-rotated by peakAngleRad) peak at rotation angle
+//   peakAngleRad + cam. Setting that to π/2 at the relevant centerline gives:
+//     intake : peakAngleRad = −π/2 − camPhaseOffset − LSA/2 + advance
+//     exhaust: peakAngleRad = −π/2 − camPhaseOffset + LSA/2 + advance
 
-/// Lobe peak angle (in cam-local radians) for a cylinder's intake cam lobe.
-/// Built so that when the cam has rotated to the intake centerline, the lobe
-/// peak ends up at the follower direction (-π/2 in the cam's X-Z plane).
+/// Lobe peak angle for a cylinder's intake cam lobe (SCN rotation convention).
 func intakeLobePeak(for placement: CylinderPlacement, params p: EngineGeometryParams) -> Double {
-    return -(3.0 * .pi / 2.0) - placement.camPhaseOffsetRad - (p.camLobeSeparationRadCam / 2.0) + p.camAdvanceRadCam
+    return -.pi / 2.0 - placement.camPhaseOffsetRad - (p.camLobeSeparationRadCam / 2.0) + p.camAdvanceRadCam
 }
 
-/// Lobe peak angle (in cam-local radians) for a cylinder's exhaust cam lobe.
+/// Lobe peak angle for a cylinder's exhaust cam lobe (SCN rotation convention).
 func exhaustLobePeak(for placement: CylinderPlacement, params p: EngineGeometryParams) -> Double {
-    return -(3.0 * .pi / 2.0) - placement.camPhaseOffsetRad + (p.camLobeSeparationRadCam / 2.0) + p.camAdvanceRadCam
+    return -.pi / 2.0 - placement.camPhaseOffsetRad + (p.camLobeSeparationRadCam / 2.0) + p.camAdvanceRadCam
 }
 
-/// Cam lift at the follower direction (-π/2 in the cam's X-Z plane) given the
-/// lobe's design peak angle and the current cam rotation. Lift is 0 outside the
-/// lobe duration and follows a smooth cos² ramp inside it.
+/// Cam lift at the follower (rotation angle +π/2) given the lobe's design peak
+/// angle and the current cam rotation. Lift is 0 outside the lobe duration and
+/// follows a smooth cos² ramp inside it.
 func camLift(lobePeakAngleRad: Double,
              camRotationRad: Double,
              durationRadCam: Double,
              maxLift: Double) -> Double {
-    let followerAngle: Double = -.pi / 2.0
+    let followerAngle: Double = .pi / 2.0
     let lobeWorldAngle = lobePeakAngleRad + camRotationRad
     let raw = followerAngle - lobeWorldAngle
     let wrapped = atan2(sin(raw), cos(raw))  // in [-π, π]

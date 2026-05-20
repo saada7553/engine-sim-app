@@ -10,20 +10,26 @@
 import SceneKit
 import AppKit
 
-private let valveHeadThicknessFactorOfBore: Double = 0.04
 private let valveSegments: Int = 18
 
+enum ValveKind {
+    case intake
+    case exhaust
+}
+
 enum ValveGeometry {
-    static func makeNode(params p: EngineGeometryParams) -> SCNNode {
+    static func makeNode(params p: EngineGeometryParams, kind: ValveKind) -> SCNNode {
         let node = SCNNode()
-        node.name = "valve"
+        node.name = "valve_\(kind == .intake ? "intake" : "exhaust")"
+
+        let material = valveMaterial(for: kind)
 
         // Head disc (axis = Z so rotate cylinder's Y axis → Z).
         let headThickness = p.bore * valveHeadThicknessFactorOfBore
         let head = SCNCylinder(radius: CGFloat(p.valveHeadRadius),
                                height: CGFloat(headThickness))
         head.radialSegmentCount = valveSegments
-        head.firstMaterial = valveMaterial()
+        head.firstMaterial = material
         let headNode = SCNNode(geometry: head)
         headNode.eulerAngles.x = .pi / 2
         headNode.position.z = CGFloat(headThickness / 2.0)
@@ -33,7 +39,7 @@ enum ValveGeometry {
         let stem = SCNCylinder(radius: CGFloat(p.valveStemRadius),
                                height: CGFloat(p.valveStemLength))
         stem.radialSegmentCount = 12
-        stem.firstMaterial = valveMaterial()
+        stem.firstMaterial = material
         let stemNode = SCNNode(geometry: stem)
         stemNode.eulerAngles.x = .pi / 2
         stemNode.position.z = CGFloat(headThickness + p.valveStemLength / 2.0)
@@ -42,11 +48,20 @@ enum ValveGeometry {
         return node
     }
 
-    private static func valveMaterial() -> SCNMaterial {
+    private static func valveMaterial(for kind: ValveKind) -> SCNMaterial {
         let m = SCNMaterial()
-        m.diffuse.contents = NSColor(calibratedWhite: 0.5, alpha: 1.0)
-        m.metalness.contents = 0.95
-        m.roughness.contents = 0.25
+        switch kind {
+        case .intake:
+            // Intake: bright polished stainless.
+            m.diffuse.contents = NSColor(calibratedRed: 0.82, green: 0.84, blue: 0.86, alpha: 1.0)
+            m.metalness.contents = 0.95
+            m.roughness.contents = 0.20
+        case .exhaust:
+            // Exhaust: heat-tinted (orange/bronze) from cycling at high temperature.
+            m.diffuse.contents = NSColor(calibratedRed: 0.62, green: 0.36, blue: 0.20, alpha: 1.0)
+            m.metalness.contents = 0.88
+            m.roughness.contents = 0.40
+        }
         m.lightingModel = .physicallyBased
         return m
     }

@@ -15,8 +15,8 @@ private let crownThicknessFactorOfBore: Double = 0.12
 private let ringLandHeightFactor: Double = 0.06
 private let ringCount: Int = 3
 private let ringSpacingFactor: Double = 0.08
-private let skirtThicknessFactor: Double = 0.04
 private let pinBossWidthFactor: Double = 0.25
+private let skirtBelowPinFactorOfBore: Double = 0.40
 private let pistonSegmentCount: Int = 48
 
 enum PistonGeometry {
@@ -25,37 +25,44 @@ enum PistonGeometry {
         node.name = "piston"
 
         let radius = CGFloat(p.bore / 2.0)
-        let height = CGFloat(p.pistonHeight)
         let crownThickness = CGFloat(p.bore * crownThicknessFactorOfBore)
         let ringLandHeight = CGFloat(p.bore * ringLandHeightFactor)
         let ringSpacing = CGFloat(p.bore * ringSpacingFactor)
 
-        // Wrist-pin sits at local origin; crown is above (+Z), skirt below.
-        // Body: main cylinder running along Z.
-        let bodyCyl = SCNCylinder(radius: radius * 0.99, height: height)
+        // Wrist-pin sits at local origin. The piston crown must land exactly at
+        // z = compressionHeight above the wrist pin so that at TDC the crown is
+        // flush with the deck (= crankThrow + rodLength + compressionHeight).
+        // Skirt drops below the wrist pin by a fixed fraction of bore.
+        let crownTopZ = CGFloat(p.compressionHeight)
+        let skirtBottomZ = CGFloat(-p.bore * skirtBelowPinFactorOfBore)
+        let bodyHeight = crownTopZ - crownThickness - skirtBottomZ
+        let bodyCenterZ = skirtBottomZ + bodyHeight / 2.0
+
+        // Body: main cylinder running along Z, from skirt to bottom of crown.
+        let bodyCyl = SCNCylinder(radius: radius * 0.99, height: bodyHeight)
         bodyCyl.radialSegmentCount = pistonSegmentCount
         bodyCyl.firstMaterial = pistonMaterial()
         let body = SCNNode(geometry: bodyCyl)
-        // SCNCylinder is axis-aligned to Y; rotate so its axis lies along Z.
         body.eulerAngles.x = .pi / 2
-        // Center of body sits a bit above wrist-pin (more crown than skirt).
-        body.position.z = CGFloat(p.pistonHeight) * 0.15
+        body.position.z = bodyCenterZ
         node.addChildNode(body)
 
-        // Crown disc (slightly inset top).
+        // Crown disc sits atop the body, top face at compressionHeight.
         let crown = SCNCylinder(radius: radius, height: crownThickness)
         crown.radialSegmentCount = pistonSegmentCount
         crown.firstMaterial = pistonMaterial()
         let crownNode = SCNNode(geometry: crown)
         crownNode.eulerAngles.x = .pi / 2
-        crownNode.position.z = body.position.z + height / 2 + crownThickness / 2
+        crownNode.position.z = crownTopZ - crownThickness / 2
         node.addChildNode(crownNode)
 
-        // Compression / oil ring grooves rendered as thin dark tori around the body.
+        // Ring grooves descend from just below the crown.
         let firstRingZ: CGFloat = crownNode.position.z - crownThickness / 2 - ringSpacing
         let ringStride: CGFloat = ringSpacing + ringLandHeight
         for i in 0..<ringCount {
             let zPos: CGFloat = firstRingZ - CGFloat(i) * ringStride
+            // Don't draw rings that would land below the body envelope.
+            if zPos < skirtBottomZ + ringLandHeight { break }
             let ring = SCNTorus(ringRadius: radius * 0.97, pipeRadius: ringLandHeight / 2)
             ring.ringSegmentCount = pistonSegmentCount
             ring.pipeSegmentCount = 12
@@ -75,38 +82,39 @@ enum PistonGeometry {
         boss.firstMaterial = pistonInternalMaterial()
         for side in [-1.0, 1.0] {
             let bossNode = SCNNode(geometry: boss)
-            // Default cylinder axis = Y, which is already the pin direction.
             bossNode.position.y = CGFloat(side) * (radius * 0.65)
             node.addChildNode(bossNode)
         }
 
-        _ = skirtThicknessFactor  // reserved for future skirt detail; kept for documentation
         return node
     }
 
     private static func pistonMaterial() -> SCNMaterial {
+        // Piston: light cast aluminum, slightly warm.
         let m = SCNMaterial()
-        m.diffuse.contents = NSColor(calibratedWhite: 0.78, alpha: 1.0)
-        m.metalness.contents = 0.85
-        m.roughness.contents = 0.35
+        m.diffuse.contents = NSColor(calibratedRed: 0.88, green: 0.86, blue: 0.82, alpha: 1.0)
+        m.metalness.contents = 0.78
+        m.roughness.contents = 0.40
         m.lightingModel = .physicallyBased
         return m
     }
 
     private static func ringGrooveMaterial() -> SCNMaterial {
+        // Ring grooves: dark, almost black (carbon-coated cast iron rings).
         let m = SCNMaterial()
-        m.diffuse.contents = NSColor(calibratedWhite: 0.2, alpha: 1.0)
-        m.metalness.contents = 0.6
-        m.roughness.contents = 0.6
+        m.diffuse.contents = NSColor(calibratedRed: 0.14, green: 0.13, blue: 0.13, alpha: 1.0)
+        m.metalness.contents = 0.55
+        m.roughness.contents = 0.62
         m.lightingModel = .physicallyBased
         return m
     }
 
     private static func pistonInternalMaterial() -> SCNMaterial {
+        // Boss material: darker aluminum cast.
         let m = SCNMaterial()
-        m.diffuse.contents = NSColor(calibratedWhite: 0.55, alpha: 1.0)
-        m.metalness.contents = 0.7
-        m.roughness.contents = 0.5
+        m.diffuse.contents = NSColor(calibratedRed: 0.60, green: 0.58, blue: 0.55, alpha: 1.0)
+        m.metalness.contents = 0.70
+        m.roughness.contents = 0.50
         m.lightingModel = .physicallyBased
         return m
     }

@@ -10,7 +10,7 @@
 import SceneKit
 import AppKit
 
-private let headAlpha: CGFloat = 0.18
+private let headAlpha: CGFloat = 0.04
 private let chamferFactorOfBore: Double = 0.06
 
 enum CylinderHeadGeometry {
@@ -19,7 +19,7 @@ enum CylinderHeadGeometry {
         node.name = "cylinderHead"
 
         let box = SCNBox(width: CGFloat(p.headHalfWidth * 2.0),
-                         height: CGFloat(p.blockLength),
+                         height: CGFloat(p.bankSlabLength),
                          length: CGFloat(p.headHeight),
                          chamferRadius: CGFloat(p.bore * chamferFactorOfBore))
         box.firstMaterial = headMaterial()
@@ -32,12 +32,13 @@ enum CylinderHeadGeometry {
     }
 
     private static func headMaterial() -> SCNMaterial {
+        // Head: lighter aluminum cast (vs. iron block), still translucent.
         let m = SCNMaterial()
-        m.diffuse.contents = NSColor(calibratedWhite: 0.6, alpha: headAlpha)
+        m.diffuse.contents = NSColor(calibratedRed: 0.72, green: 0.70, blue: 0.66, alpha: headAlpha)
         m.transparency = headAlpha
         m.isDoubleSided = true
-        m.metalness.contents = 0.15
-        m.roughness.contents = 0.7
+        m.metalness.contents = 0.18
+        m.roughness.contents = 0.70
         m.lightingModel = .physicallyBased
         m.blendMode = .alpha
         m.writesToDepthBuffer = false

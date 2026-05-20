@@ -97,8 +97,11 @@ enum ProceduralEngineAssembly {
             assembly.addChildNode(pivot)
 
             // Block slab is added separately in the engine block; head goes here
-            // so it inherits the bank rotation.
+            // so it inherits the bank rotation. Shifted along Y so the head bores
+            // sit directly over this bank's pistons (no shift for inline).
             let head = CylinderHeadGeometry.makeNode(params: params)
+            let bankSign: Float = (bankIndex == 0) ? -1.0 : 1.0
+            head.position.y = CGFloat(bankSign * Float(params.bankAxialShift))
             pivot.addChildNode(head)
 
             // Per-cylinder pistons / rods / wristpins / valves.
@@ -114,6 +117,11 @@ enum ProceduralEngineAssembly {
         // ----- Block (crankcase + bank slabs are inside the block node) -----
         let block = EngineBlockGeometry.makeNode(params: params, layout: spec.layout)
         assembly.addChildNode(block)
+
+        // Place every moving part at its crank-angle-zero position so the very
+        // first rendered frame is already valid (rather than snapping to the
+        // correct pose only once the engine starts cranking).
+        animate(parts: parts, crankAngle: 0)
 
         return parts
     }
@@ -146,7 +154,7 @@ enum ProceduralEngineAssembly {
         // either side of the cylinder center.
         let valveYHalf = params.bore * valveYHalfPitchFactorOfBore
         let intakeValves: [SCNNode] = [-1.0, 1.0].map { ySign in
-            let v = ValveGeometry.makeNode(params: params)
+            let v = ValveGeometry.makeNode(params: params, kind: .intake)
             v.position = SCNVector3(Float(params.intakeCamLocalX),
                                     Float(placement.yOffset + ySign * valveYHalf),
                                     Float(params.valveSeatZ))
@@ -154,7 +162,7 @@ enum ProceduralEngineAssembly {
             return v
         }
         let exhaustValves: [SCNNode] = [-1.0, 1.0].map { ySign in
-            let v = ValveGeometry.makeNode(params: params)
+            let v = ValveGeometry.makeNode(params: params, kind: .exhaust)
             v.position = SCNVector3(Float(params.exhaustCamLocalX),
                                     Float(placement.yOffset + ySign * valveYHalf),
                                     Float(params.valveSeatZ))
@@ -178,13 +186,22 @@ enum ProceduralEngineAssembly {
                                 cylinders: [CylinderPlacement],
                                 params: EngineGeometryParams,
                                 parts: ProceduralEngineParts) {
-        let intakeLobes = cylinders.map {
-            CamLobeSpec(yOffset: $0.yOffset,
-                        peakAngleRad: intakeLobePeak(for: $0, params: params))
+        // Two lobes per cylinder per cam — one directly above each of the two
+        // valves it actuates. Both lobes share the same peak angle.
+        let valveYHalf = params.bore * valveYHalfPitchFactorOfBore
+        let intakeLobes = cylinders.flatMap { cyl -> [CamLobeSpec] in
+            let peak = intakeLobePeak(for: cyl, params: params)
+            return [
+                CamLobeSpec(yOffset: cyl.yOffset - valveYHalf, peakAngleRad: peak),
+                CamLobeSpec(yOffset: cyl.yOffset + valveYHalf, peakAngleRad: peak),
+            ]
         }
-        let exhaustLobes = cylinders.map {
-            CamLobeSpec(yOffset: $0.yOffset,
-                        peakAngleRad: exhaustLobePeak(for: $0, params: params))
+        let exhaustLobes = cylinders.flatMap { cyl -> [CamLobeSpec] in
+            let peak = exhaustLobePeak(for: cyl, params: params)
+            return [
+                CamLobeSpec(yOffset: cyl.yOffset - valveYHalf, peakAngleRad: peak),
+                CamLobeSpec(yOffset: cyl.yOffset + valveYHalf, peakAngleRad: peak),
+            ]
         }
 
         let firstY = cylinders.map(\.yOffset).min() ?? 0
@@ -228,7 +245,12 @@ enum ProceduralEngineAssembly {
         let maxLift = parts.params.camMaxLift
 
         for placement in parts.placements {
-            let theta = crankAngle - placement.phaseOffsetRad
+            // The crank pin's assembly-frame angle is (phaseOffset + crankAngle),
+            // measured from +X around Y. In the bank's local frame (rotated by
+            // bankAngleRad from assembly), the pin's effective angle becomes
+            // (phaseOffset + crankAngle - bankAngleRad). The slider-crank
+            // equations below take that as their crank-angle argument.
+            let theta = crankAngle + placement.phaseOffsetRad - placement.bankAngleRad
             let pistonZ = sliderCrankWristPinHeight(crankAngle: theta, throw: r, rodLength: L)
             let rodAngle = -rodInclination(crankAngle: theta, throw: r, rodLength: L)
 

@@ -2,203 +2,341 @@
 //  CrankshaftGeometry.swift
 //  engine-simulator
 //
-//  Procedural crankshaft built from the per-cylinder placement data in
-//  EngineGeometryParams. One throw per cylinder, journal angle taken from
-//  CylinderPlacement.phaseOffsetRad so the shape responds to firing-order
-//  changes. Main journals run along the crank axis (Y); rod pins sit at a
-//  radius equal to the crank throw, with paired counterweights opposite.
+//  Procedural crankshaft. Each cylinder slot produces one crank throw made of:
+//    • a rod pin (cylinder along Y, offset from main-journal axis by crankThrow,
+//      angled by the slot's phaseOffset)
+//    • two fan / kidney-shaped webs (one per side of the rod-bearing region),
+//      built as extruded SCNGeometry — same construction style as the cam lobe.
 //
-//  Returned node is in the engine's coordinate frame (Y = crank axis); the
-//  whole node rotates around Y to drive the animation.
+//  Each web's outline is the convex hull of two circles in the X-Z plane:
+//    • a pin-side boss around the rod pin (small circle)
+//    • a counterweight tip opposite the pin (large circle)
+//  joined by external common tangents. The result reads as a real forged crank
+//  cheek with integrated counterweight.
+//
+//  Web layout along the crank axis follows the rod-bearing span:
+//    inline → one rod per throw → rodSpanHalf = rodBearingWidth / 2
+//    V/Flat → two rods stacked → rodSpanHalf = rodBearingWidth
+//  Webs sit at slotCenter ± (rodSpanHalf + webPlateThickness/2), so their inner
+//  faces just clear the rod bearings.
 //
 
 import SceneKit
 import AppKit
+import simd
 
 private let mainJournalSegmentCount: Int = 24
 private let rodPinSegmentCount: Int = 20
+private let webBigArcSamples: Int = 56
+private let webSmallArcSamples: Int = 24
+private let webTangentSamples: Int = 6
 private let snoutLengthFactorOfBore: Double = 0.5
+private let mainJournalEndPadFactorOfBore: Double = 0.4
+private let frontSnoutRadiusBoost: Double = 1.2
+private let rearSnoutRadiusBoost: Double = 1.4
+private let pinOverlapIntoWebFactor: Double = 0.3  // × webPlateThickness
+private let pinPolishedRoughness: Double = 0.18
 
 enum CrankshaftGeometry {
     static func makeNode(params p: EngineGeometryParams) -> SCNNode {
         let node = SCNNode()
         node.name = "crankshaft"
 
-        let mainRadius = CGFloat(p.mainJournalDiameter / 2.0)
-        let pinRadius = CGFloat(p.crankPinDiameter / 2.0)
-        let throwR = CGFloat(p.crankThrow)
-        let webThickness = CGFloat(p.crankWebThickness)
-        let counterweightR = CGFloat(p.counterweightRadius)
-        let counterweightThickness = CGFloat(p.counterweightThickness)
-
-        let sortedThrows = p.cylinders.sorted { $0.yOffset < $1.yOffset }
-        let firstY = sortedThrows.first?.yOffset ?? 0
-        let lastY = sortedThrows.last?.yOffset ?? 0
-
-        // Group cylinders by slot (shared Y) so V-engine pairs share one throw.
+        // Group cylinders by slot so V/Flat engines collapse their two banks
+        // onto one shared throw centered on slotCenterY.
         var slotsByY: [(y: Double, angleRad: Double)] = []
         var seenSlots = Set<Int>()
-        for placement in sortedThrows {
+        for placement in p.cylinders.sorted(by: { $0.slotCenterY < $1.slotCenterY }) {
             if seenSlots.insert(placement.slotIndex).inserted {
-                slotsByY.append((placement.yOffset, placement.phaseOffsetRad))
+                slotsByY.append((placement.slotCenterY, placement.phaseOffsetRad))
             }
         }
+        guard let firstSlotY = slotsByY.first?.y,
+              let lastSlotY = slotsByY.last?.y else { return node }
 
-        // Build the spine: main journals between slots + end snouts.
-        let snoutLength = CGFloat(p.bore * snoutLengthFactorOfBore)
-        addMainJournal(to: node,
-                       fromY: firstY - p.bore * 0.4 - p.bore * snoutLengthFactorOfBore,
-                       toY: firstY - p.bore * 0.4,
-                       radius: mainRadius * 1.2)
-        addMainJournal(to: node,
-                       fromY: lastY + p.bore * 0.4,
-                       toY: lastY + p.bore * 0.4 + p.bore * snoutLengthFactorOfBore * 1.3,
-                       radius: mainRadius * 1.4)
-        _ = snoutLength
+        let mainRadius = p.mainJournalDiameter / 2.0
+        let endPad = p.bore * mainJournalEndPadFactorOfBore
+        let snoutLen = p.bore * snoutLengthFactorOfBore
+
+        // Front snout (input side).
+        let frontSnoutStart = firstSlotY - endPad - snoutLen
+        let frontSnoutEnd = firstSlotY - endPad
+        addMainJournal(to: node, fromY: frontSnoutStart, toY: frontSnoutEnd,
+                       radius: mainRadius * frontSnoutRadiusBoost)
+        addMainJournal(to: node, fromY: frontSnoutEnd,
+                       toY: firstSlotY - p.crankWebCenterOffset - p.crankWebPlateThickness / 2.0,
+                       radius: mainRadius)
 
         for (i, slot) in slotsByY.enumerated() {
-            let slotStart = slot.y - Double(p.crankWebThickness)
-            let slotEnd = slot.y + Double(p.crankWebThickness)
+            addThrow(to: node, slotY: slot.y, throwAngleRad: slot.angleRad, params: p)
 
-            // Main journal segment leading INTO this slot from the previous one
-            // (or from the front snout if it's the first).
-            let prevEnd = i == 0 ? firstY - p.bore * 0.4 : slotsByY[i - 1].y + Double(p.crankWebThickness)
-            addMainJournal(to: node, fromY: prevEnd, toY: slotStart, radius: mainRadius)
-
-            // Two webs (front and rear of the throw) + the rod pin between them +
-            // counterweight opposite the pin.
-            addThrow(to: node,
-                     centerY: slot.y,
-                     angleRad: slot.angleRad,
-                     params: p,
-                     throwRadius: throwR,
-                     pinRadius: pinRadius,
-                     webThickness: webThickness,
-                     counterweightR: counterweightR,
-                     counterweightThickness: counterweightThickness)
+            let nextStart: Double
+            if i + 1 < slotsByY.count {
+                nextStart = slotsByY[i + 1].y - p.crankWebCenterOffset - p.crankWebPlateThickness / 2.0
+            } else {
+                nextStart = lastSlotY + endPad
+            }
+            let thisEnd = slot.y + p.crankWebCenterOffset + p.crankWebPlateThickness / 2.0
+            addMainJournal(to: node, fromY: thisEnd, toY: nextStart, radius: mainRadius)
         }
 
-        // Main journal from last slot to rear snout.
-        if let last = slotsByY.last {
-            addMainJournal(to: node,
-                           fromY: last.y + Double(p.crankWebThickness),
-                           toY: lastY + p.bore * 0.4,
-                           radius: mainRadius)
-        }
+        // Rear snout + flywheel flange.
+        let rearSnoutStart = lastSlotY + endPad
+        let rearSnoutEnd = rearSnoutStart + snoutLen * rearSnoutRadiusBoost
+        addMainJournal(to: node, fromY: rearSnoutStart, toY: rearSnoutEnd,
+                       radius: mainRadius * rearSnoutRadiusBoost)
 
-        // Flywheel-end flange (visible disc at the back).
-        let flange = SCNCylinder(radius: counterweightR * 0.95, height: webThickness * 1.2)
+        let flangeR = p.counterweightReach * 0.85
+        let flangeT = p.crankWebPlateThickness * 1.2
+        let flange = SCNCylinder(radius: CGFloat(flangeR), height: CGFloat(flangeT))
         flange.radialSegmentCount = mainJournalSegmentCount
         flange.firstMaterial = steelMaterial()
         let flangeNode = SCNNode(geometry: flange)
-        flangeNode.position.y = CGFloat(lastY) + CGFloat(p.bore * 0.4) + CGFloat(p.bore * snoutLengthFactorOfBore * 0.65)
+        flangeNode.position.y = CGFloat(rearSnoutEnd + flangeT / 2.0)
         node.addChildNode(flangeNode)
 
         return node
     }
 
+    // MARK: - Main journal
+
     private static func addMainJournal(to parent: SCNNode,
                                        fromY: Double,
                                        toY: Double,
-                                       radius: CGFloat) {
-        let length = CGFloat(toY - fromY)
+                                       radius: Double) {
+        let length = toY - fromY
         guard length > 0.0005 else { return }
-        let cyl = SCNCylinder(radius: radius, height: length)
+        let cyl = SCNCylinder(radius: CGFloat(radius), height: CGFloat(length))
         cyl.radialSegmentCount = mainJournalSegmentCount
         cyl.firstMaterial = steelMaterial()
         let cylNode = SCNNode(geometry: cyl)
-        cylNode.position.y = CGFloat((fromY + toY) / 2)
+        cylNode.position.y = CGFloat((fromY + toY) / 2.0)
         parent.addChildNode(cylNode)
     }
 
+    // MARK: - One throw (pin + two webs)
+
     private static func addThrow(to parent: SCNNode,
-                                 centerY: Double,
-                                 angleRad: Double,
-                                 params p: EngineGeometryParams,
-                                 throwRadius: CGFloat,
-                                 pinRadius: CGFloat,
-                                 webThickness: CGFloat,
-                                 counterweightR: CGFloat,
-                                 counterweightThickness: CGFloat) {
-        let sinA = CGFloat(sin(angleRad))
-        let cosA = CGFloat(cos(angleRad))
+                                 slotY: Double,
+                                 throwAngleRad: Double,
+                                 params p: EngineGeometryParams) {
+        let throwR = p.crankThrow
+        let pinX = throwR * sin(throwAngleRad)
+        let pinZ = throwR * cos(throwAngleRad)
 
-        // Pin offset in the X-Z plane.
-        let pinX = throwRadius * sinA
-        let pinZ = throwRadius * cosA
-
-        let webHalfThick = webThickness / 2
-        let webYFront = CGFloat(centerY) - p.crankThrow.cg - webHalfThick
-        let webYBack = CGFloat(centerY) + p.crankThrow.cg + webHalfThick
-        _ = webYFront; _ = webYBack
-        // Webs sit at y = centerY ± (counterweightThickness/2 + half a tiny gap).
-        let webGap = counterweightThickness / 2 + webHalfThick
-        let frontWebY = CGFloat(centerY) - webGap
-        let backWebY = CGFloat(centerY) + webGap
-
-        // Rod pin spanning between the two webs.
-        let pinLength = (backWebY - frontWebY)
-        let pin = SCNCylinder(radius: pinRadius, height: pinLength)
+        // Rod pin runs across the throw between the two webs and pushes a bit
+        // into each web so the join reads as solid material.
+        let webInnerHalf = p.rodSpanHalf
+        let webOverlap = p.crankWebPlateThickness * pinOverlapIntoWebFactor
+        let pinLength = 2.0 * (webInnerHalf + webOverlap)
+        let pin = SCNCylinder(radius: CGFloat(p.crankPinDiameter / 2.0),
+                              height: CGFloat(pinLength))
         pin.radialSegmentCount = rodPinSegmentCount
-        pin.firstMaterial = steelMaterial()
+        pin.firstMaterial = pinMaterial()
         let pinNode = SCNNode(geometry: pin)
-        pinNode.position = SCNVector3(Float(pinX), Float(centerY), Float(pinZ))
+        pinNode.position = SCNVector3(Float(pinX), Float(slotY), Float(pinZ))
         parent.addChildNode(pinNode)
 
-        // Two crank webs / counterweights — fan-shaped slabs in X-Z plane, thin in Y.
-        for webY in [frontWebY, backWebY] {
-            addCounterweight(to: parent,
-                             centerY: webY,
-                             pinX: pinX,
-                             pinZ: pinZ,
-                             counterweightR: counterweightR,
-                             counterweightThickness: counterweightThickness,
-                             throwRadius: throwRadius)
+        // Two webs flanking the rod-bearing region.
+        for side: Double in [-1.0, +1.0] {
+            let webY = slotY + side * p.crankWebCenterOffset
+            let web = makeWebNode(params: p, throwAngleRad: throwAngleRad)
+            web.position.y = CGFloat(webY)
+            parent.addChildNode(web)
         }
     }
 
-    private static func addCounterweight(to parent: SCNNode,
-                                         centerY: CGFloat,
-                                         pinX: CGFloat,
-                                         pinZ: CGFloat,
-                                         counterweightR: CGFloat,
-                                         counterweightThickness: CGFloat,
-                                         throwRadius: CGFloat) {
-        // A counterweight is a thick disc offset to the opposite side of the pin,
-        // approximating the real fan shape with a full disc whose center is shifted
-        // away from the pin by ~50% of its radius.
-        let disc = SCNCylinder(radius: counterweightR, height: counterweightThickness)
-        disc.radialSegmentCount = mainJournalSegmentCount
-        disc.firstMaterial = steelMaterial()
-        let discNode = SCNNode(geometry: disc)
+    // MARK: - Fan-shaped web geometry
 
-        // Offset opposite to the pin direction (so the heavy side balances the pin).
-        let pinMag = sqrt(pinX * pinX + pinZ * pinZ)
-        let dirX: CGFloat = pinMag > 0 ? -pinX / pinMag : 0
-        let dirZ: CGFloat = pinMag > 0 ? -pinZ / pinMag : 0
-        let offset = counterweightR * 0.35
-        discNode.position = SCNVector3(Float(dirX * offset), Float(centerY), Float(dirZ * offset))
-        parent.addChildNode(discNode)
-
-        // Add a smaller "boss" disc on the pin side so the web visually carries the pin.
-        let boss = SCNCylinder(radius: throwRadius * 1.1, height: counterweightThickness)
-        boss.radialSegmentCount = mainJournalSegmentCount
-        boss.firstMaterial = steelMaterial()
-        let bossNode = SCNNode(geometry: boss)
-        bossNode.position = SCNVector3(Float(pinX * 0.5), Float(centerY), Float(pinZ * 0.5))
-        parent.addChildNode(bossNode)
+    private static func makeWebNode(params p: EngineGeometryParams,
+                                    throwAngleRad: Double) -> SCNNode {
+        // Outline in throw-local (X, Z): pin direction = +X, counterweight tip = -X.
+        let contour = buildWebContour(throwR: p.crankThrow,
+                                      pinBossR: p.crankPinBossRadius,
+                                      cwOffset: p.counterweightTipOffset,
+                                      cwR: p.counterweightTipRadius)
+        let geo = extrudeContour(contour: contour, thickness: p.crankWebPlateThickness)
+        geo.firstMaterial = steelMaterial()
+        let node = SCNNode(geometry: geo)
+        // The pin sits at (throwR·sin(angle), throwR·cos(angle)) — i.e., at
+        // atan2-angle (π/2 − throwAngleRad). To align the contour's +X feature
+        // with the pin under SceneKit's CW-positive Y rotation, rotate by
+        // (throwAngleRad − π/2). Inline cyl 1 (throwAngleRad = 0) then places
+        // the web's pin boss directly above the crank center at +Z, matching
+        // the pin's initial location.
+        node.eulerAngles.y = CGFloat(throwAngleRad - .pi / 2)
+        return node
     }
+
+    /// Counter-clockwise contour (viewed from +Y) wrapping two circles:
+    ///   pin boss at (+throwR, 0) with radius pinBossR (small)
+    ///   counterweight tip at (-cwOffset, 0) with radius cwR (large)
+    /// joined by external common tangents above and below.
+    private static func buildWebContour(throwR: Double,
+                                        pinBossR: Double,
+                                        cwOffset: Double,
+                                        cwR: Double) -> [SIMD2<Float>] {
+        let centerSeparation = throwR + cwOffset
+        let radiusDelta = cwR - pinBossR
+        let tangentSpan = sqrt(max(centerSeparation * centerSeparation
+                                   - radiusDelta * radiusDelta, 1e-9))
+        // Slope of the UPPER external tangent (downward-going from cw to pin).
+        let tangentSlope = -radiusDelta / tangentSpan
+        let invSqrt = 1.0 / sqrt(tangentSlope * tangentSlope + 1.0)
+        // Outward-normal direction at upper tangent points (perpendicular to
+        // the tangent line, pointing into +Z half-plane).
+        let normalX = -tangentSlope * invSqrt
+        let normalZ = invSqrt
+
+        let pinCenter = SIMD2<Double>(throwR, 0)
+        let cwCenter = SIMD2<Double>(-cwOffset, 0)
+
+        // Tangent points on each circle, upper (z > 0) and lower (z < 0).
+        let pinUp = pinCenter + SIMD2<Double>(pinBossR * normalX, pinBossR * normalZ)
+        let pinDn = pinCenter + SIMD2<Double>(pinBossR * normalX, -pinBossR * normalZ)
+        let cwUp = cwCenter + SIMD2<Double>(cwR * normalX, cwR * normalZ)
+        let cwDn = cwCenter + SIMD2<Double>(cwR * normalX, -cwR * normalZ)
+
+        // Angles (from each circle's center) of the tangent points.
+        let thetaPin = atan2(pinBossR * normalZ, pinBossR * normalX)  // ∈ (0, π/2)
+        let thetaCw = atan2(cwR * normalZ, cwR * normalX)             // ∈ (0, π/2)
+
+        var contour: [SIMD2<Float>] = []
+        contour.reserveCapacity(webBigArcSamples + webSmallArcSamples + 2 * webTangentSamples)
+
+        // 1) Big arc around counterweight: CCW from cwUp (angle thetaCw) all the
+        //    way around the -X side to cwDn (angle 2π - thetaCw).
+        let bigSweep = 2.0 * .pi - 2.0 * thetaCw
+        for i in 0..<webBigArcSamples {
+            let t = Double(i) / Double(webBigArcSamples)
+            let a = thetaCw + t * bigSweep
+            let p2 = cwCenter + SIMD2<Double>(cwR * cos(a), cwR * sin(a))
+            contour.append(SIMD2<Float>(Float(p2.x), Float(p2.y)))
+        }
+
+        // 2) Lower tangent: straight line from cwDn to pinDn (+X direction).
+        for i in 0..<webTangentSamples {
+            let t = Double(i) / Double(webTangentSamples)
+            let p2 = cwDn + t * (pinDn - cwDn)
+            contour.append(SIMD2<Float>(Float(p2.x), Float(p2.y)))
+        }
+
+        // 3) Small arc around pin: CCW from pinDn (angle -thetaPin) through the
+        //    +X side to pinUp (angle +thetaPin).
+        let smallSweep = 2.0 * thetaPin
+        for i in 0..<webSmallArcSamples {
+            let t = Double(i) / Double(webSmallArcSamples)
+            let a = -thetaPin + t * smallSweep
+            let p2 = pinCenter + SIMD2<Double>(pinBossR * cos(a), pinBossR * sin(a))
+            contour.append(SIMD2<Float>(Float(p2.x), Float(p2.y)))
+        }
+
+        // 4) Upper tangent: straight line from pinUp back to cwUp (-X direction).
+        for i in 0..<webTangentSamples {
+            let t = Double(i) / Double(webTangentSamples)
+            let p2 = pinUp + t * (cwUp - pinUp)
+            contour.append(SIMD2<Float>(Float(p2.x), Float(p2.y)))
+        }
+
+        return contour
+    }
+
+    /// Extrudes a CCW (X, Z)-plane contour into a 3D slab along Y. Builds back
+    /// cap (Y = -t/2), front cap (Y = +t/2), and a side wall with radial
+    /// outward normals. Mirrors the construction used for the cam lobe.
+    private static func extrudeContour(contour: [SIMD2<Float>], thickness: Double) -> SCNGeometry {
+        let n = contour.count
+        precondition(n >= 3, "Contour needs at least 3 points")
+        let backY = Float(-thickness / 2.0)
+        let frontY = Float(thickness / 2.0)
+
+        var verts: [SCNVector3] = []
+        var normals: [SCNVector3] = []
+        verts.reserveCapacity(n * 4 + 2)
+        normals.reserveCapacity(n * 4 + 2)
+
+        // Back-cap ring (normal -Y).
+        for p2 in contour {
+            verts.append(SCNVector3(p2.x, backY, p2.y))
+            normals.append(SCNVector3(0, -1, 0))
+        }
+        // Front-cap ring (normal +Y).
+        for p2 in contour {
+            verts.append(SCNVector3(p2.x, frontY, p2.y))
+            normals.append(SCNVector3(0, 1, 0))
+        }
+        let backCenterIndex = verts.count
+        verts.append(SCNVector3(0, backY, 0))
+        normals.append(SCNVector3(0, -1, 0))
+        let frontCenterIndex = verts.count
+        verts.append(SCNVector3(0, frontY, 0))
+        normals.append(SCNVector3(0, 1, 0))
+
+        // Side-wall vertices with their own outward radial normals.
+        let sideStartIndex = verts.count
+        for i in 0..<n {
+            let p2 = contour[i]
+            let next = contour[(i + 1) % n]
+            let tx = next.x - p2.x
+            let tz = next.y - p2.y
+            // CCW contour → outward normal is tangent rotated by -90° around Y.
+            let nx = tz
+            let nz = -tx
+            let len = max(sqrt(nx * nx + nz * nz), 1e-6)
+            let nrm = SCNVector3(nx / len, 0, nz / len)
+            verts.append(SCNVector3(p2.x, backY, p2.y));  normals.append(nrm)
+            verts.append(SCNVector3(p2.x, frontY, p2.y)); normals.append(nrm)
+        }
+
+        var indices: [Int32] = []
+        indices.reserveCapacity(n * 12)
+        // Back cap fan (normal -Y → CW winding viewed from +Y).
+        for i in 0..<n {
+            let a = Int32(i)
+            let b = Int32((i + 1) % n)
+            let c = Int32(backCenterIndex)
+            indices.append(contentsOf: [c, b, a])
+        }
+        // Front cap fan (normal +Y → CCW winding viewed from +Y).
+        for i in 0..<n {
+            let a = Int32(n + i)
+            let b = Int32(n + (i + 1) % n)
+            let c = Int32(frontCenterIndex)
+            indices.append(contentsOf: [c, a, b])
+        }
+        // Side-wall quad strip.
+        for i in 0..<n {
+            let bA = Int32(sideStartIndex + 2 * i)
+            let fA = Int32(sideStartIndex + 2 * i + 1)
+            let bB = Int32(sideStartIndex + 2 * ((i + 1) % n))
+            let fB = Int32(sideStartIndex + 2 * ((i + 1) % n) + 1)
+            indices.append(contentsOf: [bA, fA, fB, bA, fB, bB])
+        }
+
+        let vertexSource = SCNGeometrySource(vertices: verts)
+        let normalSource = SCNGeometrySource(normals: normals)
+        let element = SCNGeometryElement(indices: indices, primitiveType: .triangles)
+        return SCNGeometry(sources: [vertexSource, normalSource], elements: [element])
+    }
+
+    // MARK: - Materials
 
     private static func steelMaterial() -> SCNMaterial {
         let m = SCNMaterial()
-        m.diffuse.contents = NSColor(calibratedWhite: 0.55, alpha: 1.0)
+        m.diffuse.contents = NSColor(calibratedRed: 0.40, green: 0.42, blue: 0.46, alpha: 1.0)
         m.metalness.contents = 0.95
-        m.roughness.contents = 0.35
+        m.roughness.contents = 0.32
         m.lightingModel = .physicallyBased
         return m
     }
-}
 
-private extension Double {
-    var cg: CGFloat { CGFloat(self) }
+    private static func pinMaterial() -> SCNMaterial {
+        // Polished pin: a touch shinier than the web bodies.
+        let m = SCNMaterial()
+        m.diffuse.contents = NSColor(calibratedRed: 0.48, green: 0.50, blue: 0.54, alpha: 1.0)
+        m.metalness.contents = 0.97
+        m.roughness.contents = pinPolishedRoughness
+        m.lightingModel = .physicallyBased
+        return m
+    }
 }

@@ -2,24 +2,19 @@
 //  CamshaftGeometry.swift
 //  engine-simulator
 //
-//  Procedural camshaft: one central shaft running along Y (the cam axis,
-//  parallel to the crank) plus one cam lobe per cylinder served. Each lobe
-//  is a 2D profile (base circle + cosine bump) extruded into a thin disc.
-//
-//  The lobe's 2D profile is generated with peak at +X (path-local). After
-//  extrusion the node is reoriented so the lobe disc lies in the X-Z plane
-//  (axis along Y, matching the shaft); a final Ry rotation positions the
-//  lobe peak at its design angle on the cam.
-//
-//  The lobe geometry itself is static — animation rotates the entire
-//  camshaft node around Y at half crank speed, sweeping all lobes together.
+//  Procedural camshaft: central shaft along Y plus one cam lobe per cylinder
+//  served. Each lobe is a hand-built SCNGeometry — front cap, back cap, and
+//  side wall — generated from the same cos² lobe profile as the builder
+//  preview, so the silhouette looks like a real cam lobe (a circle with a
+//  smooth nose) rather than a smoothed-out pill.
 //
 
 import SceneKit
 import AppKit
+import simd
 
 private let shaftRadialSegments: Int = 24
-private let lobeContourPointCount: Int = 96
+private let lobeContourPointCount: Int = 192
 
 struct CamLobeSpec {
     let yOffset: Double         // along cam axis
@@ -44,7 +39,6 @@ enum CamshaftGeometry {
         shaftNode.position.y = CGFloat((shaftStartY + shaftEndY) / 2.0)
         node.addChildNode(shaftNode)
 
-        // One lobe per cylinder served.
         for lobe in lobes {
             let lobeNode = makeLobeNode(params: p, peakAngleRad: lobe.peakAngleRad)
             lobeNode.position.y = CGFloat(lobe.yOffset)
@@ -54,60 +48,132 @@ enum CamshaftGeometry {
         return node
     }
 
+    /// Builds a 3D cam-lobe disc by hand: contour vertices, triangulated caps,
+    /// and side-wall quads. Lobe extends along Y (the cam axis); the profile
+    /// lies in the X-Z plane with the peak pointing along +X at peakAngleRad=0.
     private static func makeLobeNode(params p: EngineGeometryParams,
                                      peakAngleRad: Double) -> SCNNode {
-        let path = lobeProfilePath(params: p)
-        let shape = SCNShape(path: path, extrusionDepth: CGFloat(p.camLobeThickness))
-        shape.firstMaterial = camMaterial()
-
-        // SCNShape default: path in X-Y plane, extrusion along +Z.
-        // First an inner node centers the disc along its extrusion axis and
-        // reorients the path so the disc lies in the X-Z plane (axis Y).
-        let innerNode = SCNNode(geometry: shape)
-        innerNode.position.z = -CGFloat(p.camLobeThickness) / 2.0
-        innerNode.eulerAngles.x = -.pi / 2
-
-        let outerNode = SCNNode()
-        outerNode.addChildNode(innerNode)
-        // Position the lobe peak at peakAngleRad in the cam's X-Z plane.
-        outerNode.eulerAngles.y = CGFloat(peakAngleRad)
-        return outerNode
-    }
-
-    /// Builds a 2D cam contour with peak at +X in path coordinates.
-    /// For |θ| > duration/2 the profile sits on the base circle; inside the
-    /// duration it rises smoothly to camMaxLift via a cosine bump.
-    private static func lobeProfilePath(params p: EngineGeometryParams) -> NSBezierPath {
-        let path = NSBezierPath()
+        let n = lobeContourPointCount
+        let baseR = p.camBaseRadius
+        let lift = p.camMaxLift
         let halfDur = p.camDurationRadCam / 2.0
-        for i in 0..<lobeContourPointCount {
-            let theta = 2.0 * .pi * Double(i) / Double(lobeContourPointCount)
-            let wrapped = atan2(sin(theta), cos(theta))   // in [-π, π], peak at θ=0
+        let halfThickness = p.camLobeThickness / 2.0
+
+        // 1) Build the 2D contour in (X, Z), centered around the cam axis.
+        var contour: [SIMD2<Float>] = []
+        contour.reserveCapacity(n)
+        for i in 0..<n {
+            let theta = 2.0 * .pi * Double(i) / Double(n)
+            let wrapped = atan2(sin(theta), cos(theta))   // [-π, π], peak at θ=0
             let r: Double
             if abs(wrapped) < halfDur, halfDur > 0 {
-                let x = wrapped * .pi / p.camDurationRadCam
-                let c = cos(x)
-                r = p.camBaseRadius + p.camMaxLift * c * c
+                let arg = wrapped * .pi / p.camDurationRadCam
+                let c = cos(arg)
+                r = baseR + lift * c * c
             } else {
-                r = p.camBaseRadius
+                r = baseR
             }
-            let px = r * cos(theta)
-            let py = r * sin(theta)
-            if i == 0 {
-                path.move(to: NSPoint(x: CGFloat(px), y: CGFloat(py)))
-            } else {
-                path.line(to: NSPoint(x: CGFloat(px), y: CGFloat(py)))
-            }
+            contour.append(SIMD2<Float>(Float(r * cos(theta)),
+                                         Float(r * sin(theta))))
         }
-        path.close()
-        return path
+
+        // 2) Emit vertices: ring of points at -Y face, ring at +Y face, plus
+        //    center points for each cap so we can triangulate as a fan.
+        var verts: [SCNVector3] = []
+        var normals: [SCNVector3] = []
+        verts.reserveCapacity(n * 2 + 2)
+        normals.reserveCapacity(n * 2 + 2)
+
+        let backY = Float(-halfThickness)
+        let frontY = Float(halfThickness)
+
+        // Back-cap ring (Y = -halfThickness). Normal: -Y.
+        for p2 in contour {
+            verts.append(SCNVector3(p2.x, backY, p2.y))
+            normals.append(SCNVector3(0, -1, 0))
+        }
+        // Front-cap ring (Y = +halfThickness). Normal: +Y.
+        for p2 in contour {
+            verts.append(SCNVector3(p2.x, frontY, p2.y))
+            normals.append(SCNVector3(0, 1, 0))
+        }
+        // Cap centers
+        let backCenterIndex = verts.count
+        verts.append(SCNVector3(0, backY, 0))
+        normals.append(SCNVector3(0, -1, 0))
+        let frontCenterIndex = verts.count
+        verts.append(SCNVector3(0, frontY, 0))
+        normals.append(SCNVector3(0, 1, 0))
+
+        // Side-wall vertices need their own normals (radial). We re-emit each
+        // contour point on each face so the side-wall and the cap can have
+        // independent normals.
+        let sideStartIndex = verts.count
+        for i in 0..<n {
+            let p2 = contour[i]
+            let next = contour[(i + 1) % n]
+            // Edge tangent in X-Z: (next - p2). Normal points outward, which
+            // for a counter-clockwise contour is rotated -π/2 from the tangent.
+            let tx = next.x - p2.x
+            let tz = next.y - p2.y
+            // Outward normal (rotate tangent by -90° about Y): (tz, 0, -tx).
+            let nx = tz
+            let nz = -tx
+            let len = max(sqrt(nx * nx + nz * nz), 1e-6)
+            let nrm = SCNVector3(nx / len, 0, nz / len)
+            // Two vertices at this contour point (back and front face).
+            verts.append(SCNVector3(p2.x, backY, p2.y))
+            normals.append(nrm)
+            verts.append(SCNVector3(p2.x, frontY, p2.y))
+            normals.append(nrm)
+        }
+
+        // 3) Indices.
+        var indices: [Int32] = []
+        // Back cap (fan around back-center). Wind so the normal faces -Y, i.e.
+        // viewed from -Y the triangles are counter-clockwise.
+        for i in 0..<n {
+            let a = Int32(i)
+            let b = Int32((i + 1) % n)
+            let c = Int32(backCenterIndex)
+            indices.append(contentsOf: [c, b, a])
+        }
+        // Front cap (fan around front-center). Wind opposite to face +Y.
+        for i in 0..<n {
+            let a = Int32(n + i)
+            let b = Int32(n + (i + 1) % n)
+            let c = Int32(frontCenterIndex)
+            indices.append(contentsOf: [c, a, b])
+        }
+        // Side walls (quad strip between back and front contour rings).
+        for i in 0..<n {
+            let bA = Int32(sideStartIndex + 2 * i)
+            let fA = Int32(sideStartIndex + 2 * i + 1)
+            let bB = Int32(sideStartIndex + 2 * ((i + 1) % n))
+            let fB = Int32(sideStartIndex + 2 * ((i + 1) % n) + 1)
+            // Two triangles per quad — outward winding (viewed from outside).
+            indices.append(contentsOf: [bA, fA, fB, bA, fB, bB])
+        }
+
+        // 4) Build SCNGeometry from vertex/normal/index sources.
+        let vertexSource = SCNGeometrySource(vertices: verts)
+        let normalSource = SCNGeometrySource(normals: normals)
+        let element = SCNGeometryElement(indices: indices, primitiveType: .triangles)
+        let geo = SCNGeometry(sources: [vertexSource, normalSource], elements: [element])
+        geo.firstMaterial = camMaterial()
+
+        let node = SCNNode(geometry: geo)
+        // Rotate so the lobe peak (currently at +X) sits at peakAngleRad in
+        // the cam's X-Z plane.
+        node.eulerAngles.y = CGFloat(peakAngleRad)
+        return node
     }
 
     private static func camMaterial() -> SCNMaterial {
         let m = SCNMaterial()
-        m.diffuse.contents = NSColor(calibratedWhite: 0.65, alpha: 1.0)
-        m.metalness.contents = 0.9
-        m.roughness.contents = 0.3
+        m.diffuse.contents = NSColor(calibratedRed: 0.62, green: 0.58, blue: 0.52, alpha: 1.0)
+        m.metalness.contents = 0.85
+        m.roughness.contents = 0.35
         m.lightingModel = .physicallyBased
         return m
     }

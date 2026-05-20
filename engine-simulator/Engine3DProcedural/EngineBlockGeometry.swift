@@ -14,7 +14,7 @@
 import SceneKit
 import AppKit
 
-private let blockAlpha: CGFloat = 0.12
+private let blockAlpha: CGFloat = 0.03
 private let chamferFactorOfBore: Double = 0.04
 
 enum EngineBlockGeometry {
@@ -52,21 +52,27 @@ enum EngineBlockGeometry {
         let chamfer = p.bore * chamferFactorOfBore
 
         // For 1-bank (inline), bankCount is 1 and bank rotation is 0; we still
-        // produce a single slab. For 2-bank engines we splay one per bank.
+        // produce a single slab. For 2-bank engines we splay one per bank and
+        // shift it along Y by the bank's axial offset (matches the cylinder
+        // bores' actual position over the offset pistons).
         let bankCount = p.bankCount
         for bankIndex in 0..<bankCount {
-            let sign: Double = (bankIndex == 0) ? 1.0 : -1.0
-            let angle = sign * p.bankHalfAngleRad
+            let bankSign: Double = (bankIndex == 0) ? -1.0 : 1.0
+            let angle = (bankIndex == 0 ? 1.0 : -1.0) * p.bankHalfAngleRad
+            let axialShift = bankSign * p.bankAxialShift
 
             let slab = SCNBox(width: CGFloat(slabWidth),
-                              height: CGFloat(p.blockLength),
+                              height: CGFloat(p.bankSlabLength),
                               length: CGFloat(slabHeight),
                               chamferRadius: CGFloat(chamfer))
             slab.firstMaterial = blockMaterial()
             let slabNode = SCNNode(geometry: slab)
             // Slab sits along the bank's bore axis (local +Z), centered between
-            // the crankcase top and the deck.
-            slabNode.position = SCNVector3(0, 0, Float((p.bankSlabTopZ + p.bankSlabBottomZ) / 2.0))
+            // the crankcase top and the deck, and shifted along Y so its bores
+            // sit over this bank's piston slots.
+            slabNode.position = SCNVector3(0,
+                                           Float(axialShift),
+                                           Float((p.bankSlabTopZ + p.bankSlabBottomZ) / 2.0))
 
             let pivot = SCNNode()
             pivot.name = "bankSlabPivot_\(bankIndex)"
@@ -77,12 +83,13 @@ enum EngineBlockGeometry {
     }
 
     private static func blockMaterial() -> SCNMaterial {
+        // Block: dark cast iron with a cool tint, very translucent.
         let m = SCNMaterial()
-        m.diffuse.contents = NSColor(calibratedWhite: 0.55, alpha: blockAlpha)
+        m.diffuse.contents = NSColor(calibratedRed: 0.30, green: 0.32, blue: 0.36, alpha: blockAlpha)
         m.transparency = blockAlpha
         m.isDoubleSided = true
         m.metalness.contents = 0.1
-        m.roughness.contents = 0.7
+        m.roughness.contents = 0.75
         m.lightingModel = .physicallyBased
         m.blendMode = .alpha
         m.writesToDepthBuffer = false
