@@ -46,9 +46,10 @@ struct TileView: View {
         switch tile.data.type {
         case .select:
             return AnyView(SelectView(tile: tile))
-        case .engine3DView:
-            return AnyView(Engine3DView(vm: tile.engineVm).id(engineResetId))
-        case .engine3DProcedural:
+        // Both the legacy CAD-model 3D view and the new procedural view now
+        // resolve to the procedural renderer. Old layouts saved with the
+        // legacy type still load — they just get the new rendering.
+        case .engine3DView, .engine3DProcedural:
             return AnyView(Engine3DProceduralView(vm: tile.engineVm).id(engineResetId))
 
         // Gauges
@@ -105,7 +106,9 @@ struct TileView: View {
         case .engineControls:
             return AnyView(EngineControlsView(vm: tile.engineVm))
         case .ecuTuning:
-            return AnyView(EcuTuningView(vm: tile.engineVm))
+            // EcuTuningView observes vm.ecu via its inner editor whose .id is
+            // keyed to ObjectIdentifier(vm.ecu), so swaps are handled inside.
+            return AnyView(EcuTuningView(vm: tile.engineVm).id(engineResetId))
             
         // Oscilloscopes
         case .torqueOscilloscope:

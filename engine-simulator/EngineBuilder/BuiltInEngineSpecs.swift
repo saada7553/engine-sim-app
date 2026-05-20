@@ -47,6 +47,15 @@ enum BuiltInEngineSpecs {
         spec.redlineRpm = 6000
         spec.firingOrder = EngineLayout.inline6.firingOrder
         spec.gearRatios = [5.25, 3.36, 2.17, 1.72, 1.32, 1.0]
+        spec.ignitionTiming = [
+            TimingPoint(rpm: 0,    advanceDeg: 12),
+            TimingPoint(rpm: 1000, advanceDeg: 12),
+            TimingPoint(rpm: 2000, advanceDeg: 20),
+            TimingPoint(rpm: 3000, advanceDeg: 26),
+            TimingPoint(rpm: 4000, advanceDeg: 30),
+            TimingPoint(rpm: 5000, advanceDeg: 34),
+            TimingPoint(rpm: 6000, advanceDeg: 38),
+        ]
         return spec
     }()
 
@@ -61,6 +70,15 @@ enum BuiltInEngineSpecs {
         spec.redlineRpm = 6500
         spec.firingOrder = EngineLayout.v8_90.firingOrder
         spec.gearRatios = [2.97, 2.07, 1.43, 1.00, 0.71, 0.57]
+        spec.ignitionTiming = [
+            TimingPoint(rpm: 0,    advanceDeg: 12),
+            TimingPoint(rpm: 1000, advanceDeg: 12),
+            TimingPoint(rpm: 2000, advanceDeg: 20),
+            TimingPoint(rpm: 3000, advanceDeg: 30),
+            TimingPoint(rpm: 4000, advanceDeg: 40),
+            TimingPoint(rpm: 5000, advanceDeg: 40),
+            TimingPoint(rpm: 6000, advanceDeg: 40),
+        ]
         return spec
     }()
 
@@ -75,6 +93,15 @@ enum BuiltInEngineSpecs {
         spec.redlineRpm = 9000
         spec.firingOrder = EngineLayout.v8_90.firingOrder
         spec.gearRatios = [3.23, 2.19, 1.61, 1.23, 0.97, 0.8]
+        spec.ignitionTiming = [
+            TimingPoint(rpm: 0,    advanceDeg: 12),
+            TimingPoint(rpm: 1000, advanceDeg: 12),
+            TimingPoint(rpm: 2000, advanceDeg: 20),
+            TimingPoint(rpm: 3000, advanceDeg: 30),
+            TimingPoint(rpm: 4000, advanceDeg: 40),
+            TimingPoint(rpm: 5000, advanceDeg: 40),
+            TimingPoint(rpm: 6000, advanceDeg: 40),
+        ]
         return spec
     }()
 
@@ -89,6 +116,12 @@ enum BuiltInEngineSpecs {
         spec.redlineRpm = 9000
         spec.firingOrder = EngineLayout.v10_72.firingOrder
         spec.gearRatios = [3.23, 2.19, 1.61, 1.23, 0.97, 0.8]
+        spec.ignitionTiming = [
+            TimingPoint(rpm: 0,    advanceDeg: 12),
+            TimingPoint(rpm: 4000, advanceDeg: 40),
+            TimingPoint(rpm: 8000, advanceDeg: 40),
+            TimingPoint(rpm: 9000, advanceDeg: 40),
+        ]
         return spec
     }()
 }

@@ -38,20 +38,11 @@ You should also play this noise if you need my permission to do something / are 
 4) Avoid over commenting. You are allowed to add comments as needed, but you must not add redundant comments if the code is clear in what is happenign. 
 5) Do not redefine exsiting colors, read the color file and you should reuse the existing ones, if you need a new color that does not exist and is radically different from the exisitng ones, then you can add it.
 
-# Current TODOs:
-1) The very first thing you need to do is request to play the sound notification so I can grant you permission for it.
-2) The c++ simulator reads engine information from .mr files. The docs/mr_config_report.md file outlines the configurations this file allows. 
-   - The intake and exhaust diagrams have bugs:
-        - They do not scale with the number of pistons selected correctly (always 4)
-        - The diagrams for both the intake and exhasut suck (disconnected parts that make no sense. everythign needs to be intentional in the diagram and needs to make sense and be realistic. currenlty its just some shapes slapped there)
-        - redo these graphics
-        
-    - The engine sizing diagram has bugs where adjusting an unrelated parameter adjusts unrelated things in the diagram. For example, adjusting the rod length makes the bore difference as the whoel view resizes. you need to take all the size differences into account and view behaviour to ensure that the model behaves correctly
-
-    - The firing order ui is not good, it takes a long time to give the order you want and the UI is just uninspiring overall, it could be more interesting
-
-    - The vehicle UI is very bad, it mentions front cross section but shows the tires as if you were viewing them from the side, it makes no sense
-
-    - I am confused as setting the rev limit is presented in multiple locations, and additionally it seems to have to do with spark advance which we can't even adjust as much as we want? should we auto gen spark advance based off the rev limit? we need to have one source of truth for rev limit and reconsile it with the advance in a way which makes sense
-
-    - The cam lobe UI is confusing, IDK what is going on, either explain it or desin a better UI (I probably just dont understand it)
+# Current TODOs: 
+There are multiple agents running, only touch the portions of the code I specifically tell you to touch
+1) There is a bug with the clutch UI. Sometimes when I spawn a new engine, the clutch gets out of sync and it is engaged / disengaged in the wrong position
+2) The engine controls UI needs to be redone.
+    - I still want the same core components, but now in the engine builder, we can have a variable number of gears and the UI needs to be generated accordingly in the correct H pattern (4 gears if user selects, 4, 8 if the user selects more (limit to 8 gears max))
+    - I dont like the look of the paddles, lets have a redesign here this is more interesting / better
+    - The h shifter has this bug where when you shift gears with the mouse (physically drag the shifter), when you let go it it in a new notch, the shifter snaps to the middle for a split swcond before getting into the gear you selected
+3) The clutch assembly drawing and the intake manifold visualization both suck, you need to edit them so that the geometries lign up as you would expect, the aspect ratio stays normal, and just a more interesting better UI overall.

@@ -33,8 +33,16 @@ enum SplitDirection: Codable {
 }
 
 enum TileType: String, Codable, CaseIterable, Identifiable {
+    /// Legacy raw value preserved so layouts saved before the CAD renderer
+    /// was removed still decode. Renders the procedural engine view now —
+    /// SelectView no longer exposes this option for new tiles.
     case engine3DView = "Engine 3D"
     case engine3DProcedural = "Engine 3D (Procedural)"
+
+    /// Hide the deprecated legacy 3D view from the type picker.
+    static var pickerCases: [TileType] {
+        allCases.filter { $0 != .engine3DView }
+    }
 
     // Gauges
     case speedometerGauge = "Speedometer"

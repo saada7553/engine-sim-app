@@ -9,6 +9,15 @@ import Foundation
 import SwiftUI
 import Combine
 
+/// Convert manifold pressure (gauge inches of mercury, ≤ 0 for vacuum) to
+/// absolute kPa — the conventional Y axis on a tuner's fuel/spark map.
+private func manifoldPressureToAbsoluteKpa(_ gaugeInHg: Double) -> Double {
+    let kPaPerInHg = 3.386389
+    let atmKpa = 101.325
+    let absolute = atmKpa + gaugeInHg * kPaPerInHg
+    return max(10.0, min(absolute, 250.0))
+}
+
 // Rev ramp smoothing: each polling tick the throttle moves this fraction of
 // the remaining distance toward its target, so revs ease in and out smoothly.
 private let revAveragingFactor: Double = 0.35
@@ -19,6 +28,8 @@ private let revIdleThreshold: Double = 0.001
 private let clutchEngagedThreshold: Double = 0.5
 // Fallback gear count used when no spec is available for the active engine.
 private let defaultGearCount: Int = 6
+// Fallback cylinders-per-bank when no spec is available (typical 4-cyl bank).
+private let defaultCylindersPerBank: Int = 4
 
 class EngineViewModel: ObservableObject {
     private var engine: EngineWrapper?
@@ -35,6 +46,12 @@ class EngineViewModel: ObservableObject {
     /// Mirror of EngineLibrary.shared.selectedEngineId. Views that need to
     /// hard-reset when the engine changes can use `.id(engineVm.engineId)`.
     @Published var engineId: UUID?
+
+    /// User-editable 2D ignition + fuel maps. Sampled at the current
+    /// operating point (RPM × MAP load) on every polling tick and pushed
+    /// into the C++ engine via setIgnitionOffset / setFuelTrim — the EcuTuningView
+    /// renders + edits this in-place.
+    @Published var ecu: EcuTuneModel
 
     // Dynamometer sweep
     @Published var dynoEnabled: Bool = false
@@ -66,10 +83,19 @@ class EngineViewModel: ObservableObject {
     
     @Published var clutchPressed: Bool = true
 
+    /// Native clutch engagement (0.0 = fully disengaged, 1.0 = fully engaged).
+    /// Source of truth for both the cross-section visualizer and the
+    /// precision slider. `clutchPressed` is derived from this on each poll.
+    @Published var clutchPressure: Double = 0.0
+
     /// Number of forward gears available on the active engine's transmission.
     /// Sourced from the EngineSpec when present; falls back to defaultGearCount
     /// for built-ins with no editable spec.
     @Published var gearCount: Int = defaultGearCount
+
+    /// Runners per bank — how many intake runners are visualized on the
+    /// manifold cross-section. cylinderCount / bankCount.
+    @Published var cylindersPerBank: Int = defaultCylindersPerBank
 
     /// Set by setGear() to the gear the user just selected. Polling will not
     /// overwrite `gear` until the native side reports the same value — this
@@ -80,6 +106,7 @@ class EngineViewModel: ObservableObject {
     let oscilloscopeManager: OscilloscopeManager
     private var timer: Timer?
     private var selectionCancellable: AnyCancellable?
+    private var ecuCancellables = Set<AnyCancellable>()
 
     init(oscillioscopeManager: OscilloscopeManager) {
         self.oscilloscopeManager = oscillioscopeManager
@@ -89,6 +116,11 @@ class EngineViewModel: ObservableObject {
         self.redline = newEngine?.getEngineRedline() ?? 6500.0
         self.engineId = EngineLibrary.shared.selectedEngineId
         self.gearCount = initialEntry.map(Self.gearCount(for:)) ?? defaultGearCount
+        self.cylindersPerBank = initialEntry.map(Self.cylindersPerBank(for:)) ?? defaultCylindersPerBank
+        self.ecu = Self.makeEcuModel(for: newEngine)
+        // Bind to the freshly-built ECU so edits push through immediately
+        // rather than waiting for the next 30 Hz polling tick.
+        bindToEcu()
 
         // Rebuild the EngineWrapper whenever the user picks a different engine.
         self.selectionCancellable = EngineLibrary.shared.$selectedEngineId
@@ -106,6 +138,7 @@ class EngineViewModel: ObservableObject {
             if let state = engine.pollState() {
                 self.rpm = state.rpm
                 self.applyPolledGear(Int(state.gear))
+                self.clutchPressure = state.clutchPressure
                 self.clutchPressed = state.clutchPressure < clutchEngagedThreshold
                 self.isIgnitionOn = state.isIgnitionOn
                 self.isStarterOn = state.isStarterOn
@@ -129,6 +162,10 @@ class EngineViewModel: ObservableObject {
 
                 // Pass engine wrapper to oscilloscope manager for sampling
                 self.oscilloscopeManager.sample(from: engine)
+
+                // Sample the user's ECU maps at the live operating point and
+                // push the resulting offset/trim into the engine.
+                self.applyEcuTune(engine: engine)
             }
 
             self.advanceRevRamp()
@@ -142,10 +179,27 @@ class EngineViewModel: ObservableObject {
         engine?.setIgnitionOffset(offset)
         ignitionOffset = offset
     }
-    
+
     func setFuelTrim(_ trim: Double) {
         engine?.setFuelTrim(trim)
         fuelTrim = trim
+    }
+
+    /// Read the live operating point, look the absolute spark advance + fuel
+    /// trim out of the ECU maps, and push them into the C++ engine. Since
+    /// the engine's own timing curve already supplies a base, we send only
+    /// the delta (mapValue − baseAtRpm) — the engine then computes
+    /// total = base + delta which equals the map value. Single source of
+    /// truth: the cell.
+    private func applyEcuTune(engine: EngineWrapper) {
+        let loadKpa = manifoldPressureToAbsoluteKpa(manifoldPressure)
+        let targetAdvance = ecu.ignitionAdvance(rpm: rpm, loadKpa: loadKpa)
+        let baseAdvance = ecu.baseTiming(at: rpm)
+        let delta = targetAdvance - baseAdvance
+        let trim = ecu.fuelTrim(rpm: rpm, loadKpa: loadKpa)
+        engine.setIgnitionOffset(delta)
+        engine.setFuelTrim(trim)
+        ecu.recordSample(rpm: rpm, loadKpa: loadKpa)
     }
     
     deinit {
@@ -178,13 +232,51 @@ class EngineViewModel: ObservableObject {
         redline = newEngine?.getEngineRedline() ?? 6500.0
         engineId = entry.id
         gearCount = Self.gearCount(for: entry)
+        cylindersPerBank = Self.cylindersPerBank(for: entry)
         pendingGear = nil
+        // Rebuild the ECU map: bin range + seed values come from the new
+        // engine's redline and base timing curve.
+        ecu = Self.makeEcuModel(for: newEngine)
+        bindToEcu()
+    }
+
+    /// Build an EcuTuneModel seeded from the engine's current redline and
+    /// base spark-advance curve. The model captures the curve values at init
+    /// time so the user gets to see real timing numbers in every cell instead
+    /// of a sea of 0°.
+    private static func makeEcuModel(for engine: EngineWrapper?) -> EcuTuneModel {
+        let redline = engine?.getEngineRedline() ?? 6500.0
+        let provider: EcuBaseTimingProvider = { [weak engine] rpm in
+            return engine?.getBaseTimingAdvance(forRpm: rpm) ?? 0.0
+        }
+        return EcuTuneModel(redlineRpm: redline, baseTiming: provider)
+    }
+
+    /// Subscribe to ECU map changes so that edits push to the C++ engine on
+    /// the next runloop tick instead of waiting for the 30 Hz polling cycle.
+    private func bindToEcu() {
+        ecuCancellables.removeAll()
+        Publishers.CombineLatest(ecu.$ignitionMap, ecu.$fuelMap)
+            .dropFirst()  // initial publish on subscribe — no engine call yet
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in
+                guard let self = self, let engine = self.engine else { return }
+                self.applyEcuTune(engine: engine)
+            }
+            .store(in: &ecuCancellables)
     }
 
     /// Forward gear count for the entry, preferring the editable spec and
     /// falling back to the canned built-in spec when present.
     private static func gearCount(for entry: EngineEntry) -> Int {
         entry.effectiveSpec?.gearRatios.count ?? defaultGearCount
+    }
+
+    /// Cylinders per bank for the entry, derived from the engine layout.
+    private static func cylindersPerBank(for entry: EngineEntry) -> Int {
+        guard let layout = entry.effectiveSpec?.layout else { return defaultCylindersPerBank }
+        let banks = max(layout.bankCount, 1)
+        return max(1, layout.cylinderCount / banks)
     }
 
     /// Adopt the gear value reported by polling, unless we're still waiting
@@ -251,7 +343,17 @@ class EngineViewModel: ObservableObject {
         // Optimistically flip locally so the UI responds instantly; the next
         // poll authoritatively re-syncs from the native clutchPressure.
         clutchPressed.toggle()
+        clutchPressure = clutchPressed ? 0.0 : 1.0
         engine?.toggleClutch()
+    }
+
+    /// Drives the native clutch pressure continuously (0 = disengaged,
+    /// 1 = engaged). Used by the precision slider in the UI.
+    func setClutchPressure(_ pressure: Double) {
+        let clamped = min(max(pressure, 0.0), 1.0)
+        clutchPressure = clamped
+        clutchPressed = clamped < clutchEngagedThreshold
+        engine?.setClutchPressure(clamped)
     }
 
     // New function to support H-Shifter

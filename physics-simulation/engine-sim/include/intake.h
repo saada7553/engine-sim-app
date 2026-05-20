@@ -43,7 +43,7 @@ class Intake : public Part {
         void initialize(Parameters &params);
         virtual void destroy();
 
-        void process(double dt);
+        void process(double dt, double fuelTrim);
 
         inline double getRunnerFlowRate() const { return m_runnerFlowRate; }
         inline double getThrottlePlatePosition() const { return m_idleThrottlePlatePosition * m_throttle; }

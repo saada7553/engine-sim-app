@@ -22,6 +22,7 @@ struct CustomSplitView: NSViewRepresentable {
     @Binding var hoveredTile: TileViewModel?
     @Binding var hoverPosition: SplitDirection?
     let deleteTile: (TileViewModel) -> Void
+    let onLayoutChanged: () -> Void
     
     func makeNSView(context: Context) -> NSSplitView {
         let splitView = StyledSplitView()
@@ -63,7 +64,8 @@ struct CustomSplitView: NSViewRepresentable {
                     browserMode: $browserMode,
                     hoveredTile: $hoveredTile,
                     hoverPosition: $hoverPosition,
-                    deleteTile: deleteTile
+                    deleteTile: deleteTile,
+                    onLayoutChanged: onLayoutChanged
                 )
             )
             

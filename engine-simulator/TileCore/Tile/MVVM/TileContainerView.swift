@@ -16,6 +16,9 @@ struct TileContainerView: View {
     @Binding var hoveredTile: TileViewModel?
     @Binding var hoverPosition: SplitDirection?
     let deleteTile: (TileViewModel) -> Void
+    /// Called whenever the tile tree changes — split / delete / etc. — so
+    /// the workspace can flag the layout as having unsaved changes.
+    let onLayoutChanged: () -> Void
     
     var body: some View {
         if tile.isLeaf {
@@ -42,6 +45,7 @@ struct TileContainerView: View {
             },
             onSplit: { direction, isLeftOrTop in
                 splitTile(tile, direction: direction, isLeftOrTop: isLeftOrTop)
+                onLayoutChanged()
             },
             onHover: { position in
                 if hoveredTile != tile || hoverPosition != position {
@@ -69,7 +73,8 @@ struct TileContainerView: View {
             browserMode: $browserMode,
             hoveredTile: $hoveredTile,
             hoverPosition: $hoverPosition,
-            deleteTile: deleteTile
+            deleteTile: deleteTile,
+            onLayoutChanged: onLayoutChanged
         )
         .toolbar(removing: .title) // sadd
         .id(tile.id)

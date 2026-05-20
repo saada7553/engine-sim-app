@@ -4,6 +4,10 @@
 //
 //  Created by Saad Ata on 11/25/25.
 //
+//  Per-tile overlays shown while the workspace is in SPLIT or DELETE mode.
+//  Styling tracks the rest of the dashboard: dark fills, hairline borders,
+//  monospaced "RetroFont" labels, and the app's orange/red status colors.
+//
 
 import Foundation
 import SwiftUI
@@ -12,6 +16,18 @@ enum HoverMode {
     case delete
     case split
 }
+
+// Palette constants — kept here so all overlay styling is in one place and
+// stays aligned with RetroPanel / ControlButton elsewhere in the app.
+private let overlayBackgroundDim = Color.black.opacity(0.55)
+private let overlayHighlightFill = Color.orange.opacity(0.22)
+private let overlayHighlightBorder = Color.orange.opacity(0.85)
+private let overlayDeleteFill = Color.red.opacity(0.22)
+private let overlayDeleteBorder = Color.red.opacity(0.85)
+private let overlayDeleteIconColor = Color.red
+private let overlayLabelBackground = Color.black.opacity(0.85)
+private let overlayLabelBorder = Color.white.opacity(0.25)
+private let overlayCornerRadius: CGFloat = 10
 
 struct HoverDetectionView: View {
     let mode: HoverMode
@@ -23,30 +39,36 @@ struct HoverDetectionView: View {
     let onSplit: (SplitDirection, Bool) -> Void
     let onDelete: () -> Void
     @State private var lastHoverLocation: CGPoint = .zero
-    
+
     var body: some View {
         ZStack {
             overlayContent
             hitbox
         }
     }
-    
+
     @ViewBuilder
-   private var overlayContent: some View {
-       if isHovered {
-           switch mode {
-           case .delete:
-               deleteOverlay
-                   .transition(.opacity.combined(with: .scale))
-           case .split:
-               if let direction = hoverPosition {
-                   splitOverlay(direction)
-                       .transition(.opacity)
-               }
-           }
-       }
-   }
-    
+    private var overlayContent: some View {
+        if isHovered {
+            switch mode {
+            case .delete:
+                DeleteOverlay()
+                    .transition(.opacity)
+            case .split:
+                if let direction = hoverPosition {
+                    SplitOverlay(
+                        direction: direction,
+                        isLeftOrTop: determineIsLeftOrTop(
+                            location: lastHoverLocation,
+                            direction: direction
+                        )
+                    )
+                    .transition(.opacity)
+                }
+            }
+        }
+    }
+
     var hitbox: some View {
         Color.clear
             .contentShape(Rectangle())
@@ -55,22 +77,21 @@ struct HoverDetectionView: View {
                 onContHover(phase)
             }
     }
-    
+
     func tapGesture() -> Void {
-        if  mode == .split,
-            let direction = hoverPosition {
+        if mode == .split, let direction = hoverPosition {
             let isLeftOrTop = determineIsLeftOrTop(
                 location: lastHoverLocation,
                 direction: direction
             )
             onSplit(direction, isLeftOrTop)
         }
-        
+
         if mode == .delete {
             onDelete()
         }
     }
-    
+
     func onContHover(_ phase: HoverPhase) -> Void {
         switch phase {
         case .active(let location):
@@ -81,175 +102,164 @@ struct HoverDetectionView: View {
             onHoverEnd()
         }
     }
-    
+
     func determineDirection(location: CGPoint) -> SplitDirection {
         let W = geometry.size.width
         let H = geometry.size.height
-        
+
         let mainDiagonalY = (H / W) * location.x
         let antiDiagonalY = H - (H / W) * location.x
         let y = location.y
-        
+
         let aboveMain = y < mainDiagonalY
         let aboveAnti = y < antiDiagonalY
 
         let isHorizontal = aboveMain != aboveAnti
         return isHorizontal ? .horizontal : .vertical
     }
-    
+
     func determineIsLeftOrTop(location: CGPoint, direction: SplitDirection) -> Bool {
         if direction == .horizontal { return location.x < geometry.size.width / 2 }
         return location.y < geometry.size.height / 2
     }
 }
 
+// MARK: - Delete overlay
+//
+// Dimmed tile with a red-bordered halo and a centered "REMOVE TILE" label.
+// Reads as a destructive action without resorting to the previous magenta
+// gradient blast.
 
-// MARK: - Overlay Styles Extension
-extension HoverDetectionView {
-    var deleteOverlay: some View {
-        DeleteOverlayContent()
-    }
-    
-    func splitOverlay(_ direction: SplitDirection) -> some View {
-        SplitOverlayContent(
-            direction: direction,
-            isLeftOrTop: determineIsLeftOrTop(
-                location: lastHoverLocation,
-                direction: direction
-            )
-        )
-    }
-}
-
-// MARK: - Delete Overlay Component
-private struct DeleteOverlayContent: View {
-    @State private var pulseScale: CGFloat = 1.0
-    
+private struct DeleteOverlay: View {
     var body: some View {
         ZStack {
-            backgroundGradient
-            deleteIcon
-        }
-        .onAppear { startPulseAnimation() }
-    }
-    
-    private var backgroundGradient: some View {
-        LinearGradient.deleteOverlayGradient
-            .opacity(0.85)
-            .customCornerRadius()
-    }
-    
-    private var deleteIcon: some View {
-        Image(systemName: "trash.fill")
-            .font(.system(size: 64, weight: .medium))
-            .foregroundStyle(.white)
-            .scaleEffect(pulseScale)
-            .shadow(color: .black.opacity(0.3), radius: 8, y: 4)
-    }
-    
-    private func startPulseAnimation() {
-        withAnimation(
-            .easeInOut(duration: 1.2)
-            .repeatForever(autoreverses: true)
-        ) {
-            pulseScale = 1.1
+            RoundedRectangle(cornerRadius: overlayCornerRadius)
+                .fill(overlayBackgroundDim)
+
+            RoundedRectangle(cornerRadius: overlayCornerRadius)
+                .fill(overlayDeleteFill)
+
+            RoundedRectangle(cornerRadius: overlayCornerRadius)
+                .strokeBorder(overlayDeleteBorder, lineWidth: 1.5)
+
+            VStack(spacing: 8) {
+                Image(systemName: "trash")
+                    .font(.system(size: 28, weight: .regular))
+                    .foregroundColor(overlayDeleteIconColor)
+                OverlayLabel(text: "REMOVE TILE", accent: overlayDeleteBorder)
+            }
         }
     }
 }
 
-private struct SplitOverlayContent: View {
+// MARK: - Split overlay
+//
+// Splits the tile into the two halves the user is about to create, fills the
+// hovered half with an orange wash, and draws a divider line where the new
+// split will land. The label tells the user which way the split will fall.
+
+private struct SplitOverlay: View {
     let direction: SplitDirection
     let isLeftOrTop: Bool
-    @State private var animationProgress: CGFloat = 0
-    
+
     var body: some View {
         GeometryReader { geo in
             ZStack {
-                splitGradientBackground
-                splitLabel(in: geo)
+                RoundedRectangle(cornerRadius: overlayCornerRadius)
+                    .fill(overlayBackgroundDim)
+
+                highlightedHalf(in: geo)
+
+                divider(in: geo)
+
+                RoundedRectangle(cornerRadius: overlayCornerRadius)
+                    .strokeBorder(overlayHighlightBorder, lineWidth: 1.5)
+
+                OverlayLabel(text: labelText, accent: overlayHighlightBorder)
+                    .position(labelPosition(in: geo))
             }
         }
-        .onAppear { startAnimation() }
     }
-    
-    private var splitGradientBackground: some View {
-        Group {
+
+    private func highlightedHalf(in geo: GeometryProxy) -> some View {
+        let rect = halfRect(in: geo)
+        return Rectangle()
+            .fill(overlayHighlightFill)
+            .frame(width: rect.width, height: rect.height)
+            .position(x: rect.midX, y: rect.midY)
+            .clipShape(RoundedRectangle(cornerRadius: overlayCornerRadius))
+    }
+
+    private func divider(in geo: GeometryProxy) -> some View {
+        let w = geo.size.width
+        let h = geo.size.height
+        let dashed = StrokeStyle(lineWidth: 1.5, dash: [4, 4])
+
+        return Path { path in
             if direction == .horizontal {
-                HStack(spacing: 0) {
-                    gradientSection(isHovered: isLeftOrTop)
-                    gradientSection(isHovered: !isLeftOrTop)
-                }
+                let x = w / 2
+                path.move(to: CGPoint(x: x, y: 8))
+                path.addLine(to: CGPoint(x: x, y: h - 8))
             } else {
-                VStack(spacing: 0) {
-                    gradientSection(isHovered: isLeftOrTop)
-                    gradientSection(isHovered: !isLeftOrTop)
-                }
+                let y = h / 2
+                path.move(to: CGPoint(x: 8, y: y))
+                path.addLine(to: CGPoint(x: w - 8, y: y))
             }
         }
-        .customCornerRadius()
+        .stroke(overlayHighlightBorder, style: dashed)
     }
-    
-    private func gradientSection(isHovered: Bool) -> some View {
-        Group {
-            if isHovered {
-                LinearGradient.splitPrimaryGradient
-                    .opacity(0.7)
-            } else {
-                Color.clear
-            }
+
+    private func halfRect(in geo: GeometryProxy) -> CGRect {
+        let w = geo.size.width
+        let h = geo.size.height
+        if direction == .horizontal {
+            let halfW = w / 2
+            let x = isLeftOrTop ? 0 : halfW
+            return CGRect(x: x, y: 0, width: halfW, height: h)
+        } else {
+            let halfH = h / 2
+            let y = isLeftOrTop ? 0 : halfH
+            return CGRect(x: 0, y: y, width: w, height: halfH)
         }
     }
-    
-    private func splitLabel(in geo: GeometryProxy) -> some View {
-        Text(splitDirectionText)
-            .font(.system(size: 18, weight: .semibold, design: .rounded))
-            .foregroundStyle(.white)
-            .padding(.horizontal, 16)
-            .padding(.vertical, 8)
+
+    private func labelPosition(in geo: GeometryProxy) -> CGPoint {
+        let rect = halfRect(in: geo)
+        return CGPoint(x: rect.midX, y: rect.midY)
+    }
+
+    private var labelText: String {
+        switch (direction, isLeftOrTop) {
+        case (.horizontal, true):  return "SPLIT LEFT"
+        case (.horizontal, false): return "SPLIT RIGHT"
+        case (.vertical, true):    return "SPLIT TOP"
+        case (.vertical, false):   return "SPLIT BOTTOM"
+        }
+    }
+}
+
+// MARK: - Shared label
+
+/// Pill label rendered in the monospaced retro font with a thin border in
+/// the supplied accent color. Reused by both overlay styles.
+private struct OverlayLabel: View {
+    let text: String
+    let accent: Color
+
+    var body: some View {
+        Text(text)
+            .modifier(RetroFont(size: 10, weight: .bold))
+            .foregroundColor(.white)
+            .tracking(1)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 5)
             .background(
-                Capsule()
-                    .fill(.ultraThinMaterial)
-                    .overlay {
-                        Capsule()
-                            .strokeBorder(
-                                LinearGradient.tileViewBorderGradient,
-                                lineWidth: 2
-                            )
-                    }
+                RoundedRectangle(cornerRadius: 4)
+                    .fill(overlayLabelBackground)
             )
-            .shadow(color: .black.opacity(0.2), radius: 4, y: 2)
-            .offset(labelOffset(in: geo))
-            .opacity(animationProgress)
-    }
-    
-    private var splitDirectionText: String {
-        switch (direction, isLeftOrTop) {
-        case (.horizontal, true): return "Split Left"
-        case (.horizontal, false): return "Split Right"
-        case (.vertical, true): return "Split Top"
-        case (.vertical, false): return "Split Bottom"
-        }
-    }
-    
-    private func labelOffset(in geo: GeometryProxy) -> CGSize {
-        let midX = geo.size.width / 2
-        let midY = geo.size.height / 2
-        
-        switch (direction, isLeftOrTop) {
-        case (.horizontal, true):
-            return CGSize(width: -midX / 2, height: 0)
-        case (.horizontal, false):
-            return CGSize(width: midX / 2, height: 0)
-        case (.vertical, true):
-            return CGSize(width: 0, height: -midY / 2)
-        case (.vertical, false):
-            return CGSize(width: 0, height: midY / 2)
-        }
-    }
-    
-    private func startAnimation() {
-        withAnimation(.easeOut(duration: 0.3)) {
-            animationProgress = 1.0
-        }
+            .overlay(
+                RoundedRectangle(cornerRadius: 4)
+                    .stroke(accent.opacity(0.7), lineWidth: 1)
+            )
     }
 }

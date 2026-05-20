@@ -7,14 +7,19 @@
 //
 
 import SwiftUI
+import UniformTypeIdentifiers
 
 // MARK: - Diagram constants
 
 private enum CylinderDiagram {
     static let viewportFillFraction: CGFloat = 0.9
     static let boreWallThickness: CGFloat = 1.5
-    static let headThicknessRatioOfBore: CGFloat = 0.22
-    static let chamberClearanceRatioOfBore: CGFloat = 0.07
+    // Cylinder head is thinner — the previous 0.22 made the deck look like a
+    // brick over the piston. Real heads above a 86mm bore are closer to 12-15mm.
+    static let headThicknessRatioOfBore: CGFloat = 0.13
+    // Chamber clearance shrunk too — combustion chambers are tight, not the
+    // cavernous gap the old 0.07 implied.
+    static let chamberClearanceRatioOfBore: CGFloat = 0.035
     static let pistonRingGap: CGFloat = 4
     static let pistonSkirtBelowWristPin: CGFloat = 6
     static let wristPinRadius: CGFloat = 3
@@ -66,27 +71,22 @@ struct IdentityStep: View {
                 Rectangle()
                     .fill(BuilderTheme.accent)
                     .frame(height: 1)
-
-                Spacer().frame(height: 12)
-
-                BuilderSlider(label: "Redline",
-                              value: $state.spec.redlineRpm,
-                              range: 3000...12000,
-                              step: 100,
-                              unit: "rpm",
-                              format: "%.0f")
-                    .frame(maxWidth: 380)
             }
             Spacer()
 
-            EnginePlaceholderArt()
+            EnginePlaceholderArt(spec: state.spec)
                 .frame(width: 280, height: 280)
         }
         .onAppear { focused = true }
     }
 }
 
+/// Neutral identity-side art that reflects the spec the user is composing,
+/// rather than always claiming the engine is a V8. Before a layout is picked
+/// it's just a couple of concentric outlines and a build-status badge.
 private struct EnginePlaceholderArt: View {
+    let spec: EngineSpec
+
     var body: some View {
         ZStack {
             ForEach(0..<3, id: \.self) { i in
@@ -96,10 +96,17 @@ private struct EnginePlaceholderArt: View {
             }
             Rectangle()
                 .stroke(BuilderTheme.accent, lineWidth: 1.5)
-                .frame(width: 90, height: 90)
-            Text("V8")
-                .font(.system(size: 24, weight: .regular, design: .monospaced))
-                .foregroundColor(BuilderTheme.accent)
+                .frame(width: 120, height: 120)
+
+            VStack(spacing: 6) {
+                Text(spec.layout.shortLabel)
+                    .font(.system(size: 24, weight: .regular, design: .monospaced))
+                    .foregroundColor(BuilderTheme.accent)
+                Text(String(format: "%.2fL", spec.displacementLitres))
+                    .font(.system(size: 11, weight: .regular, design: .monospaced))
+                    .foregroundColor(BuilderTheme.label)
+                    .tracking(1)
+            }
         }
     }
 }
@@ -172,41 +179,88 @@ private struct LayoutSilhouette: View {
             let banks = layout.bankCount
 
             if banks == 1 {
-                let cylW = w / CGFloat(n) * 0.7
-                let gap = (w - cylW * CGFloat(n)) / CGFloat(n + 1)
-                HStack(spacing: gap) {
-                    ForEach(0..<n, id: \.self) { _ in
-                        Rectangle().stroke(color, lineWidth: 1)
-                            .frame(width: cylW, height: h * 0.7)
-                    }
-                }
-                .padding(.horizontal, gap)
-                .frame(maxHeight: .infinity, alignment: .center)
+                inlineSilhouette(w: w, h: h, count: n, color: color)
+            } else if layout.bankHalfAngleDeg >= 80 {
+                // Boxer / flat: cylinders lie horizontally, pointing away
+                // from a central crankshaft. Render them as left- and
+                // right-pointing rows sharing a center column.
+                flatSilhouette(w: w, h: h, count: n, color: color)
             } else {
-                // V or flat: two rows
-                let perBank = n / 2
-                let cylW = w / CGFloat(perBank) * 0.7
-                let gap = (w - cylW * CGFloat(perBank)) / CGFloat(perBank + 1)
-                let tilt = layout.bankHalfAngleDeg / 90.0   // 0..1
-                VStack(spacing: 0) {
-                    HStack(spacing: gap) {
-                        ForEach(0..<perBank, id: \.self) { _ in
-                            Rectangle().stroke(color, lineWidth: 1)
-                                .frame(width: cylW, height: h * 0.32)
-                                .rotationEffect(.degrees(-15 * tilt))
-                        }
-                    }
-                    HStack(spacing: gap) {
-                        ForEach(0..<perBank, id: \.self) { _ in
-                            Rectangle().stroke(color, lineWidth: 1)
-                                .frame(width: cylW, height: h * 0.32)
-                                .rotationEffect(.degrees(15 * tilt))
-                        }
-                    }
-                }
-                .padding(.horizontal, gap)
+                vSilhouette(w: w, h: h, count: n,
+                            tilt: layout.bankHalfAngleDeg / 90.0, color: color)
             }
         }
+    }
+
+    private func inlineSilhouette(w: CGFloat, h: CGFloat, count n: Int, color: Color) -> some View {
+        let cylW = w / CGFloat(n) * 0.7
+        let gap = (w - cylW * CGFloat(n)) / CGFloat(n + 1)
+        return HStack(spacing: gap) {
+            ForEach(0..<n, id: \.self) { _ in
+                Rectangle().stroke(color, lineWidth: 1)
+                    .frame(width: cylW, height: h * 0.7)
+            }
+        }
+        .padding(.horizontal, gap)
+        .frame(maxHeight: .infinity, alignment: .center)
+    }
+
+    private func vSilhouette(w: CGFloat, h: CGFloat, count n: Int,
+                              tilt: Double, color: Color) -> some View {
+        let perBank = n / 2
+        let cylW = w / CGFloat(perBank) * 0.7
+        let gap = (w - cylW * CGFloat(perBank)) / CGFloat(perBank + 1)
+        return VStack(spacing: 0) {
+            HStack(spacing: gap) {
+                ForEach(0..<perBank, id: \.self) { _ in
+                    Rectangle().stroke(color, lineWidth: 1)
+                        .frame(width: cylW, height: h * 0.32)
+                        .rotationEffect(.degrees(-15 * tilt))
+                }
+            }
+            HStack(spacing: gap) {
+                ForEach(0..<perBank, id: \.self) { _ in
+                    Rectangle().stroke(color, lineWidth: 1)
+                        .frame(width: cylW, height: h * 0.32)
+                        .rotationEffect(.degrees(15 * tilt))
+                }
+            }
+        }
+        .padding(.horizontal, gap)
+    }
+
+    /// Boxer layout: cylinders lie flat on either side of a vertical crank
+    /// line. Each side has perBank cylinders stacked vertically.
+    private func flatSilhouette(w: CGFloat, h: CGFloat, count n: Int, color: Color) -> some View {
+        let perBank = n / 2
+        let crankWidth: CGFloat = 4
+        let sideWidth = (w - crankWidth) / 2
+        let cylH = (h * 0.7) / CGFloat(perBank) * 0.7
+        let rowGap = (h * 0.7 - cylH * CGFloat(perBank)) / CGFloat(perBank + 1)
+        let cylW = sideWidth * 0.7
+
+        return HStack(spacing: 0) {
+            VStack(spacing: rowGap) {
+                ForEach(0..<perBank, id: \.self) { _ in
+                    Rectangle().stroke(color, lineWidth: 1)
+                        .frame(width: cylW, height: cylH)
+                }
+            }
+            .frame(width: sideWidth, height: h * 0.7, alignment: .trailing)
+
+            Rectangle()
+                .fill(color.opacity(0.7))
+                .frame(width: crankWidth, height: h * 0.78)
+
+            VStack(spacing: rowGap) {
+                ForEach(0..<perBank, id: \.self) { _ in
+                    Rectangle().stroke(color, lineWidth: 1)
+                        .frame(width: cylW, height: cylH)
+                }
+            }
+            .frame(width: sideWidth, height: h * 0.7, alignment: .leading)
+        }
+        .frame(width: w, height: h)
     }
 }
 
@@ -242,6 +296,7 @@ struct BottomEndStep: View {
                                  rodLengthMm: state.spec.rodLengthMm,
                                  compressionHeightMm: state.spec.compressionHeightMm)
                     .frame(width: 240, height: 340)
+                    .clipped()      // crank circle stays inside its panel
                 HStack {
                     StatBox(label: "B / S", value: String(format: "%.2f", state.spec.boreMm / state.spec.strokeMm))
                     StatBox(label: "R / S", value: String(format: "%.2f", state.spec.rodLengthMm / state.spec.strokeMm))
@@ -864,21 +919,19 @@ private struct CamLegend: View {
 // MARK: - Firing Order
 
 private enum FiringOrderDiagram {
-    static let cycleDeg: Double = 720
     static let chipSize: CGFloat = 56
-    static let chipSpacing: CGFloat = 12
-    static let timelineHeight: CGFloat = 110
-    static let timelineMarkerWidth: CGFloat = 2
-    static let timelineCylinderLabelInset: CGFloat = 14
+    static let chipSpacing: CGFloat = 10
+    static let stepInterval: Double = 0.45     // seconds per cylinder fire in the preview
+    static let lightBumpDuration: Double = 0.35
+    static let diagramSize: CGFloat = 240
 }
 
-/// Click-to-build firing order editor.
+/// Drag-to-reorder firing order editor.
 ///
-/// Workflow: an ordered sequence of slots (1st … Nth) sits at the top; an
-/// "available cylinders" palette sits below. Tapping a palette cylinder
-/// drops it into the next empty slot; tapping a filled slot returns that
-/// cylinder to the palette. Filling the sequence top-to-bottom is the
-/// fastest way to build a custom firing order from scratch.
+/// `state.spec.firingOrder` always contains every cylinder (1...N). The user
+/// just drags chips to change the order — no separate palette / pool of
+/// unassigned cylinders. The preview on the right shows the engine layout
+/// with each cylinder pulsing orange in the chosen order.
 struct FiringOrderStep: View {
     @ObservedObject var state: EngineBuilderState
 
@@ -886,50 +939,56 @@ struct FiringOrderStep: View {
         HStack(alignment: .top, spacing: 40) {
             VStack(alignment: .leading, spacing: 22) {
                 BuilderSectionHeading(title: "Step 5 · Firing order")
-                Text("Tap a cylinder below to drop it into the next slot.\nTap a filled slot to return that cylinder to the pool.")
+                Text("Drag a cylinder to a new position to reorder.\nThe preview on the right cycles through your firing order.")
                     .font(.system(size: 12, weight: .regular, design: .monospaced))
                     .foregroundColor(BuilderTheme.label)
                     .lineSpacing(4)
 
-                FiringOrderSequence(order: state.spec.firingOrder,
-                                     cylinderCount: state.spec.layout.cylinderCount,
-                                     onSlotTap: removeSlot)
-
-                FiringOrderPalette(order: state.spec.firingOrder,
-                                    cylinderCount: state.spec.layout.cylinderCount,
-                                    bankCount: state.spec.layout.bankCount,
-                                    onCylinderTap: addCylinder)
+                DraggableFiringSequence(order: orderBinding,
+                                         bankCount: state.spec.layout.bankCount)
 
                 HStack(spacing: 10) {
-                    builderChip(label: "CLEAR", action: clearSequence)
                     builderChip(label: "USE DEFAULT", action: useLayoutDefault)
-                    if !state.spec.firingOrderIsValid {
-                        Text("⚠ INCOMPLETE")
-                            .font(.system(size: 10, weight: .bold, design: .monospaced))
-                            .tracking(2)
-                            .foregroundColor(.orange)
-                    } else {
-                        Text("✓ VALID")
-                            .font(.system(size: 10, weight: .bold, design: .monospaced))
-                            .tracking(2)
-                            .foregroundColor(BuilderTheme.accent)
-                    }
+                    Spacer()
+                    Text("ORDER · \(state.spec.firingOrder.map(String.init).joined(separator: "-"))")
+                        .font(.system(size: 10, weight: .bold, design: .monospaced))
+                        .tracking(1.2)
+                        .foregroundColor(BuilderTheme.accent)
                 }
+                .frame(maxWidth: 600)
             }
             .frame(maxWidth: 600)
 
             VStack(spacing: 14) {
-                BuilderSectionHeading(title: "Fire timeline (720°)")
-                FiringTimeline(order: state.spec.firingOrder,
-                               cylinderCount: state.spec.layout.cylinderCount)
-                    .frame(width: 360, height: FiringOrderDiagram.timelineHeight)
-                Text("Even spacing means smoother idle. Uneven\nfiring orders trade smoothness for character.")
+                BuilderSectionHeading(title: "Firing preview")
+                FiringAnimation(layout: state.spec.layout,
+                                 order: state.spec.firingOrder)
+                    .frame(width: FiringOrderDiagram.diagramSize,
+                           height: FiringOrderDiagram.diagramSize)
+                Text("Each cylinder pulses as it fires.\nEven spacing = smoother engine.")
                     .font(.system(size: 11, weight: .regular, design: .monospaced))
                     .foregroundColor(BuilderTheme.label)
                     .lineSpacing(3)
-                    .frame(width: 360, alignment: .leading)
+                    .frame(width: FiringOrderDiagram.diagramSize, alignment: .leading)
             }
             Spacer()
+        }
+        .onAppear { ensureFullOrder() }
+    }
+
+    private var orderBinding: Binding<[Int]> {
+        Binding(
+            get: { state.spec.firingOrder },
+            set: { state.spec.firingOrder = $0 }
+        )
+    }
+
+    /// Drag reordering assumes every cylinder is in the array. If something
+    /// upstream left it incomplete, snap to the layout default the moment
+    /// this step appears.
+    private func ensureFullOrder() {
+        if !state.spec.firingOrderIsValid {
+            state.spec.resyncFiringOrderForLayout()
         }
     }
 
@@ -946,200 +1005,285 @@ struct FiringOrderStep: View {
         .buttonStyle(.plain)
     }
 
-    private func addCylinder(_ cyl: Int) {
-        guard !state.spec.firingOrder.contains(cyl) else { return }
-        if state.spec.firingOrder.count < state.spec.layout.cylinderCount {
-            state.spec.firingOrder.append(cyl)
-        }
-    }
-
-    private func removeSlot(_ idx: Int) {
-        guard idx >= 0, idx < state.spec.firingOrder.count else { return }
-        state.spec.firingOrder.remove(at: idx)
-    }
-
-    private func clearSequence() {
-        state.spec.firingOrder.removeAll()
-    }
-
     private func useLayoutDefault() {
         state.spec.resyncFiringOrderForLayout()
     }
 }
 
-/// Top row: ordered slots showing the firing sequence under construction.
-/// Empty slots are dashed placeholders. Tapping a filled slot frees it.
-private struct FiringOrderSequence: View {
-    let order: [Int]
-    let cylinderCount: Int
-    let onSlotTap: (Int) -> Void
+/// Horizontal stack of cylinder chips. Each chip can be dragged onto another
+/// to swap its position. Built on SwiftUI's `.onDrag`/`.onDrop` for the
+/// reorder swap because the row isn't inside a `List` (where `.onMove` lives).
+private struct DraggableFiringSequence: View {
+    @Binding var order: [Int]
+    let bankCount: Int
+    @State private var draggingCylinder: Int? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            BuilderSectionHeading(title: "Sequence")
+            HStack(spacing: 6) {
+                BuilderSectionHeading(title: "Firing sequence")
+                Image(systemName: "arrow.left.and.right")
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundColor(BuilderTheme.accent)
+                Text("DRAG CHIPS TO REORDER")
+                    .font(.system(size: 9, weight: .bold, design: .monospaced))
+                    .tracking(1.2)
+                    .foregroundColor(BuilderTheme.label)
+            }
 
-            let columns = Array(repeating:
-                GridItem(.fixed(FiringOrderDiagram.chipSize),
-                         spacing: FiringOrderDiagram.chipSpacing),
-                count: min(cylinderCount, 8))
-
-            LazyVGrid(columns: columns,
+            LazyVGrid(columns: gridColumns,
                       alignment: .leading,
                       spacing: FiringOrderDiagram.chipSpacing) {
-                ForEach(0..<cylinderCount, id: \.self) { idx in
-                    slot(at: idx)
+                ForEach(Array(order.enumerated()), id: \.element) { idx, cyl in
+                    chip(position: idx + 1, cylinder: cyl)
+                        .onDrag {
+                            draggingCylinder = cyl
+                            return NSItemProvider(object: String(cyl) as NSString)
+                        }
+                        .onDrop(of: [.text],
+                                delegate: SwapDropDelegate(target: cyl,
+                                                           order: $order,
+                                                           dragging: $draggingCylinder))
                 }
             }
         }
     }
 
-    @ViewBuilder
-    private func slot(at idx: Int) -> some View {
-        if idx < order.count {
-            Button(action: { onSlotTap(idx) }) {
-                slotContent(position: idx + 1, cylinder: order[idx])
-            }
-            .buttonStyle(.plain)
-        } else {
-            emptySlot(position: idx + 1)
-        }
+    private var gridColumns: [GridItem] {
+        Array(repeating: GridItem(.fixed(FiringOrderDiagram.chipSize),
+                                  spacing: FiringOrderDiagram.chipSpacing),
+              count: min(order.count, 8))
     }
 
-    private func slotContent(position: Int, cylinder: Int) -> some View {
-        VStack(spacing: 2) {
-            Text("\(position).")
-                .font(.system(size: 9, weight: .bold, design: .monospaced))
-                .tracking(1)
-                .foregroundColor(.black.opacity(0.6))
-            Text("\(cylinder)")
-                .font(.system(size: 22, weight: .regular, design: .monospaced))
-                .foregroundColor(.black)
+    /// Each chip wears a small grip glyph on top — combined with the
+    /// open-hand cursor on hover, the drag affordance reads at a glance.
+    private func chip(position: Int, cylinder: Int) -> some View {
+        let lifted = draggingCylinder == cylinder
+        return ZStack {
+            VStack(spacing: 2) {
+                Text("\(position).")
+                    .font(.system(size: 9, weight: .bold, design: .monospaced))
+                    .tracking(1)
+                    .foregroundColor(.black.opacity(0.6))
+                Text("\(cylinder)")
+                    .font(.system(size: 22, weight: .regular, design: .monospaced))
+                    .foregroundColor(.black)
+                if bankCount > 1 {
+                    Text(bankFor(cylinder: cylinder))
+                        .font(.system(size: 7, weight: .bold, design: .monospaced))
+                        .tracking(1)
+                        .foregroundColor(.black.opacity(0.45))
+                }
+            }
+
+            // Drag handle in the top-right corner.
+            VStack {
+                HStack {
+                    Spacer()
+                    Image(systemName: "line.3.horizontal")
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundColor(.black.opacity(0.45))
+                        .padding(.top, 4)
+                        .padding(.trailing, 4)
+                }
+                Spacer()
+            }
         }
         .frame(width: FiringOrderDiagram.chipSize,
                height: FiringOrderDiagram.chipSize)
         .background(BuilderTheme.accent)
         .overlay(Rectangle().stroke(BuilderTheme.accent, lineWidth: 1.5))
-    }
-
-    private func emptySlot(position: Int) -> some View {
-        VStack(spacing: 2) {
-            Text("\(position).")
-                .font(.system(size: 9, weight: .bold, design: .monospaced))
-                .tracking(1)
-                .foregroundColor(BuilderTheme.label)
-            Text("—")
-                .font(.system(size: 22, weight: .regular, design: .monospaced))
-                .foregroundColor(BuilderTheme.dim.opacity(0.4))
+        .opacity(lifted ? 0.4 : 1.0)
+        .scaleEffect(lifted ? 0.96 : 1.0)
+        .animation(.easeOut(duration: 0.12), value: lifted)
+        .onHover { inside in
+            if inside { NSCursor.openHand.push() }
+            else { NSCursor.pop() }
         }
-        .frame(width: FiringOrderDiagram.chipSize,
-               height: FiringOrderDiagram.chipSize)
-        .background(Color.clear)
-        .overlay(Rectangle().stroke(BuilderTheme.line,
-                                    style: StrokeStyle(lineWidth: 1, dash: [3, 3])))
-    }
-}
-
-/// Bottom row: a pool of every cylinder number. Used cylinders are dimmed
-/// and unclickable; unused cylinders are bright and tappable.
-private struct FiringOrderPalette: View {
-    let order: [Int]
-    let cylinderCount: Int
-    let bankCount: Int
-    let onCylinderTap: (Int) -> Void
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            BuilderSectionHeading(title: "Available cylinders")
-
-            let columns = Array(repeating:
-                GridItem(.fixed(FiringOrderDiagram.chipSize),
-                         spacing: FiringOrderDiagram.chipSpacing),
-                count: min(cylinderCount, 8))
-
-            LazyVGrid(columns: columns,
-                      alignment: .leading,
-                      spacing: FiringOrderDiagram.chipSpacing) {
-                ForEach(1...cylinderCount, id: \.self) { cyl in
-                    paletteChip(cyl: cyl)
-                }
-            }
-        }
-    }
-
-    private func paletteChip(cyl: Int) -> some View {
-        let used = order.contains(cyl)
-        let bank = bankFor(cylinder: cyl)
-        return Button(action: { if !used { onCylinderTap(cyl) } }) {
-            VStack(spacing: 2) {
-                Text(bank)
-                    .font(.system(size: 8, weight: .bold, design: .monospaced))
-                    .tracking(1)
-                    .foregroundColor(BuilderTheme.label)
-                Text("\(cyl)")
-                    .font(.system(size: 22, weight: .regular, design: .monospaced))
-                    .foregroundColor(used ? BuilderTheme.dim.opacity(0.4) : .white)
-            }
-            .frame(width: FiringOrderDiagram.chipSize,
-                   height: FiringOrderDiagram.chipSize)
-            .background(Color.white.opacity(used ? 0.01 : 0.06))
-            .overlay(Rectangle().stroke(used ? BuilderTheme.line.opacity(0.4)
-                                              : BuilderTheme.line,
-                                        lineWidth: 1))
-        }
-        .buttonStyle(.plain)
-        .disabled(used)
     }
 
     private func bankFor(cylinder: Int) -> String {
-        if bankCount == 1 { return "" }
-        return cylinder.isMultiple(of: 2) ? "B" : "A"
+        cylinder.isMultiple(of: 2) ? "B" : "A"
     }
 }
 
-private struct FiringTimeline: View {
+/// Swaps the dragged cylinder with the drop target in the order array. We
+/// swap instead of insert so the array always retains every cylinder exactly
+/// once — that's the constraint of a firing order.
+private struct SwapDropDelegate: DropDelegate {
+    let target: Int
+    @Binding var order: [Int]
+    @Binding var dragging: Int?
+
+    func dropEntered(info: DropInfo) {
+        guard let src = dragging, src != target,
+              let srcIdx = order.firstIndex(of: src),
+              let dstIdx = order.firstIndex(of: target) else { return }
+        if srcIdx != dstIdx {
+            order.swapAt(srcIdx, dstIdx)
+        }
+    }
+
+    func performDrop(info: DropInfo) -> Bool {
+        dragging = nil
+        return true
+    }
+
+    func dropUpdated(info: DropInfo) -> DropProposal? {
+        DropProposal(operation: .move)
+    }
+}
+
+/// Engine-layout diagram that pulses each cylinder in the user's specified
+/// firing order. Pure-visual preview — no physics, just a rhythm cue so the
+/// user can feel the spacing.
+private struct FiringAnimation: View {
+    let layout: EngineLayout
     let order: [Int]
-    let cylinderCount: Int
 
     var body: some View {
         GeometryReader { proxy in
-            let w = proxy.size.width
-            let h = proxy.size.height
-            let stepDeg = FiringOrderDiagram.cycleDeg / Double(max(cylinderCount, 1))
-
-            ZStack(alignment: .topLeading) {
-                Rectangle().stroke(BuilderTheme.line, lineWidth: 1)
-
-                // 0/180/360/540/720 ticks.
-                ForEach(0...4, id: \.self) { i in
-                    let frac = CGFloat(i) / 4
-                    Path { p in
-                        p.move(to: CGPoint(x: w * frac, y: h - 14))
-                        p.addLine(to: CGPoint(x: w * frac, y: h))
-                    }
-                    .stroke(BuilderTheme.line, lineWidth: 0.5)
-                    Text("\(i * 180)°")
-                        .font(.system(size: 8, weight: .bold, design: .monospaced))
-                        .foregroundColor(BuilderTheme.label)
-                        .position(x: w * frac, y: h - 4)
-                }
-
-                // Markers for each cylinder's fire event.
-                ForEach(Array(order.enumerated()), id: \.offset) { idx, cyl in
-                    let angle = Double(idx) * stepDeg
-                    let x = w * CGFloat(angle / FiringOrderDiagram.cycleDeg)
-                    Path { p in
-                        p.move(to: CGPoint(x: x, y: 14))
-                        p.addLine(to: CGPoint(x: x, y: h - 14))
-                    }
-                    .stroke(BuilderTheme.accent, lineWidth: FiringOrderDiagram.timelineMarkerWidth)
-                    Text("\(cyl)")
-                        .font(.system(size: 10, weight: .bold, design: .monospaced))
-                        .foregroundColor(BuilderTheme.accent)
-                        .position(x: x, y: FiringOrderDiagram.timelineCylinderLabelInset / 2 + 4)
-                }
+            TimelineView(.animation) { context in
+                let phase = animationPhase(at: context.date.timeIntervalSinceReferenceDate)
+                drawLayout(in: proxy.size, phase: phase)
             }
         }
     }
+
+    private func animationPhase(at time: TimeInterval)
+        -> (currentCylinder: Int?, intensity: Double)
+    {
+        guard !order.isEmpty else { return (nil, 0) }
+        let stepInterval = FiringOrderDiagram.stepInterval
+        let totalCycle = stepInterval * Double(order.count)
+        let t = time.truncatingRemainder(dividingBy: totalCycle)
+        let idx = Int(t / stepInterval) % order.count
+        let bumpT = (t - Double(idx) * stepInterval) / FiringOrderDiagram.lightBumpDuration
+        let intensity = bumpT >= 0 && bumpT <= 1 ? cos((bumpT - 0.5) * .pi) : 0
+        return (order[idx], max(intensity, 0))
+    }
+
+    @ViewBuilder
+    private func drawLayout(in size: CGSize,
+                            phase: (currentCylinder: Int?, intensity: Double)) -> some View {
+        let positions = cylinderPositions(in: size)
+        ZStack {
+            ForEach(positions, id: \.cylinder) { entry in
+                let isFiring = phase.currentCylinder == entry.cylinder
+                let glow = isFiring ? phase.intensity : 0
+
+                Rectangle()
+                    .fill(BuilderTheme.accent.opacity(0.18 + 0.65 * glow))
+                    .overlay(Rectangle().stroke(BuilderTheme.accent.opacity(0.4 + 0.6 * glow),
+                                                 lineWidth: 1.5))
+                    .frame(width: entry.size.width, height: entry.size.height)
+                    .rotationEffect(.degrees(entry.rotationDeg))
+                    .position(entry.center)
+                    .shadow(color: BuilderTheme.accent.opacity(glow * 0.5),
+                            radius: 4 * glow)
+
+                Text("\(entry.cylinder)")
+                    .font(.system(size: 12, weight: .bold, design: .monospaced))
+                    .foregroundColor(.white.opacity(0.6 + 0.4 * glow))
+                    .position(entry.center)
+            }
+        }
+    }
+
+    /// Layout-specific positions for each cylinder rectangle. Falls back to
+    /// a single horizontal row for inline engines and two angled banks for V
+    /// / flat engines.
+    private func cylinderPositions(in size: CGSize)
+        -> [CylinderRender]
+    {
+        let n = layout.cylinderCount
+        let banks = layout.bankCount
+        if banks == 1 { return inlinePositions(n: n, size: size) }
+        if layout.bankHalfAngleDeg >= 80 { return flatPositions(n: n, size: size) }
+        return vPositions(n: n, size: size, halfAngleDeg: layout.bankHalfAngleDeg)
+    }
+
+    private func inlinePositions(n: Int, size: CGSize) -> [CylinderRender] {
+        let cylW = size.width / CGFloat(n + 1)
+        let cylH = size.height * 0.45
+        let totalWidth = cylW * CGFloat(n) + CGFloat(n - 1) * 6
+        let startX = (size.width - totalWidth) / 2 + cylW / 2
+
+        return (0..<n).map { i in
+            CylinderRender(
+                cylinder: i + 1,
+                center: CGPoint(x: startX + CGFloat(i) * (cylW + 6),
+                                y: size.height / 2),
+                size: CGSize(width: cylW, height: cylH),
+                rotationDeg: 0
+            )
+        }
+    }
+
+    private func vPositions(n: Int, size: CGSize, halfAngleDeg: Double) -> [CylinderRender] {
+        let perBank = n / 2
+        let cylW = size.width / CGFloat(perBank + 1) * 0.9
+        let cylH = size.height * 0.30
+        let tilt = halfAngleDeg / 90.0 * 18.0
+        let startX = (size.width - (cylW * CGFloat(perBank) + CGFloat(perBank - 1) * 6)) / 2 + cylW / 2
+
+        var out: [CylinderRender] = []
+        for i in 0..<perBank {
+            // Bank A — top row, odd cylinder numbers in the firing-order
+            // convention used elsewhere (1,3,5...)
+            out.append(CylinderRender(
+                cylinder: i * 2 + 1,
+                center: CGPoint(x: startX + CGFloat(i) * (cylW + 6),
+                                y: size.height * 0.30),
+                size: CGSize(width: cylW, height: cylH),
+                rotationDeg: -tilt
+            ))
+            // Bank B — bottom row, even cylinders.
+            out.append(CylinderRender(
+                cylinder: i * 2 + 2,
+                center: CGPoint(x: startX + CGFloat(i) * (cylW + 6),
+                                y: size.height * 0.70),
+                size: CGSize(width: cylW, height: cylH),
+                rotationDeg: tilt
+            ))
+        }
+        return out
+    }
+
+    private func flatPositions(n: Int, size: CGSize) -> [CylinderRender] {
+        let perBank = n / 2
+        let cylW = size.width * 0.32
+        let cylH = size.height / CGFloat(perBank + 1) * 0.75
+        let startY = (size.height - (cylH * CGFloat(perBank) + CGFloat(perBank - 1) * 6)) / 2 + cylH / 2
+
+        var out: [CylinderRender] = []
+        for i in 0..<perBank {
+            // Left bank — odd-numbered cylinders.
+            out.append(CylinderRender(
+                cylinder: i * 2 + 1,
+                center: CGPoint(x: size.width * 0.27,
+                                y: startY + CGFloat(i) * (cylH + 6)),
+                size: CGSize(width: cylW, height: cylH),
+                rotationDeg: 0
+            ))
+            // Right bank — even-numbered cylinders.
+            out.append(CylinderRender(
+                cylinder: i * 2 + 2,
+                center: CGPoint(x: size.width * 0.73,
+                                y: startY + CGFloat(i) * (cylH + 6)),
+                size: CGSize(width: cylW, height: cylH),
+                rotationDeg: 0
+            ))
+        }
+        return out
+    }
+}
+
+private struct CylinderRender {
+    let cylinder: Int
+    let center: CGPoint
+    let size: CGSize
+    let rotationDeg: Double
 }
 
 // MARK: - Induction
@@ -1718,10 +1862,12 @@ struct IgnitionFuelStep: View {
                                unit: "rpm", label: "Redline · Rev limit")
                         .padding(.bottom, 8)
 
-                    Text("Redline is set in the IDENTITY tab — it controls both the\ndisplayed redline and the hardware rev limiter.")
-                        .font(.system(size: 11, weight: .regular, design: .monospaced))
-                        .foregroundColor(BuilderTheme.label)
-                        .lineSpacing(3)
+                    BuilderSlider(label: "Redline",
+                                  value: redlineBinding,
+                                  range: 3000...12000,
+                                  step: 100,
+                                  unit: "rpm",
+                                  format: "%.0f")
 
                     BuilderSlider(label: "Limiter duration",
                                   value: $state.spec.limiterDurationSec,
@@ -1745,24 +1891,309 @@ struct IgnitionFuelStep: View {
                 }
                 .frame(maxWidth: 420)
 
-                VStack(spacing: 12) {
-                    BuilderSectionHeading(title: "Spark advance vs RPM")
-                    TimingCurveGraph(points: state.spec.ignitionTiming,
-                                      revLimitRpm: state.spec.revLimitRpm)
-                        .frame(width: 360, height: 240)
-                    Text("Edit the points in the Advanced tab.")
-                        .font(.system(size: 10, weight: .bold, design: .monospaced))
-                        .tracking(1)
-                        .foregroundColor(BuilderTheme.label)
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack(spacing: 8) {
+                        BuilderSectionHeading(title: "Spark advance vs RPM")
+                        Spacer()
+                        TimingCurveHint()
+                    }
+                    .frame(width: 420)
+
+                    InteractiveTimingCurve(points: $state.spec.ignitionTiming,
+                                            revLimitRpm: state.spec.revLimitRpm)
+                        .frame(width: 420, height: 280)
                 }
             }
             Spacer()
         }
     }
+
+    /// Mutating redline reshapes the timing curve as well — points past the
+    /// new redline get clipped to it so the graph stays clean.
+    private var redlineBinding: Binding<Double> {
+        Binding(
+            get: { state.spec.redlineRpm },
+            set: { newRedline in
+                state.spec.redlineRpm = newRedline
+                clampTimingToRedline(newRedline)
+            }
+        )
+    }
+
+    /// Keep the curve in step with the redline without spawning a point on
+    /// every 100-rpm slider tick. Strategy: drop points past the new redline,
+    /// then make sure each 1000-rpm stride from 1000 up to the redline has
+    /// a sample. Newly-introduced samples take their advance value from a
+    /// linear interpolation/extrapolation of the existing curve so they
+    /// follow the previous trend instead of all reading the same value.
+    private func clampTimingToRedline(_ redline: Double) {
+        var pts = state.spec.ignitionTiming.sorted { $0.rpm < $1.rpm }
+        pts.removeAll { $0.rpm > redline }
+
+        let stride: Double = 1000
+        // Target rpms: 1000, 2000, …, last multiple-of-1000 ≤ redline.
+        let maxStride = floor(redline / stride) * stride
+        var target = stride
+        while target <= maxStride {
+            let alreadyHas = pts.contains(where: { abs($0.rpm - target) < 0.5 })
+            if !alreadyHas {
+                let advance = Self.advance(at: target, on: pts)
+                pts.append(TimingPoint(rpm: target, advanceDeg: advance))
+            }
+            target += stride
+        }
+
+        state.spec.ignitionTiming = pts.sorted { $0.rpm < $1.rpm }
+    }
+
+    /// Linear interpolation across the curve. Extrapolates past the end
+    /// using the slope of the last two points; clamps below the first point.
+    private static func advance(at rpm: Double, on pts: [TimingPoint]) -> Double {
+        let sorted = pts.sorted { $0.rpm < $1.rpm }
+        guard !sorted.isEmpty else { return 12 }
+        guard sorted.count > 1 else { return sorted[0].advanceDeg }
+
+        if rpm <= sorted.first!.rpm { return sorted.first!.advanceDeg }
+        for i in 0..<(sorted.count - 1) {
+            let a = sorted[i]
+            let b = sorted[i + 1]
+            if rpm >= a.rpm && rpm <= b.rpm {
+                let t = (rpm - a.rpm) / (b.rpm - a.rpm)
+                return a.advanceDeg + t * (b.advanceDeg - a.advanceDeg)
+            }
+        }
+        // Extrapolate from the last two points.
+        let a = sorted[sorted.count - 2]
+        let b = sorted[sorted.count - 1]
+        guard b.rpm != a.rpm else { return b.advanceDeg }
+        let slope = (b.advanceDeg - a.advanceDeg) / (b.rpm - a.rpm)
+        let extrapolated = b.advanceDeg + slope * (rpm - b.rpm)
+        return min(max(extrapolated, 0), TimingDiagram.maxAdvanceDeg)
+    }
 }
 
-/// Plots the user's timing-curve samples on an RPM × advance grid.
-/// Read-only here — the points are editable on the Advanced tab.
+/// Hint chip that lives in the section header so the drag/click/right-click
+/// affordances aren't a hidden secret.
+private struct TimingCurveHint: View {
+    var body: some View {
+        HStack(spacing: 8) {
+            label(icon: "hand.draw.fill", text: "DRAG TO EDIT")
+            label(icon: "plus.circle", text: "CLICK TO ADD")
+        }
+    }
+
+    private func label(icon: String, text: String) -> some View {
+        HStack(spacing: 4) {
+            Image(systemName: icon)
+                .font(.system(size: 9, weight: .bold))
+                .foregroundColor(BuilderTheme.accent)
+            Text(text)
+                .font(.system(size: 9, weight: .bold, design: .monospaced))
+                .tracking(1)
+                .foregroundColor(BuilderTheme.label)
+        }
+    }
+}
+
+/// Editable timing curve. Drag a dot to move it (snapped to nearest 100 rpm
+/// / 0.5°). Click empty grid to add a point at that location. Right-click /
+/// option-click a point to delete it (the curve always retains at least two
+/// samples so the simulator has something to interpolate).
+private struct InteractiveTimingCurve: View {
+    @Binding var points: [TimingPoint]
+    let revLimitRpm: Double
+
+    private let minPoints = 2
+    private let rpmSnap: Double = 100
+    private let advanceSnap: Double = 0.5
+    private let hitRadius: CGFloat = 20
+    private let handleRadius: CGFloat = 7
+
+    @State private var draggingId: UUID? = nil
+    @State private var hoveredId: UUID? = nil
+
+    var body: some View {
+        GeometryReader { proxy in
+            let w = proxy.size.width
+            let h = proxy.size.height
+            let sorted = points.sorted(by: { $0.rpm < $1.rpm })
+            let maxRpm = max(revLimitRpm, sorted.last?.rpm ?? revLimitRpm)
+
+            ZStack(alignment: .topLeading) {
+                Rectangle().stroke(BuilderTheme.line, lineWidth: 1)
+                gridLines(w: w, h: h)
+                curvePath(sorted: sorted, w: w, h: h, maxRpm: maxRpm)
+                draggablePoints(sorted: sorted, w: w, h: h, maxRpm: maxRpm)
+                revLimitLine(w: w, h: h, maxRpm: maxRpm)
+                axisLabels(h: h)
+            }
+            .contentShape(Rectangle())
+            .gesture(addPointGesture(w: w, h: h, maxRpm: maxRpm))
+        }
+    }
+
+    private func gridLines(w: CGFloat, h: CGFloat) -> some View {
+        ForEach(1..<TimingDiagram.gridDivisions, id: \.self) { i in
+            Path { p in
+                let y = h * CGFloat(i) / CGFloat(TimingDiagram.gridDivisions)
+                p.move(to: CGPoint(x: 0, y: y))
+                p.addLine(to: CGPoint(x: w, y: y))
+            }.stroke(BuilderTheme.line.opacity(0.4), lineWidth: 0.5)
+
+            Path { p in
+                let x = w * CGFloat(i) / CGFloat(TimingDiagram.gridDivisions)
+                p.move(to: CGPoint(x: x, y: 0))
+                p.addLine(to: CGPoint(x: x, y: h))
+            }.stroke(BuilderTheme.line.opacity(0.4), lineWidth: 0.5)
+        }
+    }
+
+    private func curvePath(sorted: [TimingPoint], w: CGFloat, h: CGFloat, maxRpm: Double) -> some View {
+        Path { p in
+            for (i, pt) in sorted.enumerated() {
+                let pos = position(for: pt, w: w, h: h, maxRpm: maxRpm)
+                if i == 0 { p.move(to: pos) } else { p.addLine(to: pos) }
+            }
+        }
+        .stroke(BuilderTheme.accent, lineWidth: 1.5)
+    }
+
+    private func draggablePoints(sorted: [TimingPoint], w: CGFloat, h: CGFloat, maxRpm: Double) -> some View {
+        ForEach(sorted) { pt in
+            let pos = position(for: pt, w: w, h: h, maxRpm: maxRpm)
+            let active = draggingId == pt.id || hoveredId == pt.id
+
+            ZStack {
+                // Outer ring — visible on hover/drag, gives a clear "you can
+                // grab me" affordance without permanently crowding the curve.
+                Circle()
+                    .stroke(BuilderTheme.accent.opacity(active ? 0.55 : 0.0), lineWidth: 1)
+                    .frame(width: handleRadius * 2 + 8, height: handleRadius * 2 + 8)
+
+                // Inner solid handle — bumped up from the old 4pt diameter so
+                // it actually looks grabbable.
+                Circle()
+                    .fill(BuilderTheme.accent)
+                    .frame(width: handleRadius * 2, height: handleRadius * 2)
+                    .overlay(
+                        Circle()
+                            .stroke(Color.white.opacity(active ? 0.95 : 0.0), lineWidth: 1.5)
+                    )
+                    .scaleEffect(active ? 1.15 : 1.0)
+                    .animation(.easeOut(duration: 0.12), value: active)
+            }
+            .frame(width: hitRadius, height: hitRadius)
+            .contentShape(Circle())
+            .position(pos)
+            .onHover { inside in
+                if inside {
+                    hoveredId = pt.id
+                    NSCursor.openHand.push()
+                } else {
+                    if hoveredId == pt.id { hoveredId = nil }
+                    NSCursor.pop()
+                }
+            }
+            .gesture(dragGesture(pointId: pt.id, w: w, h: h, maxRpm: maxRpm))
+            .onTapGesture(count: 2) { deletePoint(id: pt.id) }
+            .contextMenu {
+                Button("Delete point", role: .destructive) { deletePoint(id: pt.id) }
+            }
+        }
+    }
+
+    private func revLimitLine(w: CGFloat, h: CGFloat, maxRpm: Double) -> some View {
+        let revX = w * CGFloat(revLimitRpm / maxRpm)
+        return ZStack {
+            Path { p in
+                p.move(to: CGPoint(x: revX, y: 0))
+                p.addLine(to: CGPoint(x: revX, y: h))
+            }
+            .stroke(Color.red.opacity(0.7),
+                    style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
+            Text("REV \(Int(revLimitRpm))")
+                .font(.system(size: 8, weight: .bold, design: .monospaced))
+                .foregroundColor(Color.red.opacity(0.85))
+                .position(x: revX - 22, y: 12)
+        }
+    }
+
+    private func axisLabels(h: CGFloat) -> some View {
+        ZStack {
+            Text("0 RPM")
+                .font(.system(size: 8, weight: .bold, design: .monospaced))
+                .foregroundColor(BuilderTheme.label)
+                .position(x: 20, y: h - 8)
+            Text(String(format: "%.0f°", TimingDiagram.maxAdvanceDeg))
+                .font(.system(size: 8, weight: .bold, design: .monospaced))
+                .foregroundColor(BuilderTheme.label)
+                .position(x: 14, y: 10)
+        }
+    }
+
+    // MARK: - Gestures
+
+    private func dragGesture(pointId: UUID, w: CGFloat, h: CGFloat, maxRpm: Double) -> some Gesture {
+        DragGesture(minimumDistance: 0)
+            .onChanged { drag in
+                draggingId = pointId
+                updatePoint(id: pointId, to: drag.location, w: w, h: h, maxRpm: maxRpm)
+            }
+            .onEnded { _ in draggingId = nil }
+    }
+
+    private func addPointGesture(w: CGFloat, h: CGFloat, maxRpm: Double) -> some Gesture {
+        DragGesture(minimumDistance: 0)
+            .onEnded { drag in
+                let dist = hypot(drag.translation.width, drag.translation.height)
+                guard dist < 2 else { return }
+                let (rpm, _) = invert(point: drag.location, w: w, h: h, maxRpm: maxRpm)
+                // Skip if there's already a near-identical point — avoids
+                // accidentally adding duplicates when clicking near a node.
+                if points.contains(where: { abs($0.rpm - rpm) < rpmSnap * 0.5 }) { return }
+                // Use the user's clicked Y as the advance value so manual
+                // additions land where they actually clicked.
+                let (_, clickAdvance) = invert(point: drag.location, w: w, h: h, maxRpm: maxRpm)
+                points.append(TimingPoint(rpm: rpm, advanceDeg: clickAdvance))
+                points.sort { $0.rpm < $1.rpm }
+            }
+    }
+
+    // MARK: - Helpers
+
+    private func position(for pt: TimingPoint, w: CGFloat, h: CGFloat, maxRpm: Double) -> CGPoint {
+        let x = w * CGFloat(pt.rpm / maxRpm)
+        let y = h - h * CGFloat(pt.advanceDeg / TimingDiagram.maxAdvanceDeg)
+        return CGPoint(x: x, y: y)
+    }
+
+    private func invert(point: CGPoint, w: CGFloat, h: CGFloat, maxRpm: Double) -> (Double, Double) {
+        let rawRpm = Double(point.x / w) * maxRpm
+        let rawAdv = Double((h - point.y) / h) * TimingDiagram.maxAdvanceDeg
+        let clampedRpm = min(max(rawRpm, 0), maxRpm)
+        let clampedAdv = min(max(rawAdv, 0), TimingDiagram.maxAdvanceDeg)
+        return (snap(clampedRpm, to: rpmSnap), snap(clampedAdv, to: advanceSnap))
+    }
+
+    private func snap(_ v: Double, to step: Double) -> Double {
+        (v / step).rounded() * step
+    }
+
+    private func updatePoint(id: UUID, to location: CGPoint, w: CGFloat, h: CGFloat, maxRpm: Double) {
+        guard let idx = points.firstIndex(where: { $0.id == id }) else { return }
+        let (rpm, advance) = invert(point: location, w: w, h: h, maxRpm: maxRpm)
+        points[idx].rpm = rpm
+        points[idx].advanceDeg = advance
+        points.sort { $0.rpm < $1.rpm }
+    }
+
+    private func deletePoint(id: UUID) {
+        guard points.count > minPoints else { return }
+        points.removeAll { $0.id == id }
+    }
+}
+
+/// Legacy read-only graph kept here for callers that don't need editing.
 private struct TimingCurveGraph: View {
     let points: [TimingPoint]
     let revLimitRpm: Double

@@ -310,7 +310,7 @@ void PistonEngineSimulator::simulateStep_() {
         }
 
         for (int j = 0; j < intakeCount; ++j) {
-            m_engine->getIntake(j)->process(fluidTimestep);
+            m_engine->getIntake(j)->process(fluidTimestep, m_engine->getFuelTrim());
             m_engine->getIntake(j)->m_flowRate += m_engine->getIntake(j)->m_flow;
         }
 

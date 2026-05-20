@@ -11,38 +11,43 @@ import SwiftUI
 
 // MARK: - Layout constants
 
-private let clutchAspectRatio: CGFloat = 1.55       // width / height of the drawn cross-section
-private let intakeAspectRatio: CGFloat = 1.10
+private let clutchAspectRatio: CGFloat = 1.55
+private let intakeAspectRatio: CGFloat = 1.20
 private let visualizerPadding: CGFloat = 6
 
 // Clutch component sizing (all fractions of the drawing rect).
 private let clutchShaftHeightFraction: CGFloat = 0.07
 private let clutchFlywheelHeightFraction: CGFloat = 0.78
-private let clutchFlywheelWidthFraction: CGFloat = 0.075
+private let clutchFlywheelWidthFraction: CGFloat = 0.085
 private let clutchFrictionHeightFraction: CGFloat = 0.56
 private let clutchFrictionWidthFraction: CGFloat = 0.05
 private let clutchPressurePlateHeightFraction: CGFloat = 0.68
 private let clutchPressurePlateWidthFraction: CGFloat = 0.07
 private let clutchDiaphragmDepthFraction: CGFloat = 0.10
-private let clutchDisengageGapFraction: CGFloat = 0.045
+private let clutchDisengageMaxGapFraction: CGFloat = 0.04
 private let clutchLabelInset: CGFloat = 4
+private let flywheelScribeCount: Int = 5
+private let flywheelMinRpmForMotion: Double = 80
 
 // Intake component sizing.
-private let intakeThrottleBoreHeightFraction: CGFloat = 0.18
-private let intakeThrottleBoreWidthFraction: CGFloat = 0.28
-private let intakePlenumHeightFraction: CGFloat = 0.22
-private let intakePlenumWidthFraction: CGFloat = 0.80
-private let intakeRunnerCount: Int = 4
-private let intakeRunnerWidthFraction: CGFloat = 0.06
-private let intakeRunnerHeightFraction: CGFloat = 0.30
-private let intakeHeadHeightFraction: CGFloat = 0.08
-private let intakeBladeLengthFraction: CGFloat = 0.85
+private let intakeThrottleBoreWidthFraction: CGFloat = 0.18
+// Bore height holds enough room for the blade to rotate without poking outside;
+// keyed off the blade length below so the geometry stays consistent.
+private let intakeThrottleBoreHeightFraction: CGFloat = 0.22
+private let intakePlenumHeightFraction: CGFloat = 0.20
+private let intakePlenumWidthFraction: CGFloat = 0.86
+private let intakeRunnerHeightFraction: CGFloat = 0.34
+private let intakeRunnerSlotFillFraction: CGFloat = 0.68
+private let intakeHeadHeightFraction: CGFloat = 0.10
+private let intakeBladeLengthFraction: CGFloat = 0.78
 private let intakeBladeThicknessFraction: CGFloat = 0.07
 private let intakeBladeClosedDeg: Double = 4
 private let intakeBladeOpenSweepDeg: Double = 84
 private let intakeArrowVisibilityThreshold: Double = 0.08
+private let intakeMinRunners: Int = 1
+private let intakeMaxRunners: Int = 8
 
-// Shared colors keep both visualizers anchored to the app's existing palette.
+// Shared colors.
 private let metalLightColor = Color(white: 0.55)
 private let metalMidColor = Color(white: 0.32)
 private let metalDarkColor = Color(white: 0.16)
@@ -50,6 +55,7 @@ private let metalOutlineColor = Color.white.opacity(0.22)
 private let frictionColor = Color.orange.opacity(0.85)
 private let frictionOutlineColor = Color.orange.opacity(0.5)
 private let airflowColor = Color.cyan.opacity(0.7)
+private let scribeColor = Color.black.opacity(0.45)
 
 struct ThrottleView: View {
     @ObservedObject var vm: EngineViewModel
@@ -58,22 +64,35 @@ struct ThrottleView: View {
         HStack(spacing: 0) {
             column(title: "CLUTCH ASSEMBLY") {
                 AspectFitContainer(aspectRatio: clutchAspectRatio) {
-                    ClutchCrossSection(isEngaged: !vm.clutchPressed)
+                    ClutchCrossSection(
+                        clutchPressure: vm.clutchPressure,
+                        rpm: vm.rpm
+                    )
                 }
-                ClutchPedal(isPressed: Binding(get: { vm.clutchPressed }, set: { _ in vm.toggleClutch() }))
+                PrecisionClutchSlider(
+                    pressure: vm.clutchPressure,
+                    onChange: vm.setClutchPressure
+                )
             }
 
             Divider().background(Color.white.opacity(0.1))
 
             column(title: "INTAKE MANIFOLD") {
                 AspectFitContainer(aspectRatio: intakeAspectRatio) {
-                    IntakeCrossSection(openPercentage: vm.throttlePosition)
+                    IntakeCrossSection(
+                        openPercentage: vm.throttlePosition,
+                        runnerCount: clampedRunnerCount(vm.cylindersPerBank)
+                    )
                 }
                 PrecisionThrottleSlider(value: $vm.throttlePosition)
             }
         }
         .background(Color.black.opacity(0.2))
         .border(Color.white.opacity(0.1), width: 1)
+    }
+
+    private func clampedRunnerCount(_ raw: Int) -> Int {
+        min(max(raw, intakeMinRunners), intakeMaxRunners)
     }
 
     @ViewBuilder
@@ -94,9 +113,6 @@ struct ThrottleView: View {
 
 // MARK: - Aspect-locked container
 
-/// Centers a fixed-aspect rectangle inside the available space, so child
-/// drawings never stretch when the tile reshapes. Empty space is letterboxed
-/// on whichever axis is in surplus.
 private struct AspectFitContainer<Content: View>: View {
     let aspectRatio: CGFloat
     let content: Content
@@ -134,21 +150,10 @@ private struct AspectFitContainer<Content: View>: View {
 }
 
 // MARK: - Clutch cross-section
-//
-// Axial side view, looking along the rotational axis of the powertrain.
-// Layout from left to right:
-//   1. Engine crankshaft stub (input)
-//   2. Flywheel (rigid disc bolted to crankshaft)
-//   3. Friction disc (splined to transmission input shaft)
-//   4. Pressure plate + diaphragm fingers
-//   5. Transmission input shaft (output)
-//
-// "Engaged" = pressure plate clamps friction disc into the flywheel.
-// "Disengaged" = release bearing has pushed the diaphragm, lifting the
-// pressure plate off the friction disc — both gaps open by the same amount.
 
 private struct ClutchCrossSection: View {
-    var isEngaged: Bool
+    let clutchPressure: Double
+    let rpm: Double
 
     var body: some View {
         GeometryReader { geo in
@@ -156,8 +161,6 @@ private struct ClutchCrossSection: View {
             let h = geo.size.height
             let cy = h / 2
 
-            // Position the flywheel midway along the input shaft; everything
-            // else is laid out relative to it so the assembly stays centered.
             let flywheelWidth = w * clutchFlywheelWidthFraction
             let frictionWidth = w * clutchFrictionWidthFraction
             let pressurePlateWidth = w * clutchPressurePlateWidthFraction
@@ -165,7 +168,9 @@ private struct ClutchCrossSection: View {
             let totalCoreWidth = flywheelWidth + frictionWidth + pressurePlateWidth + diaphragmDepth
             let coreStartX = (w - totalCoreWidth) / 2
 
-            let gap = isEngaged ? 0 : w * clutchDisengageGapFraction
+            // disengageAmount: 0 (fully engaged) → 1 (fully disengaged)
+            let disengageAmount = max(0.0, min(1.0, 1.0 - clutchPressure))
+            let gap = CGFloat(disengageAmount) * w * clutchDisengageMaxGapFraction
 
             let flywheelX = coreStartX
             let frictionX = flywheelX + flywheelWidth + gap
@@ -181,13 +186,20 @@ private struct ClutchCrossSection: View {
                     drawingWidth: w
                 )
 
-                Flywheel(rect: CGRect(
-                    x: flywheelX,
-                    y: cy - h * clutchFlywheelHeightFraction / 2,
-                    width: flywheelWidth,
-                    height: h * clutchFlywheelHeightFraction
-                ))
+                Flywheel(
+                    rect: CGRect(
+                        x: flywheelX,
+                        y: cy - h * clutchFlywheelHeightFraction / 2,
+                        width: flywheelWidth,
+                        height: h * clutchFlywheelHeightFraction
+                    ),
+                    rpm: rpm,
+                    spinsForward: true
+                )
 
+                // Friction disc rotates with the transmission input shaft —
+                // shown stationary relative to the pressure plate, but it
+                // still gets the flywheel scribes when engaged.
                 FrictionDisc(rect: CGRect(
                     x: frictionX,
                     y: cy - h * clutchFrictionHeightFraction / 2,
@@ -195,12 +207,15 @@ private struct ClutchCrossSection: View {
                     height: h * clutchFrictionHeightFraction
                 ))
 
-                PressurePlate(rect: CGRect(
-                    x: pressurePlateX,
-                    y: cy - h * clutchPressurePlateHeightFraction / 2,
-                    width: pressurePlateWidth,
-                    height: h * clutchPressurePlateHeightFraction
-                ))
+                PressurePlate(
+                    rect: CGRect(
+                        x: pressurePlateX,
+                        y: cy - h * clutchPressurePlateHeightFraction / 2,
+                        width: pressurePlateWidth,
+                        height: h * clutchPressurePlateHeightFraction
+                    ),
+                    rpm: rpm
+                )
 
                 DiaphragmSpring(
                     startX: diaphragmX,
@@ -209,9 +224,9 @@ private struct ClutchCrossSection: View {
                     height: h * clutchPressurePlateHeightFraction
                 )
 
-                StateLabel(isEngaged: isEngaged)
+                StateLabel(disengageAmount: disengageAmount)
             }
-            .animation(.spring(response: 0.22, dampingFraction: 0.78), value: isEngaged)
+            .animation(.spring(response: 0.22, dampingFraction: 0.78), value: clutchPressure)
         }
     }
 }
@@ -238,8 +253,14 @@ private struct ShaftPair: View {
     }
 }
 
+/// Rotating mass on the engine side. Scribes inside the disc translate
+/// downward at a speed proportional to RPM, giving the visual impression of
+/// the wheel spinning. Direction is configurable so the friction disc, which
+/// in real life couples and uncouples with the flywheel, can also pulse.
 private struct Flywheel: View {
     let rect: CGRect
+    let rpm: Double
+    let spinsForward: Bool
 
     var body: some View {
         ZStack(alignment: .topLeading) {
@@ -249,12 +270,49 @@ private struct Flywheel: View {
                 .frame(width: rect.width, height: rect.height)
                 .offset(x: rect.minX, y: rect.minY)
 
-            // Subtle horizontal scribes hint at machined disc faces.
-            ForEach(0..<3, id: \.self) { i in
-                Rectangle()
-                    .fill(Color.black.opacity(0.25))
-                    .frame(width: rect.width, height: 0.75)
-                    .offset(x: rect.minX, y: rect.minY + rect.height * (0.25 + 0.25 * CGFloat(i)))
+            TimelineView(.animation(minimumInterval: 1.0 / 60.0)) { context in
+                SpinScribes(
+                    rect: rect,
+                    rpm: rpm,
+                    timestamp: context.date.timeIntervalSinceReferenceDate,
+                    direction: spinsForward ? 1 : -1
+                )
+            }
+            .frame(width: rect.width, height: rect.height)
+            .offset(x: rect.minX, y: rect.minY)
+            .clipShape(RoundedRectangle(cornerRadius: 1.5))
+        }
+    }
+}
+
+/// Horizontal scribe lines whose vertical offset advances with elapsed time at
+/// a rate proportional to RPM. Below `flywheelMinRpmForMotion` they hold
+/// still — keeps the visualizer from looking jittery when the engine is off.
+private struct SpinScribes: View {
+    let rect: CGRect
+    let rpm: Double
+    let timestamp: TimeInterval
+    let direction: CGFloat
+
+    var body: some View {
+        Canvas { ctx, _ in
+            let count = flywheelScribeCount
+            let spacing = rect.height / CGFloat(count)
+            let activeRpm = max(rpm - flywheelMinRpmForMotion, 0)
+            // One scribe-spacing per (60/rpm) seconds — translates RPM
+            // directly into perceived rotational speed.
+            let pxPerSecond = (activeRpm / 60.0) * Double(spacing) * 4.0
+            let rawOffset = CGFloat(timestamp * pxPerSecond) * direction
+            let phase = rawOffset.truncatingRemainder(dividingBy: spacing)
+            let baseY = phase < 0 ? phase + spacing : phase
+
+            for i in 0..<(count + 1) {
+                let y = baseY + CGFloat(i) * spacing - spacing
+                guard y >= 0 && y <= rect.height else { continue }
+                var path = Path()
+                path.move(to: CGPoint(x: 0, y: y))
+                path.addLine(to: CGPoint(x: rect.width, y: y))
+                ctx.stroke(path, with: .color(scribeColor), lineWidth: 0.75)
             }
         }
     }
@@ -272,21 +330,17 @@ private struct FrictionDisc: View {
     }
 }
 
+/// Pressure plate — spins with the flywheel when engaged. We hint at its
+/// rotation with the same scribe treatment so the assembly feels alive.
 private struct PressurePlate: View {
     let rect: CGRect
+    let rpm: Double
 
     var body: some View {
-        RoundedRectangle(cornerRadius: 1.5)
-            .fill(metalLightColor)
-            .overlay(RoundedRectangle(cornerRadius: 1.5).stroke(metalOutlineColor, lineWidth: 1))
-            .frame(width: rect.width, height: rect.height)
-            .offset(x: rect.minX, y: rect.minY)
+        Flywheel(rect: rect, rpm: rpm, spinsForward: true)
     }
 }
 
-/// Diaphragm spring fingers — drawn as a fan of lines that converge near the
-/// transmission-input axis. Suggests the spring stack without trying to be a
-/// faithful CAD drawing.
 private struct DiaphragmSpring: View {
     let startX: CGFloat
     let endX: CGFloat
@@ -309,15 +363,27 @@ private struct DiaphragmSpring: View {
 }
 
 private struct StateLabel: View {
-    let isEngaged: Bool
+    let disengageAmount: Double
+
+    private var label: String {
+        if disengageAmount < 0.05 { return "ENGAGED" }
+        if disengageAmount > 0.95 { return "DISENGAGED" }
+        return "SLIPPING"
+    }
+
+    private var color: Color {
+        if disengageAmount < 0.05 { return .green.opacity(0.85) }
+        if disengageAmount > 0.95 { return .orange.opacity(0.85) }
+        return .yellow.opacity(0.85)
+    }
 
     var body: some View {
         VStack {
             HStack {
                 Spacer()
-                Text(isEngaged ? "ENGAGED" : "DISENGAGED")
+                Text(label)
                     .modifier(RetroFont(size: 8))
-                    .foregroundColor(isEngaged ? .green.opacity(0.85) : .orange.opacity(0.85))
+                    .foregroundColor(color)
                     .padding(.horizontal, 5)
                     .padding(.vertical, 2)
                     .background(Color.black.opacity(0.4))
@@ -330,54 +396,51 @@ private struct StateLabel: View {
 
 // MARK: - Intake cross-section
 //
-// Side view of the manifold:
-//
-//                  ┌── throttle body (butterfly inside) ──┐
-//                  │                                       │
-//   ┌──────────────┴────── plenum chamber ─────────────────┴──────────────┐
-//   │                                                                     │
-//   │  ─runner─    ─runner─    ─runner─    ─runner─                       │
-//   └─────┬──────────┬──────────┬──────────┬──────────────────────────────┘
-//   ─────────────── cylinder head (intake ports) ──────────────────────────
-//
-// Airflow streams render through the throttle when it's open, fan across the
-// plenum, and pulse down the runners. Closed throttle = no flow indicators.
+// Side view of the manifold. The throttle body sits at top center; below it
+// is the plenum chamber; below that a row of runners feeding into the
+// cylinder head bar. Runner count tracks the active engine's cylinders per
+// bank.
 
 private struct IntakeCrossSection: View {
-    var openPercentage: Double
+    let openPercentage: Double
+    let runnerCount: Int
 
     var body: some View {
         GeometryReader { geo in
             let w = geo.size.width
             let h = geo.size.height
-            let bodyWidth = w * intakeThrottleBoreWidthFraction
             let bodyHeight = h * intakeThrottleBoreHeightFraction
-            let plenumWidth = w * intakePlenumWidthFraction
+            let bodyWidth = max(w * intakeThrottleBoreWidthFraction, bodyHeight)
             let plenumHeight = h * intakePlenumHeightFraction
+            let plenumWidth = w * intakePlenumWidthFraction
             let plenumX = (w - plenumWidth) / 2
             let plenumY = bodyHeight + 2
 
-            let runnerHeight = h * intakeRunnerHeightFraction
-            let runnerWidth = w * intakeRunnerWidthFraction
             let headHeight = h * intakeHeadHeightFraction
             let headY = h - headHeight
             let runnerY = plenumY + plenumHeight
+            // Runners terminate where the cylinder head begins, so no
+            // floating grey bar at the bottom anymore.
+            let runnerHeight = max(headY - runnerY, h * intakeRunnerHeightFraction * 0.4)
 
             ZStack(alignment: .topLeading) {
                 ThrottleBody(
-                    rect: CGRect(x: (w - bodyWidth) / 2, y: 0, width: bodyWidth, height: bodyHeight),
+                    rect: CGRect(
+                        x: (w - bodyWidth) / 2,
+                        y: 0,
+                        width: bodyWidth,
+                        height: bodyHeight
+                    ),
                     openPercentage: openPercentage
                 )
 
                 PlenumChamber(rect: CGRect(x: plenumX, y: plenumY, width: plenumWidth, height: plenumHeight))
 
                 Runners(
-                    count: intakeRunnerCount,
-                    width: runnerWidth,
+                    count: runnerCount,
                     height: runnerHeight,
                     plenumRect: CGRect(x: plenumX, y: plenumY, width: plenumWidth, height: plenumHeight),
-                    runnerY: runnerY,
-                    drawingWidth: w
+                    runnerY: runnerY
                 )
 
                 CylinderHead(rect: CGRect(x: 0, y: headY, width: w, height: headHeight))
@@ -386,13 +449,10 @@ private struct IntakeCrossSection: View {
                     AirflowOverlay(
                         intensity: openPercentage,
                         plenumRect: CGRect(x: plenumX, y: plenumY, width: plenumWidth, height: plenumHeight),
-                        runnerCount: intakeRunnerCount,
-                        runnerWidth: runnerWidth,
+                        runnerCount: runnerCount,
                         runnerY: runnerY,
                         runnerHeight: runnerHeight,
-                        drawingWidth: w,
-                        bodyTopY: 0,
-                        bodyBottomY: bodyHeight
+                        bodyTopY: 0
                     )
                 }
             }
@@ -400,40 +460,54 @@ private struct IntakeCrossSection: View {
     }
 }
 
+/// Bore is drawn at least as tall as it is wide, and the blade is sized to
+/// the smaller of the two so it can never poke outside the bore at any
+/// rotation. Pivot anchors precisely at the geometric center of the bore.
 private struct ThrottleBody: View {
     let rect: CGRect
     let openPercentage: Double
 
     var body: some View {
-        let angle = intakeBladeClosedDeg + intakeBladeOpenSweepDeg * openPercentage
-        let wallThickness: CGFloat = 2
-        let bladeLength = rect.width * intakeBladeLengthFraction
-        let bladeThickness = rect.height * intakeBladeThicknessFraction
+        GeometryReader { _ in
+            let angle = intakeBladeClosedDeg + intakeBladeOpenSweepDeg * openPercentage
+            let wallThickness: CGFloat = 2
+            // Blade fits within the bore at any rotation: pick the smaller
+            // bore dimension so rotation by 90° still keeps the blade inside.
+            let bore = min(rect.width, rect.height)
+            let bladeLength = bore * intakeBladeLengthFraction
+            let bladeThickness = bore * intakeBladeThicknessFraction
+            let pivotSize = bladeThickness * 1.4
 
-        ZStack(alignment: .topLeading) {
-            // Bore walls (left and right edges of the throttle body).
-            Rectangle()
-                .fill(metalMidColor)
-                .frame(width: wallThickness, height: rect.height)
-                .offset(x: rect.minX, y: rect.minY)
-            Rectangle()
-                .fill(metalMidColor)
-                .frame(width: wallThickness, height: rect.height)
-                .offset(x: rect.maxX - wallThickness, y: rect.minY)
+            ZStack {
+                // Bore walls drawn at the rect's vertical edges.
+                Rectangle()
+                    .fill(metalMidColor)
+                    .frame(width: wallThickness, height: rect.height)
+                    .position(x: rect.minX + wallThickness / 2, y: rect.midY)
 
-            // Pivot pin in the middle.
-            Circle()
-                .fill(metalLightColor)
-                .frame(width: bladeThickness * 1.4, height: bladeThickness * 1.4)
-                .offset(x: rect.midX - bladeThickness * 0.7, y: rect.midY - bladeThickness * 0.7)
+                Rectangle()
+                    .fill(metalMidColor)
+                    .frame(width: wallThickness, height: rect.height)
+                    .position(x: rect.maxX - wallThickness / 2, y: rect.midY)
 
-            // Butterfly blade.
-            Rectangle()
-                .fill(LinearGradient(colors: [.orange, .red], startPoint: .top, endPoint: .bottom))
-                .frame(width: bladeLength, height: bladeThickness)
-                .offset(x: rect.midX - bladeLength / 2, y: rect.midY - bladeThickness / 2)
-                .rotationEffect(.degrees(angle), anchor: .center)
-                .animation(.linear(duration: 0.05), value: openPercentage)
+                // Inner shading — gives the bore a sense of depth.
+                Rectangle()
+                    .fill(metalDarkColor)
+                    .frame(width: rect.width - wallThickness * 2, height: rect.height)
+                    .position(x: rect.midX, y: rect.midY)
+
+                Rectangle()
+                    .fill(LinearGradient(colors: [.orange, .red], startPoint: .top, endPoint: .bottom))
+                    .frame(width: bladeLength, height: bladeThickness)
+                    .rotationEffect(.degrees(angle), anchor: .center)
+                    .position(x: rect.midX, y: rect.midY)
+                    .animation(.linear(duration: 0.05), value: openPercentage)
+
+                Circle()
+                    .fill(metalLightColor)
+                    .frame(width: pivotSize, height: pivotSize)
+                    .position(x: rect.midX, y: rect.midY)
+            }
         }
     }
 }
@@ -452,17 +526,15 @@ private struct PlenumChamber: View {
 
 private struct Runners: View {
     let count: Int
-    let width: CGFloat
     let height: CGFloat
     let plenumRect: CGRect
     let runnerY: CGFloat
-    let drawingWidth: CGFloat
 
     var body: some View {
         Canvas { ctx, _ in
             for i in 0..<count {
-                let x = runnerX(at: i)
-                let rect = CGRect(x: x, y: runnerY, width: width, height: height)
+                let (x, w) = runnerSlot(at: i)
+                let rect = CGRect(x: x, y: runnerY, width: w, height: height)
                 let path = Path(roundedRect: rect, cornerRadius: 1.5)
                 ctx.fill(path, with: .color(metalMidColor))
                 ctx.stroke(path, with: .color(metalOutlineColor), lineWidth: 1)
@@ -470,11 +542,12 @@ private struct Runners: View {
         }
     }
 
-    private func runnerX(at i: Int) -> CGFloat {
-        let totalWidth = plenumRect.width * 0.82
-        let spacing = totalWidth / CGFloat(count)
-        let startX = plenumRect.midX - totalWidth / 2 + spacing / 2 - width / 2
-        return startX + spacing * CGFloat(i)
+    private func runnerSlot(at i: Int) -> (CGFloat, CGFloat) {
+        let totalWidth = plenumRect.width * 0.88
+        let slotWidth = totalWidth / CGFloat(count)
+        let drawWidth = slotWidth * intakeRunnerSlotFillFraction
+        let startX = plenumRect.midX - totalWidth / 2 + slotWidth / 2 - drawWidth / 2
+        return (startX + slotWidth * CGFloat(i), drawWidth)
     }
 }
 
@@ -494,32 +567,25 @@ private struct AirflowOverlay: View {
     let intensity: Double
     let plenumRect: CGRect
     let runnerCount: Int
-    let runnerWidth: CGFloat
     let runnerY: CGFloat
     let runnerHeight: CGFloat
-    let drawingWidth: CGFloat
     let bodyTopY: CGFloat
-    let bodyBottomY: CGFloat
 
     var body: some View {
         Canvas { ctx, _ in
             let alpha = min(max(intensity, 0), 1)
             let strokeColor = airflowColor.opacity(alpha)
-
-            // Single stream descending through the throttle body, then
-            // splitting evenly across runners. Drawn as dashed lines that
-            // imply movement without animating frame-by-frame.
             let dash: [CGFloat] = [3, 3]
             let throttleStreamX = plenumRect.midX
+
             var stream = Path()
             stream.move(to: CGPoint(x: throttleStreamX, y: bodyTopY + 4))
             stream.addLine(to: CGPoint(x: throttleStreamX, y: plenumRect.minY - 1))
             ctx.stroke(stream, with: .color(strokeColor),
                        style: StrokeStyle(lineWidth: 1.5, dash: dash))
 
-            // Branches into each runner.
             for i in 0..<runnerCount {
-                let x = runnerX(at: i)
+                let x = runnerCenterX(at: i)
                 var branch = Path()
                 branch.move(to: CGPoint(x: throttleStreamX, y: plenumRect.midY))
                 branch.addQuadCurve(
@@ -533,53 +599,69 @@ private struct AirflowOverlay: View {
         }
     }
 
-    private func runnerX(at i: Int) -> CGFloat {
-        let totalWidth = plenumRect.width * 0.82
-        let spacing = totalWidth / CGFloat(runnerCount)
-        return plenumRect.midX - totalWidth / 2 + spacing / 2 + spacing * CGFloat(i)
+    private func runnerCenterX(at i: Int) -> CGFloat {
+        let totalWidth = plenumRect.width * 0.88
+        let slotWidth = totalWidth / CGFloat(runnerCount)
+        return plenumRect.midX - totalWidth / 2 + slotWidth / 2 + slotWidth * CGFloat(i)
     }
 }
 
-// MARK: - Pedal and slider (unchanged in behavior)
-
-struct ClutchPedal: View {
-    @Binding var isPressed: Bool
-
-    var body: some View {
-        Button(action: { isPressed.toggle() }) {
-            VStack(spacing: 4) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 4)
-                        .fill(LinearGradient(colors: [Color(white: 0.5), Color(white: 0.2)], startPoint: .top, endPoint: .bottom))
-                        .frame(width: 40, height: 50)
-                        .overlay(RoundedRectangle(cornerRadius: 4).stroke(Color.white.opacity(0.3), lineWidth: 1))
-                        .rotation3DEffect(.degrees(isPressed ? 25 : 0), axis: (x: 1, y: 0, z: 0))
-
-                    VStack(spacing: 5) {
-                        ForEach(0..<5) { _ in Rectangle().fill(Color.black.opacity(0.5)).frame(width: 32, height: 2) }
-                    }
-                    .rotation3DEffect(.degrees(isPressed ? 25 : 0), axis: (x: 1, y: 0, z: 0))
-                }
-                Text(isPressed ? "DISENGAGED" : "ENGAGED")
-                    .modifier(RetroFont(size: 8))
-                    .foregroundColor(isPressed ? .orange : .orange.opacity(0.7))
-            }
-        }
-        .buttonStyle(.plain)
-    }
-}
+// MARK: - Slider controls
 
 struct PrecisionThrottleSlider: View {
     @Binding var value: Double
+
+    var body: some View {
+        PercentageSlider(
+            label: "THROTTLE INPUT",
+            value: $value,
+            valueColor: .orange,
+            fillColor: .orange.opacity(0.35)
+        )
+    }
+}
+
+/// Continuous clutch pressure slider. Mirrors the throttle slider so the two
+/// inputs visually pair on either side of the dashboard panel.
+struct PrecisionClutchSlider: View {
+    let pressure: Double
+    let onChange: (Double) -> Void
+
+    /// Pedal position is the inverse of native engagement — at the left the
+    /// pedal is up (clutch engaged); at the right it's mashed (disengaged).
+    private var pedalPosition: Double { 1.0 - pressure }
+
+    var body: some View {
+        PercentageSlider(
+            label: "CLUTCH PEDAL",
+            value: Binding(
+                get: { pedalPosition },
+                set: { newPedal in onChange(1.0 - newPedal) }
+            ),
+            valueColor: pressure < 0.5 ? .orange : .green,
+            fillColor: Color.orange.opacity(0.25)
+        )
+    }
+}
+
+/// Generic 0..1 horizontal slider with a labeled readout. Used by both
+/// throttle and clutch inputs so the styling stays in lockstep.
+private struct PercentageSlider: View {
+    let label: String
+    @Binding var value: Double
+    let valueColor: Color
+    let fillColor: Color
     private let height: CGFloat = 32
     private let handleWidth: CGFloat = 20
 
     var body: some View {
         VStack(spacing: 4) {
             HStack {
-                Text("THROTTLE INPUT").modifier(RetroFont(size: 9)).foregroundColor(.gray)
+                Text(label).modifier(RetroFont(size: 9)).foregroundColor(.gray)
                 Spacer()
-                Text(String(format: "%.0f%%", value * 100)).modifier(RetroFont(size: 9)).foregroundColor(.orange)
+                Text(String(format: "%.0f%%", value * 100))
+                    .modifier(RetroFont(size: 9))
+                    .foregroundColor(valueColor)
             }
 
             GeometryReader { geo in
@@ -588,6 +670,7 @@ struct PrecisionThrottleSlider: View {
 
                 ZStack(alignment: .leading) {
                     Rectangle().fill(Color.white.opacity(0.05))
+
                     HStack(spacing: 0) {
                         ForEach(0..<11) { i in
                             Rectangle().fill(Color.sidebarTextSecondary.opacity(0.3)).frame(width: 1)
@@ -597,10 +680,18 @@ struct PrecisionThrottleSlider: View {
                     .padding(.vertical, 8)
 
                     Rectangle()
-                        .fill(LinearGradient(colors: [Color(white: 0.25), Color(white: 0.15)], startPoint: .top, endPoint: .bottom))
+                        .fill(fillColor)
+                        .frame(width: x + handleWidth / 2)
+
+                    Rectangle()
+                        .fill(Color(white: 0.18))
                         .frame(width: handleWidth)
                         .overlay(Rectangle().stroke(Color.white.opacity(0.3), lineWidth: 1))
-                        .overlay(HStack(spacing: 2) { ForEach(0..<3) { _ in Rectangle().fill(Color.black.opacity(0.5)).frame(width: 1, height: 12) } })
+                        .overlay(HStack(spacing: 2) {
+                            ForEach(0..<3) { _ in
+                                Rectangle().fill(Color.black.opacity(0.5)).frame(width: 1, height: 12)
+                            }
+                        })
                         .offset(x: x)
                 }
                 .overlay(Rectangle().stroke(Color.white.opacity(0.2), lineWidth: 1))

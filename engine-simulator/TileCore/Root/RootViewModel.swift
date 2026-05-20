@@ -21,6 +21,17 @@ class RootViewModel: ObservableObject, Observable {
     /// While true, the detail area shows the engine builder instead of the tile layout.
     @Published var isBuildingEngine: Bool = false
 
+    /// Save-layout dialog state. Lives on the root VM so both the top-bar
+    /// save button and the sidebar's save action open the same dialog.
+    @Published var isPresentingSaveLayout: Bool = false
+    @Published var pendingLayoutName: String = ""
+
+    /// The id of the saved layout currently loaded into the workspace, and
+    /// whether the user has modified the tiles since then. Both feed the
+    /// sidebar's "Current Workspace" row and the active highlight.
+    @Published var activeLayoutId: UUID?
+    @Published var isLayoutDirty: Bool = false
+
     /// Used for window management only.
     let id = UUID()
 
@@ -31,6 +42,51 @@ class RootViewModel: ObservableObject, Observable {
 
     func finishEngineBuild() {
         isBuildingEngine = false
+    }
+
+    /// Open the save-layout dialog from anywhere in the UI.
+    func presentSaveLayout() {
+        pendingLayoutName = ""
+        isPresentingSaveLayout = true
+    }
+
+    /// Commit the current tile tree as a new named layout. No-ops on empty
+    /// names so the alert's disabled-when-empty rule is enforced everywhere.
+    func confirmSaveLayout() {
+        let trimmed = pendingLayoutName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+
+        TileStore.shared.saveLayout(rootTile: rootTile, layoutName: trimmed)
+        // The new layout becomes the active one. We don't know its id ahead
+        // of time so fall back to matching by name on the next refresh.
+        if let saved = TileStore.shared.layouts.first(where: { $0.name == trimmed }) {
+            activeLayoutId = saved.id
+        }
+        isLayoutDirty = false
+        pendingLayoutName = ""
+        isPresentingSaveLayout = false
+    }
+
+    func cancelSaveLayout() {
+        pendingLayoutName = ""
+        isPresentingSaveLayout = false
+    }
+
+    /// Called by tile operations (split / delete) so the sidebar can show an
+    /// "unsaved changes" indicator without diffing tile trees.
+    func markLayoutDirty() {
+        isLayoutDirty = true
+    }
+
+    /// Toggle split-edit mode. While active, hover overlays let the user
+    /// drop a new tile by clicking on an existing tile's edge.
+    func toggleSplitMode() {
+        browserMode = browserMode == .split ? .operational : .split
+    }
+
+    /// Toggle delete-edit mode. While active, clicking a tile removes it.
+    func toggleDeleteMode() {
+        browserMode = browserMode == .delete ? .operational : .delete
     }
     
 //    init(engineVm: EngineViewModel) {
@@ -50,17 +106,20 @@ class RootViewModel: ObservableObject, Observable {
         self.engineVm = engineVm
     }
     
-    func loadState(newRootData: TileData) {
+    func loadState(newRootData: TileData, layoutId: UUID? = nil) {
         hoveredTile = nil
         hoverPosition = nil
         browserMode = .operational
         rootTile = TileViewModel(engineVm: engineVm, data: newRootData)
         focusedTile = findFirstLeaf(in: rootTile)
+        activeLayoutId = layoutId
+        isLayoutDirty = false
     }
-    
+
     func deleteTile(_ tileToDelete: TileViewModel) {
         if deleteTileRecursive(in: rootTile, tileToDelete: tileToDelete) {
             focusedTile = findFirstLeaf(in: rootTile)
+            markLayoutDirty()
         }
     }
     

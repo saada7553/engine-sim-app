@@ -4,133 +4,240 @@
 ////
 ////  Created by Saad Ata on 12/1/25.
 ////
+////  Sidebar styled with the same palette as the rest of the app: dark
+////  appBackground, hairline white-opacity borders, orange as the live accent
+////  (matching ignition / gauges / shift buttons elsewhere). The previous
+////  iteration leaned on a peachy salmon "sidebarAccent" that ended up feeling
+////  unrelated to the dashboard surfaces.
+////
 
 import Foundation
 import SwiftUI
+
+// MARK: - Constants
+
+private let rowPaddingH: CGFloat = 12
+private let rowPaddingV: CGFloat = 7
+private let rowCornerRadius: CGFloat = 6
+private let hoverFill = Color.white.opacity(0.05)
+private let selectedFill = Color.orange.opacity(0.12)
+private let selectedBorder = Color.orange.opacity(0.45)
+private let subtleBorder = Color.white.opacity(0.10)
+private let primaryText = Color.white
+private let dimText = Color.white.opacity(0.65)
+private let mutedText = Color.white.opacity(0.45)
+private let activeDot = Color.orange
+private let inactiveDot = Color.white.opacity(0.20)
+
+// MARK: - Sidebar
 
 struct SideBarView: View {
     @ObservedObject private var tileStore: TileStore = .shared
     @ObservedObject private var engineLibrary: EngineLibrary = .shared
     @ObservedObject var rootViewModel: RootViewModel
 
-    @State private var showingSaveLayoutAlert = false
-    @State private var newLayoutName = ""
-    @State private var activeLayoutId: UUID?
-
     var body: some View {
         VStack(spacing: 0) {
             SidebarHeader()
 
             ScrollView {
-                VStack(spacing: 24) {
-                    SidebarSection(title: "ENGINES", action: { rootViewModel.startEngineBuild() }) {
-                        ForEach(engineLibrary.entries) { entry in
-                            EngineRow(
-                                entry: entry,
-                                isSelected: engineLibrary.selectedEngineId == entry.id,
-                                onSelect: { engineLibrary.selectedEngineId = entry.id },
-                                onDelete: { engineLibrary.deleteUserEngine(id: entry.id) }
-                            )
-                        }
-                    }
-                    
-                    SidebarSection(title: "LAYOUTS", action: { showingSaveLayoutAlert = true }) {
-                        ForEach(Array(tileStore.layouts.enumerated()), id: \.element.id) { index, layout in
-                            LayoutRow(
-                                layout: layout,
-                                hotkey: index < 9 ? "\(index + 1)" : nil,
-                                isSelected: activeLayoutId == layout.id,
-                                action: {
-                                    activeLayoutId = layout.id
-                                    rootViewModel.loadState(newRootData: layout.rootData)
-                                },
-                                onDelete: { deleteLayout(layout) }
-                            )
-                        }
-                    }
+                VStack(spacing: 18) {
+                    enginesSection
+                    layoutsSection
                 }
-                .padding(.vertical, 16)
+                .padding(.vertical, 14)
             }
-            
-            Spacer()
-            
+
+            Spacer(minLength: 0)
+
             SidebarFooter()
         }
         .background(Color.appBackground)
-        .alert("Save Current Layout", isPresented: $showingSaveLayoutAlert) {
-            TextField("Layout Name", text: $newLayoutName)
-            Button("Cancel", role: .cancel) { newLayoutName = "" }
-            Button("Save") {
-                if !newLayoutName.isEmpty {
-                    TileStore.shared.saveLayout(rootTile: rootViewModel.rootTile, layoutName: newLayoutName)
-                    newLayoutName = ""
-                }
+    }
+
+    private var enginesSection: some View {
+        SidebarSection(title: "ENGINES") {
+            BuildEngineButton(action: { rootViewModel.startEngineBuild() })
+                .padding(.horizontal, 8)
+                .padding(.bottom, 8)
+
+            ForEach(engineLibrary.entries) { entry in
+                EngineRow(
+                    entry: entry,
+                    isSelected: engineLibrary.selectedEngineId == entry.id,
+                    onSelect: { engineLibrary.selectedEngineId = entry.id },
+                    onDelete: { engineLibrary.deleteUserEngine(id: entry.id) }
+                )
             }
-            .disabled(newLayoutName.isEmpty)
-        } message: {
-            Text("Enter a name for this workspace configuration.")
+        }
+    }
+
+    private var layoutsSection: some View {
+        SidebarSection(title: "LAYOUTS") {
+            // Saved layouts. The one matching activeLayoutId is highlighted
+            // — but only while the user hasn't edited it. The moment they
+            // split or delete a tile, isLayoutDirty flips, the highlight
+            // moves to the "Unsaved" row below, and this one goes idle.
+            ForEach(tileStore.layouts, id: \.id) { layout in
+                LayoutRow(
+                    layout: layout,
+                    isSelected: !rootViewModel.isLayoutDirty && rootViewModel.activeLayoutId == layout.id,
+                    action: {
+                        rootViewModel.loadState(newRootData: layout.rootData, layoutId: layout.id)
+                    },
+                    onDelete: { deleteLayout(layout) }
+                )
+            }
+
+            // The pending unsaved working layout. Appears only while there
+            // are real unsaved edits, becomes a normal LayoutRow with the
+            // user-supplied name as soon as they save.
+            if rootViewModel.isLayoutDirty {
+                UnsavedLayoutRow(onSave: { rootViewModel.presentSaveLayout() })
+            }
         }
     }
 
     private func deleteLayout(_ layout: TileLayout) {
-        if activeLayoutId == layout.id {
-            activeLayoutId = nil
+        if rootViewModel.activeLayoutId == layout.id {
+            rootViewModel.activeLayoutId = nil
         }
         tileStore.deleteLayout(layout)
     }
 }
 
-// MARK: - Components
+// MARK: - Header
 
 struct SidebarHeader: View {
     var body: some View {
-        HStack {
-            HStack(spacing: 8) {
+        VStack(spacing: 0) {
+            HStack(spacing: 10) {
                 Image(systemName: "engine.combustion.fill")
-                    .foregroundColor(.sidebarAccent)
+                    .font(.system(size: 16))
+                    .foregroundColor(.orange)
                 Text("engine-sim")
-                    .font(.system(size: 16, weight: .bold))
+                    .font(.system(size: 15, weight: .semibold))
                     .foregroundColor(.white)
+                Spacer()
             }
-            Spacer()
+            .padding(.horizontal, 16)
+            .padding(.vertical, 14)
+
+            Rectangle().fill(subtleBorder).frame(height: 1)
         }
-        .padding(16)
     }
 }
 
+// MARK: - Section
+
 struct SidebarSection<Content: View>: View {
     let title: String
-    let action: () -> Void
     let content: Content
-    
-    init(title: String, action: @escaping () -> Void, @ViewBuilder content: () -> Content) {
+
+    init(title: String, @ViewBuilder content: () -> Content) {
         self.title = title
-        self.action = action
         self.content = content()
     }
-    
+
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Text(title)
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundColor(.sidebarTextSecondary)
-                Spacer()
-                Button(action: action) {
-                    Image(systemName: "plus")
-                        .font(.system(size: 11))
-                        .foregroundColor(.sidebarTextSecondary)
-                }
-                .buttonStyle(.plain)
-            }
-            .padding(.horizontal, 16)
-            
-            VStack(spacing: 4) {
+            Text(title)
+                .modifier(RetroFont(size: 10, weight: .bold))
+                .foregroundColor(mutedText)
+                .tracking(1.2)
+                .padding(.horizontal, 16)
+
+            VStack(spacing: 2) {
                 content
             }
         }
     }
 }
+
+// MARK: - Build Engine CTA
+//
+// Reads like an "empty slot you can fill" — a dashed hairline outline with
+// the same row height/padding as a regular EngineRow, but with a "+" glyph
+// and a neutral label. Distinct from the solid-bordered selection rows
+// without resorting to gradients or shadow gimmicks.
+
+private struct BuildEngineButton: View {
+    let action: () -> Void
+    @State private var hovered = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 10) {
+                Image(systemName: "plus")
+                    .font(.system(size: 13, weight: .semibold))
+                Text("Build New Engine")
+                    .font(.system(size: 13, weight: .regular))
+                Spacer(minLength: 0)
+            }
+            .foregroundColor(hovered ? .white : dimText)
+            .padding(.horizontal, rowPaddingH)
+            .padding(.vertical, rowPaddingV)
+            .frame(maxWidth: .infinity)
+            .background(
+                RoundedRectangle(cornerRadius: rowCornerRadius)
+                    .fill(hovered ? hoverFill : Color.clear)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: rowCornerRadius)
+                    .stroke(
+                        hovered ? Color.white.opacity(0.35) : Color.white.opacity(0.18),
+                        style: StrokeStyle(lineWidth: 1, dash: [4, 3])
+                    )
+            )
+        }
+        .buttonStyle(.plain)
+        .onHover { hovered = $0 }
+        .help("Open the engine builder")
+    }
+}
+
+// MARK: - Row primitive
+
+private struct SidebarRow<Content: View, Trailing: View>: View {
+    let isSelected: Bool
+    let isHovered: Bool
+    let onTap: (() -> Void)?
+    @ViewBuilder let content: () -> Content
+    @ViewBuilder let trailing: () -> Trailing
+
+    var body: some View {
+        let core = HStack(spacing: 10) {
+            content()
+            Spacer(minLength: 0)
+            trailing()
+        }
+        .padding(.horizontal, rowPaddingH)
+        .padding(.vertical, rowPaddingV)
+        .background(
+            RoundedRectangle(cornerRadius: rowCornerRadius)
+                .fill(background)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: rowCornerRadius)
+                .stroke(isSelected ? selectedBorder : Color.clear, lineWidth: 1)
+        )
+        .padding(.horizontal, 8)
+        .contentShape(Rectangle())
+
+        if let onTap = onTap {
+            core.onTapGesture(perform: onTap)
+        } else {
+            core
+        }
+    }
+
+    private var background: Color {
+        if isSelected { return selectedFill }
+        return isHovered ? hoverFill : .clear
+    }
+}
+
+// MARK: - Engine Row
 
 struct EngineRow: View {
     let entry: EngineEntry
@@ -138,133 +245,152 @@ struct EngineRow: View {
     let onSelect: () -> Void
     let onDelete: () -> Void
 
-    @State private var isHovered = false
+    @State private var hovered = false
+
+    private var subtitle: String {
+        var parts = [entry.displacementLabel, "\(entry.cylinderCount) cyl"]
+        if entry.isUserBuilt { parts.append("custom") }
+        return parts.joined(separator: " · ")
+    }
 
     var body: some View {
-        HStack(spacing: 12) {
-            Circle()
-                .fill(isSelected ? Color.sidebarAccent : Color.sidebarTextSecondary.opacity(0.3))
-                .frame(width: 6, height: 6)
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text(entry.name)
-                    .font(.system(size: 14))
-                    .foregroundColor(isSelected ? .white : .white.opacity(0.7))
-                Text("\(entry.displacementLabel) · \(entry.cylinderCount) cyl" + (entry.isUserBuilt ? " · custom" : ""))
-                    .font(.system(size: 11))
-                    .foregroundColor(.sidebarTextSecondary)
+        SidebarRow(isSelected: isSelected, isHovered: hovered, onTap: onSelect) {
+            HStack(spacing: 10) {
+                Circle()
+                    .fill(isSelected ? activeDot : inactiveDot)
+                    .frame(width: 6, height: 6)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(entry.name)
+                        .font(.system(size: 13))
+                        .foregroundColor(isSelected ? primaryText : dimText)
+                    Text(subtitle)
+                        .font(.system(size: 11))
+                        .foregroundColor(mutedText)
+                }
             }
-            Spacer()
-
-            if isHovered && entry.isUserBuilt {
+        } trailing: {
+            if hovered && entry.isUserBuilt {
                 Button(action: onDelete) {
                     Image(systemName: "trash")
                         .font(.system(size: 11))
-                        .foregroundColor(.sidebarTextSecondary)
+                        .foregroundColor(mutedText)
                 }
                 .buttonStyle(.plain)
+                .help("Delete this engine")
             }
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-        .contentShape(Rectangle())
-        .background(isSelected ? Color.sidebarHighlight : Color.clear)
-        .cornerRadius(6)
-        .padding(.horizontal, 8)
-        .onTapGesture(perform: onSelect)
-        .onHover { isHovered = $0 }
+        .onHover { hovered = $0 }
     }
 }
+
+// MARK: - Layout Row
 
 struct LayoutRow: View {
     let layout: TileLayout
-    let hotkey: String?
     let isSelected: Bool
     let action: () -> Void
     let onDelete: () -> Void
-    @State private var isHovered = false
+    @State private var hovered = false
 
     var body: some View {
-        HStack(spacing: 12) {
-            Circle()
-                .fill(isSelected ? Color.sidebarAccent : Color.sidebarTextSecondary.opacity(0.3))
-                .frame(width: 6, height: 6)
-
-            Text(layout.name)
-                .font(.system(size: 14))
-                .foregroundColor(isSelected ? .white : .white.opacity(0.7))
-
-            Spacer()
-
-            if isHovered {
+        SidebarRow(isSelected: isSelected, isHovered: hovered, onTap: action) {
+            HStack(spacing: 10) {
+                Circle()
+                    .fill(isSelected ? activeDot : inactiveDot)
+                    .frame(width: 6, height: 6)
+                Text(layout.name)
+                    .font(.system(size: 13))
+                    .foregroundColor(isSelected ? primaryText : dimText)
+            }
+        } trailing: {
+            if hovered {
                 Button(action: onDelete) {
                     Image(systemName: "trash")
                         .font(.system(size: 11))
-                        .foregroundColor(.sidebarTextSecondary)
+                        .foregroundColor(mutedText)
                 }
                 .buttonStyle(.plain)
-            } else if let hotkey = hotkey {
-                HStack(spacing: 2) {
-                    Image(systemName: "command")
-                    Text(hotkey)
-                }
-                .font(.system(size: 10))
-                .padding(.horizontal, 4)
-                .padding(.vertical, 2)
-                .background(Color.appBackground)
-                .cornerRadius(4)
-                .foregroundColor(.sidebarTextSecondary)
+                .help("Delete this layout")
             }
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-        .contentShape(Rectangle())
-        .background(isSelected ? Color.sidebarHighlight : Color.clear)
-        .cornerRadius(6)
-        .padding(.horizontal, 8)
-        .onTapGesture(perform: action)
-        .onHover { isHovered = $0 }
+        .onHover { hovered = $0 }
     }
 }
+
+// MARK: - Unsaved Layout Row
+
+/// Ephemeral entry that appears in the layout list once the user starts
+/// editing the workspace. Treated visually like any other LayoutRow but
+/// italicized, with a save icon on the right. Becomes a normal LayoutRow
+/// the moment the user saves and inputs a name.
+struct UnsavedLayoutRow: View {
+    let onSave: () -> Void
+    @State private var hovered = false
+
+    var body: some View {
+        SidebarRow(isSelected: true, isHovered: hovered, onTap: onSave) {
+            HStack(spacing: 10) {
+                Circle()
+                    .fill(Color.orange)
+                    .frame(width: 6, height: 6)
+                Text("Unsaved")
+                    .font(.system(size: 13, weight: .regular).italic())
+                    .foregroundColor(primaryText)
+            }
+        } trailing: {
+            Button(action: onSave) {
+                Image(systemName: "square.and.arrow.down")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundColor(.orange)
+            }
+            .buttonStyle(.plain)
+            .help("Name and save this workspace")
+        }
+        .onHover { hovered = $0 }
+    }
+}
+
+// MARK: - Footer
 
 struct SidebarFooter: View {
     @State private var showingControls = false
 
     var body: some View {
         VStack(spacing: 0) {
-            Divider().background(Color.white.opacity(0.05))
-            HStack {
+            Rectangle().fill(subtleBorder).frame(height: 1)
+            HStack(spacing: 14) {
                 Button(action: {}) {
-                    HStack(spacing: 8) {
+                    HStack(spacing: 6) {
                         Image(systemName: "gearshape")
                         Text("Settings")
                     }
-                    .font(.system(size: 13))
-                    .foregroundColor(.white)
+                    .font(.system(size: 12))
+                    .foregroundColor(.white.opacity(0.8))
                 }
                 .buttonStyle(.plain)
 
                 Button(action: { showingControls.toggle() }) {
                     Image(systemName: "keyboard")
                         .font(.system(size: 13))
-                        .foregroundColor(.white)
+                        .foregroundColor(.white.opacity(0.8))
                 }
                 .buttonStyle(.plain)
-                .padding(.leading, 12)
+                .help("Keyboard shortcuts")
                 .popover(isPresented: $showingControls, arrowEdge: .bottom) {
                     ControlsMenuView()
                 }
 
                 Spacer()
-                
+
                 Button(action: {}) {
                     Image(systemName: "questionmark.circle")
-                        .foregroundColor(.sidebarTextSecondary)
+                        .font(.system(size: 13))
+                        .foregroundColor(mutedText)
                 }
                 .buttonStyle(.plain)
+                .help("Help")
             }
-            .padding(16)
+            .padding(14)
         }
     }
 }
-

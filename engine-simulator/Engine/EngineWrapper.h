@@ -94,6 +94,11 @@ typedef NS_ENUM(NSInteger, EngineScopeType) {
 - (void)setGear:(int)targetGear;
 - (void)toggleClutch;
 
+/// Drives the transmission's clutch pressure directly (0.0 = fully disengaged,
+/// 1.0 = fully engaged). Used by the continuous clutch slider in the UI; the
+/// keyboard shortcut still goes through toggleClutch.
+- (void)setClutchPressure:(double)pressure;
+
 // Dynamometer controls
 - (void)setDynoEnabled:(BOOL)enabled;
 - (BOOL)isDynoEnabled;
@@ -111,6 +116,11 @@ typedef NS_ENUM(NSInteger, EngineScopeType) {
 // Tuning Setters
 - (void)setIgnitionOffset:(double)offset;
 - (void)setFuelTrim:(double)trim;
+
+/// Sample the engine's base timing curve (in degrees BTDC) at an arbitrary
+/// rpm. The curve is built into the engine when the .mr file loads, so this
+/// gives the ECU map a single source of truth to populate itself from.
+- (double)getBaseTimingAdvanceForRpm:(double)rpm;
 
 // Other
 - (void)resetTravelledDistance;

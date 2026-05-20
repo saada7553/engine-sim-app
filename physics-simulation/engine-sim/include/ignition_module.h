@@ -38,8 +38,10 @@ class IgnitionModule : public Part {
         void resetIgnitionEvents();
 
         double getTimingAdvance();
+        double getTimingAdvanceForRpm(double rpm);
 
         bool m_enabled;
+        double m_ignitionOffset = 0.0;
 
     protected:
         SparkPlug *getPlug(int i);

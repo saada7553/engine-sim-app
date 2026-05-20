@@ -57,20 +57,20 @@ void Intake::destroy() {
     /* void */
 }
 
-void Intake::process(double dt) {
+void Intake::process(double dt, double fuelTrim) {
     const double ideal_afr = 0.8 * m_molecularAfr * 4;
     const double current_afr = (m_system.mix().p_o2 + m_system.mix().p_inert) / m_system.mix().p_fuel;
 
     const double p_air = ideal_afr / (1 + ideal_afr);
     GasSystem::Mix fuelAirMix;
-    fuelAirMix.p_fuel = 1 - p_air;
+    fuelAirMix.p_fuel = (1 - p_air) * fuelTrim;
     fuelAirMix.p_inert = p_air * 0.75;
     fuelAirMix.p_o2 = p_air * 0.25;
 
     const double idle_afr = 2.0;
     const double p_idle_air = idle_afr / (1 + idle_afr);
     GasSystem::Mix fuelMix;
-    fuelMix.p_fuel = (1.0 - p_idle_air);
+    fuelMix.p_fuel = (1.0 - p_idle_air) * fuelTrim;
     fuelMix.p_inert = p_idle_air * 0.75;
     fuelMix.p_o2 = p_idle_air * 0.25;
 

@@ -16,15 +16,16 @@ import SwiftUI
 
 struct CustomTopBar: View {
     @ObservedObject var vm: EngineViewModel
+    @Binding var browserMode: BrowserMode
+    let isLayoutDirty: Bool
+    let onToggleSplit: () -> Void
+    let onToggleDelete: () -> Void
+    let onSaveLayout: () -> Void
 
     var body: some View {
         HStack(spacing: 0) {
             leftCluster
                 .padding(.leading, 18)
-
-            Spacer()
-
-            centerBadge
 
             Spacer()
 
@@ -54,35 +55,18 @@ struct CustomTopBar: View {
             .buttonStyle(.plain)
             .help("Toggle Sidebar")
 
+            WorkspaceToolCluster(
+                browserMode: browserMode,
+                isLayoutDirty: isLayoutDirty,
+                onToggleSplit: onToggleSplit,
+                onToggleDelete: onToggleDelete,
+                onSaveLayout: onSaveLayout
+            )
+
             ArmedIgnitionSwitch(isOn: vm.isIgnitionOn) { vm.toggleIgnition() }
 
             StarterButton(running: vm.isStarterOn) {
                 vm.toggleStarter()
-            }
-        }
-    }
-
-    // MARK: Center — title + check engine
-
-    private var centerBadge: some View {
-        HStack(spacing: 10) {
-            CheckEngineIcon()
-                .stroke(
-                    LinearGradient(colors: [Color.orange, Color.red],
-                                   startPoint: .top, endPoint: .bottom),
-                    style: StrokeStyle(lineWidth: 1.4, lineJoin: .round)
-                )
-                .frame(width: 26, height: 26)
-                .shadow(color: .orange.opacity(0.45), radius: 5)
-
-            VStack(alignment: .leading, spacing: -2) {
-                Text("ENGINE")
-                    .modifier(RetroFont(size: 8))
-                    .foregroundColor(.gray)
-                Text("SIMULATOR")
-                    .modifier(RetroFont(size: 15))
-                    .foregroundColor(.white)
-                    .tracking(1.2)
             }
         }
     }
@@ -113,6 +97,140 @@ struct CustomTopBar: View {
             }
         }
     }
+}
+
+// MARK: - Workspace tool cluster
+//
+// Pill icons for adding / removing / saving tiles. Each button doubles as
+// its own state indicator: when a mode is active the icon swaps for an
+// "armed" variant, the label flips to "ARMED · CLICK A TILE", and the
+// border pulses softly so the user knows the next click acts on the
+// workspace. Tooltips spell out the full action on hover.
+
+private struct WorkspaceToolCluster: View {
+    let browserMode: BrowserMode
+    let isLayoutDirty: Bool
+    let onToggleSplit: () -> Void
+    let onToggleDelete: () -> Void
+    let onSaveLayout: () -> Void
+
+    var body: some View {
+        HStack(spacing: 6) {
+            WorkspaceToolButton(
+                idleIcon: "rectangle.split.2x1",
+                activeIcon: "plus.rectangle.on.rectangle",
+                idleLabel: "ADD TILE",
+                activeLabel: "PICK AN EDGE",
+                tooltip: "Add Tile  (⌘T)\nClick an edge of any tile — a new tile spawns on that side.",
+                isArmed: browserMode == .split,
+                accent: .orange,
+                dirty: false,
+                action: onToggleSplit
+            )
+
+            WorkspaceToolButton(
+                idleIcon: "minus.rectangle",
+                activeIcon: "rectangle.badge.minus",
+                idleLabel: "REMOVE",
+                activeLabel: "PICK A TILE",
+                tooltip: "Remove Tile  (⌘D)\nClick a tile — it disappears and its sibling expands to fill the space.",
+                isArmed: browserMode == .delete,
+                accent: .red,
+                dirty: false,
+                action: onToggleDelete
+            )
+
+            WorkspaceToolButton(
+                idleIcon: "square.and.arrow.down",
+                activeIcon: "square.and.arrow.down",
+                idleLabel: "SAVE",
+                activeLabel: "SAVE",
+                tooltip: "Save Workspace  (⌘S)\nName this tile arrangement to keep it in your Layouts list.",
+                isArmed: false,
+                accent: .orange,
+                dirty: isLayoutDirty,
+                action: onSaveLayout
+            )
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 6)
+        .background(
+            RoundedRectangle(cornerRadius: 10)
+                .fill(Color.white.opacity(0.03))
+                .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.white.opacity(0.08), lineWidth: 0.5))
+        )
+    }
+}
+
+private struct WorkspaceToolButton: View {
+    let idleIcon: String
+    let activeIcon: String
+    let idleLabel: String
+    let activeLabel: String
+    let tooltip: String
+    let isArmed: Bool
+    let accent: Color
+    let dirty: Bool
+    let action: () -> Void
+
+    @State private var hovering = false
+    @State private var armedPulse = false
+
+    private var displayIcon: String { isArmed ? activeIcon : idleIcon }
+    private var displayLabel: String { isArmed ? activeLabel : idleLabel }
+
+    var body: some View {
+        Button(action: action) {
+            VStack(spacing: 2) {
+                ZStack {
+                    Image(systemName: displayIcon)
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundColor(isArmed ? accent : .white.opacity(hovering ? 0.95 : 0.7))
+                        .scaleEffect(isArmed && armedPulse ? 1.08 : 1.0)
+
+                    if dirty {
+                        Circle()
+                            .fill(Color.orange)
+                            .frame(width: 5, height: 5)
+                            .offset(x: 8, y: -8)
+                            .shadow(color: Color.orange.opacity(0.7), radius: 3)
+                    }
+                }
+                .frame(width: 26, height: 26)
+
+                Text(displayLabel)
+                    .modifier(RetroFont(size: 7))
+                    .foregroundColor(isArmed ? accent : .white.opacity(0.45))
+                    .tracking(0.6)
+                    .lineLimit(1)
+                    .fixedSize()
+            }
+            .padding(.horizontal, 6)
+            .padding(.vertical, 3)
+            .frame(minWidth: 70)
+            .background(
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(isArmed ? accent.opacity(armedPulse ? 0.28 : 0.18) : (hovering ? Color.white.opacity(0.06) : Color.clear))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 6)
+                    .stroke(isArmed ? accent.opacity(armedPulse ? 0.85 : 0.55) : Color.clear, lineWidth: 1)
+            )
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .help(tooltip)
+        .onChange(of: isArmed) { _, armed in
+            if armed {
+                withAnimation(.easeInOut(duration: 0.9).repeatForever(autoreverses: true)) {
+                    armedPulse = true
+                }
+            } else {
+                withAnimation(.easeOut(duration: 0.2)) { armedPulse = false }
+            }
+        }
+    }
+
 }
 
 // MARK: - Ignition switch

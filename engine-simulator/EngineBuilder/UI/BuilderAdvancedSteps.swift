@@ -63,10 +63,6 @@ struct AdvancedStep: View {
                         BuilderSlider(label: "Idle CFM", value: $state.spec.idleCfm,
                                       range: 0...10, step: 0.1, unit: "", format: "%.1f")
                     }
-
-                    AdvancedSection(title: "Ignition timing curve") {
-                        TimingCurveEditor(points: $state.spec.ignitionTiming)
-                    }
                 }
                 .padding(.bottom, 12)
             }
@@ -89,90 +85,6 @@ private struct AdvancedSection<Content: View>: View {
             }
             content
         }
-    }
-}
-
-private struct TimingCurveEditor: View {
-    @Binding var points: [TimingPoint]
-
-    private let minPoints = 2
-    private let maxRpm: Double = 12000
-    private let maxAdvance: Double = 60
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            ForEach(points.indices, id: \.self) { idx in
-                pointRow(idx: idx)
-            }
-
-            HStack(spacing: 8) {
-                Button(action: addPoint) {
-                    Text("+ ADD POINT")
-                        .font(.system(size: 10, weight: .bold, design: .monospaced))
-                        .tracking(2)
-                        .foregroundColor(BuilderTheme.label)
-                        .padding(.horizontal, 12).padding(.vertical, 7)
-                        .overlay(Rectangle().stroke(BuilderTheme.line, lineWidth: 1))
-                }
-                .buttonStyle(.plain)
-            }
-        }
-    }
-
-    private func pointRow(idx: Int) -> some View {
-        HStack(spacing: 12) {
-            BuilderSlider(label: "rpm",
-                          value: rpmBinding(at: idx),
-                          range: 0...maxRpm, step: 100, unit: "rpm", format: "%.0f")
-                .frame(maxWidth: 220)
-            BuilderSlider(label: "advance",
-                          value: advanceBinding(at: idx),
-                          range: 0...maxAdvance, step: 0.5, unit: "°")
-
-            Button(action: { removePoint(at: idx) }) {
-                Image(systemName: "trash")
-                    .font(.system(size: 11))
-                    .foregroundColor(BuilderTheme.label)
-                    .frame(width: 22, height: 22)
-                    .overlay(Rectangle().stroke(BuilderTheme.line, lineWidth: 1))
-            }
-            .buttonStyle(.plain)
-            .disabled(points.count <= minPoints)
-            .opacity(points.count <= minPoints ? 0.35 : 1)
-        }
-    }
-
-    private func rpmBinding(at idx: Int) -> Binding<Double> {
-        Binding(
-            get: { idx < points.count ? points[idx].rpm : 0 },
-            set: { newValue in
-                guard idx < points.count else { return }
-                points[idx].rpm = newValue
-                points.sort { $0.rpm < $1.rpm }
-            }
-        )
-    }
-
-    private func advanceBinding(at idx: Int) -> Binding<Double> {
-        Binding(
-            get: { idx < points.count ? points[idx].advanceDeg : 0 },
-            set: { newValue in
-                guard idx < points.count else { return }
-                points[idx].advanceDeg = newValue
-            }
-        )
-    }
-
-    private func addPoint() {
-        let lastRpm = points.last?.rpm ?? 0
-        let lastAdvance = points.last?.advanceDeg ?? 12
-        points.append(TimingPoint(rpm: lastRpm + 1000, advanceDeg: lastAdvance))
-    }
-
-    private func removePoint(at idx: Int) {
-        guard points.count > minPoints,
-              idx >= 0, idx < points.count else { return }
-        points.remove(at: idx)
     }
 }
 

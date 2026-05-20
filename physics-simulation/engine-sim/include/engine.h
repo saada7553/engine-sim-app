@@ -97,6 +97,11 @@ class Engine : public Part {
         Piston *getPiston(int i) const { return &m_pistons[i]; }
         ConnectingRod *getConnectingRod(int i) const { return &m_connectingRods[i]; }
         IgnitionModule *getIgnitionModule() { return &m_ignitionModule; }
+        void setIgnitionOffset(double offset) { m_ignitionModule.m_ignitionOffset = offset; }
+        double getIgnitionOffset() const { return m_ignitionModule.m_ignitionOffset; }
+        void setFuelTrim(double trim) { m_fuelTrim = trim; }
+        double getFuelTrim() const { return m_fuelTrim; }
+        double getTimingAdvanceForRpm(double rpm) { return m_ignitionModule.getTimingAdvanceForRpm(rpm); }
         ExhaustSystem *getExhaustSystem(int i) const { return &m_exhaustSystems[i]; }
         Intake *getIntake(int i) const { return &m_intakes[i]; }
         CombustionChamber *getChamber(int i) const { return &m_combustionChambers[i]; }
@@ -148,6 +153,7 @@ class Engine : public Part {
         Throttle *m_throttle;
 
         double m_throttleValue;
+        double m_fuelTrim = 1.0;
         double m_displacement;
 };
 

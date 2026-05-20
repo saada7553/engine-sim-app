@@ -28,6 +28,12 @@ static const double kDynoRampRateRpm = 500.0;        // rpm/sec the dyno speed c
 static const double kFrameTimestep = 1.0 / 30.0;     // seconds per simulation frame
 static const double kDynoMinThrottle = 0.05;         // throttle threshold that marks a run started / ends it
 
+// The C++ ignition module stores both the timing-curve output and m_ignitionOffset
+// in radians (the curve is built with units.deg). The Swift side talks in degrees,
+// so we convert at this boundary in both directions.
+static inline double kDegToRad(double deg) { return deg * (M_PI / 180.0); }
+static inline double kRadToDeg(double rad) { return rad * (180.0 / M_PI); }
+
 @interface EngineWrapper ()
 @property (atomic, strong) EngineState *latestState;
 @end
@@ -275,20 +281,23 @@ static const double kDynoMinThrottle = 0.05;         // throttle threshold that 
                 state.exhaustO2 = engine->getExhaustO2() * 100.0;
                 
                 // --- ECU Tuning Map Retrieval ---
-                state.ignitionOffset = engine->getIgnitionOffset();
+                // Both getIgnitionOffset() and getTimingAdvanceForRpm() return
+                // radians; convert to degrees so the Swift UI can display + edit
+                // them in the units real tuners use.
+                state.ignitionOffset = kRadToDeg(engine->getIgnitionOffset());
                 state.fuelTrim = engine->getFuelTrim();
-                
-                // Sample the ignition map (20 points from 0 to redline)
+
+                // Sample the ignition map (20 points from 0 to redline).
                 NSMutableArray *mapPoints = [NSMutableArray array];
                 double maxRpm = [self getEngineRedline];
                 for (int i = 0; i <= 20; ++i) {
                     double sampleRpm = (maxRpm / 20.0) * i;
-                    double advance = engine->getIgnitionOffset() + 
-                                     engine->getTimingAdvanceForRpm(sampleRpm);
-                    
+                    double advanceRad = engine->getIgnitionOffset() +
+                                        engine->getTimingAdvanceForRpm(sampleRpm);
+
                     ScopePoint *p = [[ScopePoint alloc] init];
                     p.x = sampleRpm;
-                    p.y = advance;
+                    p.y = kRadToDeg(advanceRad);
                     [mapPoints addObject:p];
                 }
                 state.ignitionMap = mapPoints;
@@ -399,9 +408,16 @@ static const double kDynoMinThrottle = 0.05;         // throttle threshold that 
     _sim->getTransmission()->setClutchPressure(current > 0.5 ? 0.0 : 1.0);
 }
 
-- (void)setIgnitionOffset:(double)offset {
+- (void)setClutchPressure:(double)pressure {
+    double clamped = pressure < 0.0 ? 0.0 : (pressure > 1.0 ? 1.0 : pressure);
+    _sim->getTransmission()->setClutchPressure(clamped);
+}
+
+- (void)setIgnitionOffset:(double)offsetDegrees {
     if (_engine) {
-        _engine->setIgnitionOffset(offset);
+        // C++ side expects radians (added directly into the radian-valued
+        // base timing curve). Convert from the degrees the UI deals in.
+        _engine->setIgnitionOffset(kDegToRad(offsetDegrees));
     }
 }
 
@@ -409,6 +425,11 @@ static const double kDynoMinThrottle = 0.05;         // throttle threshold that 
     if (_engine) {
         _engine->setFuelTrim(trim);
     }
+}
+
+- (double)getBaseTimingAdvanceForRpm:(double)rpm {
+    if (!_engine) return 0.0;
+    return kRadToDeg(_engine->getTimingAdvanceForRpm(rpm));
 }
 
 - (void)setDynoEnabled:(BOOL)enabled {

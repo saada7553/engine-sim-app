@@ -76,18 +76,17 @@ struct TileSurfApp: App {
 @CommandsBuilder
 func tileSurfCommands(rootViewModel: RootViewModel) -> some Commands {
     CommandGroup(after: .newItem) {
-        Button("Toggle Split") {
-            rootViewModel.browserMode = rootViewModel.browserMode != .split ? .split : .operational
-        }
+        Button("Toggle Split") { rootViewModel.toggleSplitMode() }
             .keyboardShortcut("t", modifiers: [.command])
 
         Button("Toggle Sidebar") { SidebarManager.shared.toggleSidebar() }
             .keyboardShortcut("b", modifiers: [.command])
-        
-        Button("Toggle Delete") {
-            rootViewModel.browserMode = rootViewModel.browserMode != .delete ? .delete : .operational
-        }
+
+        Button("Toggle Delete") { rootViewModel.toggleDeleteMode() }
             .keyboardShortcut("d", modifiers: [.command])
+
+        Button("Save Workspace") { rootViewModel.presentSaveLayout() }
+            .keyboardShortcut("s", modifiers: [.command])
     }
 }
 
