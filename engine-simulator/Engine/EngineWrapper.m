@@ -36,6 +36,7 @@ static inline double kRadToDeg(double rad) { return rad * (180.0 / M_PI); }
 
 @interface EngineWrapper ()
 @property (atomic, strong) EngineState *latestState;
+@property (nonatomic, assign) BOOL loadSucceeded;
 @end
 
 @implementation ScopePoint
@@ -151,18 +152,31 @@ static inline double kRadToDeg(double rad) { return rad * (180.0 / M_PI); }
         
     es_script::Compiler compiler;
     compiler.initialize();
-    compiler.compile([path UTF8String]); // Use Bundle path
+    const bool compiledOk = compiler.compile([path UTF8String]);
     auto output = compiler.execute();
-    
+
     NSLog(@"  Engine Address:       %p", output.engine);
     NSLog(@"  Vehicle Address:      %p", output.vehicle);
     NSLog(@"  Transmission Address: %p", output.transmission);
-    
+
     _engine = output.engine;
     _vehicle = output.vehicle;
     _transmission = output.transmission;
     compiler.destroy();
-    
+
+    // If any of these came back null, dereferencing them later turns into a
+    // hard crash with a useless EXC_BAD_ACCESS at some vtable offset. Bail
+    // out cleanly instead so the app stays alive and the sidebar can show
+    // an error / let the user pick another engine.
+    if (!compiledOk || _engine == nullptr || _vehicle == nullptr || _transmission == nullptr) {
+        NSLog(@"CRITICAL ERROR: failed to compile or execute %@ — engine=%p vehicle=%p transmission=%p compiledOk=%d",
+              targetEngineMR, _engine, _vehicle, _transmission, compiledOk);
+        _engine = nullptr;
+        _vehicle = nullptr;
+        _transmission = nullptr;
+        return;
+    }
+
     // 2. Setup Simulator
     _sim = _engine->createSimulator(_vehicle, _transmission);
     _engine->calculateDisplacement();
@@ -232,7 +246,9 @@ static inline double kRadToDeg(double rad) { return rad * (180.0 / M_PI); }
                 // 1. Basic Stats
                 state.rpm = _rpm;
                 state.gear = _gear;
-                state.vehicleSpeed = _vehicle->getSpeed();
+                // Native getSpeed() returns m/s; the speedometer gauge labels its
+                // value "mph", so convert at the boundary.
+                state.vehicleSpeed = units::convert(_vehicle->getSpeed(), units::mile / units::hour);
                 state.clutchPressure = _sim->getTransmission()->getClutchPressure();
                 state.isIgnitionOn = engine->getIgnitionModule()->m_enabled;
                 state.isStarterOn = _sim->m_starterMotor.m_enabled;
@@ -321,6 +337,11 @@ static inline double kRadToDeg(double rad) { return rad * (180.0 / M_PI); }
             }
         }
     });
+
+    // We made it all the way through compile + simulator + audio + thread —
+    // mark the wrapper as healthy so the Swift side stops showing the
+    // "engine failed to load" alert.
+    self.loadSucceeded = YES;
 }
 
 - (EngineState *)pollState {
@@ -384,18 +405,20 @@ static inline double kRadToDeg(double rad) { return rad * (180.0 / M_PI); }
 // --- Controls Exposed to Swift ---
 
 - (void)toggleIgnition {
+    if (!_sim) return;
     bool state = !_sim->getEngine()->getIgnitionModule()->m_enabled;
     _sim->getEngine()->getIgnitionModule()->m_enabled = state;
 }
 
 - (void)toggleStarter {
+    if (!_sim) return;
     bool state = !_sim->m_starterMotor.m_enabled;
     _sim->m_starterMotor.m_enabled = state;
 }
 
 - (void)setThrottle:(double)val {
     _throttle = val;
-    _engine->setSpeedControl(val);
+    if (_engine) _engine->setSpeedControl(val);
 }
 
 - (void)shiftUp { _targetGear = _gear + 1; }
@@ -403,12 +426,13 @@ static inline double kRadToDeg(double rad) { return rad * (180.0 / M_PI); }
 - (void)setGear:(int)targetGear { _targetGear = targetGear; }
 
 - (void)toggleClutch {
-    // Simple toggle logic
+    if (!_sim) return;
     double current = _sim->getTransmission()->getClutchPressure();
     _sim->getTransmission()->setClutchPressure(current > 0.5 ? 0.0 : 1.0);
 }
 
 - (void)setClutchPressure:(double)pressure {
+    if (!_sim) return;
     double clamped = pressure < 0.0 ? 0.0 : (pressure > 1.0 ? 1.0 : pressure);
     _sim->getTransmission()->setClutchPressure(clamped);
 }
@@ -441,6 +465,7 @@ static inline double kRadToDeg(double rad) { return rad * (180.0 / M_PI); }
 // Drives the dyno sweep each frame: loads the engine and accelerates it,
 // disabling once the redline is reached.
 - (void)updateDynoForFrame:(double)dt {
+    if (!_sim) return;
     Dynamometer &dyno = _sim->m_dyno;
 
     if (_dynoSweepRequested) {
@@ -487,16 +512,16 @@ static inline double kRadToDeg(double rad) { return rad * (180.0 / M_PI); }
 
 - (double)getRPM { return _rpm; }
 - (int)getGear { return _gear; }
-- (bool)isIgnitionOn { return _sim->getEngine()->getIgnitionModule()->m_enabled; }
-- (bool)isStarterOn { return _sim->m_starterMotor.m_enabled; }
-- (double)getVehicleSpeed { return _vehicle->getSpeed(); }
-- (double)getTravelledDistance { return _vehicle->getTravelledDistance(); }
-- (void)resetTravelledDistance { _vehicle->resetTravelledDistance(); }
-- (double)getEngineRedline { return units::toRpm(_engine->getRedline()); }
-- (double)getTotalVolumeFuelConsumed { return _engine->getTotalVolumeFuelConsumed(); }
-- (void)resetFuelConsumption { _engine->resetFuelConsumption(); }
-- (double)getTimestep { return 1.0 / _sim->getTimestep(); }
-- (double)getTotalExhaustFlow { return _sim->getTotalExhaustFlow(); }
+- (bool)isIgnitionOn { return _sim ? _sim->getEngine()->getIgnitionModule()->m_enabled : false; }
+- (bool)isStarterOn { return _sim ? _sim->m_starterMotor.m_enabled : false; }
+- (double)getVehicleSpeed { return _vehicle ? units::convert(_vehicle->getSpeed(), units::mile / units::hour) : 0.0; }
+- (double)getTravelledDistance { return _vehicle ? _vehicle->getTravelledDistance() : 0.0; }
+- (void)resetTravelledDistance { if (_vehicle) _vehicle->resetTravelledDistance(); }
+- (double)getEngineRedline { return _engine ? units::toRpm(_engine->getRedline()) : 0.0; }
+- (double)getTotalVolumeFuelConsumed { return _engine ? _engine->getTotalVolumeFuelConsumed() : 0.0; }
+- (void)resetFuelConsumption { if (_engine) _engine->resetFuelConsumption(); }
+- (double)getTimestep { return _sim ? 1.0 / _sim->getTimestep() : 0.0; }
+- (double)getTotalExhaustFlow { return _sim ? _sim->getTotalExhaustFlow() : 0.0; }
 
 - (void)shutdown {
     if (_running) {

@@ -295,23 +295,27 @@ struct OscilloscopeView: View {
 
         for i in 1..<screenPoints.count {
             let current = screenPoints[i]
-            let s = CGFloat(i) / total
-            
+            // Time-series scopes use position-in-buffer as an age cue so the
+            // freshest samples pop. Static curves (e.g. the spark advance
+            // map) opt out via `fadeWithAge = false` — every point is the
+            // current state and should render at full strength.
+            let s: CGFloat = config.fadeWithAge ? CGFloat(i) / total : 1.0
+
             let xWentBack = prev.x > current.x
             let largeGap = abs(current.x - prev.x) > detachmentThreshold
             let detached = xWentBack || largeGap
-            
+
             if config.drawReverse || (!detached && !lastDetached) {
                 var width = config.lineWidth * max(s, 0.3)
                 if s > 0.95 { width += ((s - 0.95) / 0.05) * 2.0 }
-                
+
                 var path = Path()
                 path.move(to: prev)
                 path.addLine(to: current)
-                
+
                 context.stroke(path, with: .color(config.color.opacity(max(s, 0.75))), lineWidth: width)
             }
-            
+
             lastDetached = detached
             prev = current
         }

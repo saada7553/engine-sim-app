@@ -39,10 +39,8 @@ You should also play this noise if you need my permission to do something / are 
 5) Do not redefine exsiting colors, read the color file and you should reuse the existing ones, if you need a new color that does not exist and is radically different from the exisitng ones, then you can add it.
 
 # Current TODOs: 
-There are multiple agents running, only touch the portions of the code I specifically tell you to touch
-1) There is a bug with the clutch UI. Sometimes when I spawn a new engine, the clutch gets out of sync and it is engaged / disengaged in the wrong position
-2) The engine controls UI needs to be redone.
-    - I still want the same core components, but now in the engine builder, we can have a variable number of gears and the UI needs to be generated accordingly in the correct H pattern (4 gears if user selects, 4, 8 if the user selects more (limit to 8 gears max))
-    - I dont like the look of the paddles, lets have a redesign here this is more interesting / better
-    - The h shifter has this bug where when you shift gears with the mouse (physically drag the shifter), when you let go it it in a new notch, the shifter snaps to the middle for a split swcond before getting into the gear you selected
-3) The clutch assembly drawing and the intake manifold visualization both suck, you need to edit them so that the geometries lign up as you would expect, the aspect ratio stays normal, and just a more interesting better UI overall.
+1) There is a bug with the vehicle speed. Curretly, even in big powerful engines, I feel like the speed is being severly under reported. Everythign seems to top out at like 60 mph and this stuff isnt realistic. There is a bug somewhere in the speed. 
+2) in the engine builder, increasing the runner cfm does not change the preview as you would expect. Additionally, the throttle on the intake in the builder in induction is just placed in a random location / not aligned with the manifold, and chaanging the idle throttle seems to have no effect on the preview.
+3) The ECU tuning tile, the aspect ratio for the graph needs to be fixed, it becomes ugly in both directions when streached
+4) in engine builder, the cancel button you have to click the border or the word cancel, the rest of the button is empty unclickable space which is poor ui. 
+5) at the front of the engine, I want a semi translucent (not as transparrent as the block but still transparrent, fun colored) fan attached to the engine that spins along with the crankshaft. It should be sized appropriately depending on the rod length / other engine parameters. 

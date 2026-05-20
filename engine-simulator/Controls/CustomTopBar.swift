@@ -77,7 +77,7 @@ struct CustomTopBar: View {
         HStack(spacing: 8) {
             DashWarningTile(label: "IGN",   active: vm.isIgnitionOn,    accent: .red)    { IgnitionIcon() }
             DashWarningTile(label: "CRANK", active: vm.isStarterOn,     accent: .green)  { StarterIcon() }
-            DashWarningTile(label: "CLUTCH", active: !vm.clutchPressed, accent: .blue)   { ClutchIcon() }
+            DashWarningTile(label: "CLUTCH", active: vm.clutchPressed,  accent: .blue)   { ClutchIcon() }
             DashWarningTile(label: "DYNO",  active: vm.dynoEnabled,     accent: .orange) { DynoIcon() }
             DashWarningTile(label: "HOLD",  active: vm.throttleHeld,    accent: .yellow) { HoldIcon() }
         }

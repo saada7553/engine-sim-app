@@ -92,6 +92,11 @@ typedef NS_ENUM(NSInteger, EngineScopeType) {
 - (void)shiftUp;
 - (void)shiftDown;
 - (void)setGear:(int)targetGear;
+/// `YES` once the .mr file was compiled and the simulator initialized; `NO`
+/// if anything along that path failed (and the wrapper bailed out). Read by
+/// EngineViewModel after init to drive a user-facing error alert.
+@property (nonatomic, readonly) BOOL loadSucceeded;
+
 - (void)toggleClutch;
 
 /// Drives the transmission's clutch pressure directly (0.0 = fully disengaged,

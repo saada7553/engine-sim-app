@@ -55,6 +55,9 @@ private let tilePreviews: [TileType: TilePreviewMeta] = [
     .engineControls:  .init(icon: "slider.horizontal.3", summary: "Throttle, clutch, gear shifter"),
     .ecuTuning:       .init(icon: "memorychip",          summary: "Ignition + fuel map tuning grid"),
 
+    .shiftLight:        .init(icon: "rectangle.grid.1x2", summary: "Race-style LED shift indicator"),
+    .zeroToSixtyTimer:  .init(icon: "stopwatch",          summary: "Arm-and-launch 0-60 mph stopwatch"),
+
     .torqueOscilloscope:            .init(icon: "waveform.path",        summary: "Crankshaft torque vs crank angle"),
     .powerOscilloscope:             .init(icon: "bolt.fill",            summary: "Instantaneous engine power"),
     .dynoOscilloscope:              .init(icon: "speedometer",          summary: "Dyno torque + power vs RPM sweep"),
@@ -85,6 +88,7 @@ private let pickerSections: [TilePreviewSection] = [
         .exhaustO2Gauge, .cylinderPressureGauge,
     ]),
     .init(title: "CONTROLS", types: [.engineControls, .ecuTuning]),
+    .init(title: "DRIVER TOOLS", types: [.shiftLight, .zeroToSixtyTimer]),
     .init(title: "OSCILLOSCOPES", types: [
         .torqueOscilloscope, .powerOscilloscope, .dynoOscilloscope,
         .sparkAdvanceOscilloscope, .pvOscilloscope,

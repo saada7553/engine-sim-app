@@ -24,8 +24,11 @@ enum GaugePresets {
     /// Tachometer gauge configuration
     /// - Parameter redline: Engine redline in RPM (bands will be 5% higher)
     static func tachometer(redline: Double) -> GaugeConfiguration {
-        // Use 5% higher redline for the gauge bands so needle has room
-        let adjustedRedline = redline * 1.05
+        // Floor redline so the gauge always has a real range — if the engine
+        // failed to load and redline is 0, fall back to 7000 so the tick
+        // math doesn't collapse to NaN and crash the Canvas.
+        let safeRedline = redline > 0 ? redline : 7000
+        let adjustedRedline = safeRedline * 1.05
         let maxRpm = ceil(adjustedRedline * 1.25 / 1000.0) * 1000.0
         let redlineRounded = ceil(adjustedRedline / 500.0) * 500.0
         let redlineWarning = floor(adjustedRedline * 0.9 / 500.0) * 500.0

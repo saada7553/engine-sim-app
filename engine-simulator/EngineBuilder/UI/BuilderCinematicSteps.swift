@@ -29,6 +29,7 @@ private enum CylinderDiagram {
     static let pistonInsetFromBore: CGFloat = 2
     static let ghostStrokeWidth: CGFloat = 0.5
     static let dashPattern: [CGFloat] = [3, 3]
+    static let boreBottomOverhangMm: Double = 4
 
     // Slider maxima — used to compute a stable scale so changing any one
     // dimension does NOT visually scale the others.
@@ -37,7 +38,9 @@ private enum CylinderDiagram {
     static let maxRodLengthMm: Double = 200
     static let maxCompressionHeightMm: Double = 50
     static let canvasWidthSlackMm: Double = 30
-    static let canvasBottomMarginMm: Double = 8
+    // Bottom margin must clear the full crank circle (one max-radius below
+    // the crank center) plus a small breathing gap to the StatBox row below.
+    static let canvasBottomMarginMm: Double = 12
 }
 
 
@@ -289,14 +292,13 @@ struct BottomEndStep: View {
             }
             .frame(maxWidth: 480)
 
-            VStack(spacing: 12) {
+            VStack(spacing: 24) {
                 BuilderSectionHeading(title: "Cylinder")
                 CylinderSection(boreMm: state.spec.boreMm,
                                  strokeMm: state.spec.strokeMm,
                                  rodLengthMm: state.spec.rodLengthMm,
                                  compressionHeightMm: state.spec.compressionHeightMm)
                     .frame(width: 240, height: 340)
-                    .clipped()      // crank circle stays inside its panel
                 HStack {
                     StatBox(label: "B / S", value: String(format: "%.2f", state.spec.boreMm / state.spec.strokeMm))
                     StatBox(label: "R / S", value: String(format: "%.2f", state.spec.rodLengthMm / state.spec.strokeMm))
@@ -500,12 +502,15 @@ private struct CylinderLayout {
         let maxPistonHeight = CylinderDiagram.maxCompressionHeightMm + maxChamberClearance * 0.5
         let maxCrankRadius = CylinderDiagram.maxStrokeMm / 2
 
+        // Total geometry from the top of the head all the way down to the
+        // bottom of the crank circle (both halves), plus a breathing margin.
         let maxTotalHeightMm = maxHeadHeight
             + maxChamberClearance
             + maxPistonHeight
             + CylinderDiagram.maxStrokeMm
             + CylinderDiagram.maxRodLengthMm
-            + maxCrankRadius
+            + maxCrankRadius                     // journal-at-TDC → crank center
+            + maxCrankRadius                     // crank center → bottom of crank circle
             + CylinderDiagram.canvasBottomMarginMm
         let maxTotalWidthMm = CylinderDiagram.maxBoreMm + CylinderDiagram.canvasWidthSlackMm
 
@@ -513,19 +518,17 @@ private struct CylinderLayout {
         let scaleX = viewSize.width  * CylinderDiagram.viewportFillFraction / maxTotalWidthMm
         let scale = CGFloat(min(scaleX, scaleY))
 
-        // *** Stable anchors ***
-        // Crank center is FIXED — it sits at the bottom of the canvas at
-        // the position implied by max rod + max stroke. From there we
-        // build upward toward the (also fixed) head position. This way
-        // moving rod length only changes where the piston/wrist pin sit
-        // between the two anchors.
-        let topAnchorMm = 0.0
+        // *** Stable crank anchor ***
+        // Crank center is locked vertically — placed so that the full crank
+        // circle (one radius below it) plus a small margin fits inside the
+        // canvas. The head / bore then follow the piston upward from here, so
+        // there's no oversized empty cylinder above TDC at small slider values.
         let crankAnchorYMm = maxHeadHeight
             + maxChamberClearance
             + maxPistonHeight
-            + CylinderDiagram.maxStrokeMm        // anchor at BDC piston position
+            + CylinderDiagram.maxStrokeMm
             + CylinderDiagram.maxRodLengthMm
-            + maxCrankRadius                     // crank-center sits one radius below BDC journal
+            + maxCrankRadius
         let topMargin = (viewSize.height - CGFloat(maxTotalHeightMm) * scale) / 2
 
         func y(_ mm: Double) -> CGFloat { topMargin + CGFloat(mm) * scale }
@@ -538,11 +541,6 @@ private struct CylinderLayout {
         let chamberClear = CGFloat(chamberClearanceMm) * scale
 
         self.centerX = viewSize.width / 2
-        self.headHeight = headH
-        self.headWidth = bore + 16
-        self.headCenterY = y(topAnchorMm) + headH / 2
-
-        self.boreTopY = y(topAnchorMm) + headH
 
         // Crank center is locked to the canvas (does not move with rod / stroke).
         self.crankCenterY = y(crankAnchorYMm)
@@ -555,10 +553,19 @@ private struct CylinderLayout {
         self.wristPinOffsetY = pistonH * 0.7
         self.tdcPistonCenterY = pistonTopAtTDC + pistonH / 2
         self.bdcPistonCenterY = self.tdcPistonCenterY + stroke
-        // Bore bottom extends just past the BDC piston bottom.
-        self.boreBottomY = self.bdcPistonCenterY + pistonH / 2 + 6
+
+        // Bore wraps the piston travel with only chamber clearance above TDC
+        // and a small overhang below BDC. The head sits directly on top of
+        // the bore — no oversized gap between deck and piston crown.
+        self.boreTopY = pistonTopAtTDC - chamberClear
+        self.boreBottomY = self.bdcPistonCenterY + pistonH / 2
+            + CGFloat(CylinderDiagram.boreBottomOverhangMm) * scale
         self.boreLeftX = centerX - bore / 2
         self.boreRightX = centerX + bore / 2
+
+        self.headHeight = headH
+        self.headWidth = bore + 16
+        self.headCenterY = self.boreTopY - headH / 2
 
         self.pistonWidth = max(4, bore - CGFloat(CylinderDiagram.pistonInsetFromBore))
         self.pistonHeight = pistonH
@@ -1296,12 +1303,25 @@ private enum IntakeDiagram {
     static let throttleBodyHeight: CGFloat = 22
     static let throttleBodyWidth: CGFloat = 40
     static let throttleStemHeight: CGFloat = 18
+    static let throttleStemWidth: CGFloat = 8
+    static let throttlePlateThickness: CGFloat = 2
+    static let throttlePlateInsetPx: CGFloat = 6 // shaves the ends of the plate inside the body
     static let plenumHeight: CGFloat = 26
     static let portWidth: CGFloat = 14
-    static let portHeight: CGFloat = 4
-    static let headBarHeight: CGFloat = 6
+    /// Port = vertical pipe stub that joins each runner to the head bar.
+    /// Needs visible vertical extent so the junction reads like real plumbing.
+    static let portHeight: CGFloat = 12
+    static let headBarHeight: CGFloat = 8
     static let minRunnerSpacing: CGFloat = 18
     static let runnerCurveOffset: CGFloat = 8
+    // Runner stroke maps from skinny (low cfm) to fat (high cfm) so changing
+    // the Runner CFM slider visibly changes how much air the runners can pass.
+    static let runnerStrokeMinPx: CGFloat = 2.5
+    static let runnerStrokeMaxPx: CGFloat = 9.0
+    // Throttle plate angle: 0° is wide-open horizontal, ±85° is nearly closed
+    // vertical. The script idle_throttle_plate_position is a fraction where
+    // 1.0 = fully closed and 0.0 = fully open.
+    static let throttlePlateMaxAngleDeg: Double = 85
 }
 
 struct InductionStep: View {
@@ -1345,6 +1365,8 @@ struct InductionStep: View {
                     IntakeManifoldDiagram(plenumVolumeL: state.spec.intakePlenumVolumeL,
                                            runnerLengthIn: state.spec.intakeRunnerLengthIn,
                                            intakeCfm: state.spec.intakeCfm,
+                                           runnerCfm: state.spec.runnerCfm,
+                                           idleThrottlePosition: state.spec.idleThrottlePosition,
                                            cylinderCount: state.spec.layout.cylinderCount,
                                            bankCount: state.spec.layout.bankCount)
                         .frame(width: 360, height: 300)
@@ -1371,12 +1393,16 @@ private struct IntakeManifoldDiagram: View {
     let plenumVolumeL: Double
     let runnerLengthIn: Double
     let intakeCfm: Double
+    let runnerCfm: Double
+    let idleThrottlePosition: Double
     let cylinderCount: Int
     let bankCount: Int
 
     private let plenumVolumeRange: ClosedRange<Double> = 0.5...4.0
     private let runnerLengthRange: ClosedRange<Double> = 4...40
     private let cfmRange: ClosedRange<Double> = 200...1200
+    private let runnerCfmRange: ClosedRange<Double> = 50...600
+    private let idleThrottleRange: ClosedRange<Double> = 0.985...0.999
 
     var body: some View {
         GeometryReader { proxy in
@@ -1395,15 +1421,11 @@ private struct IntakeManifoldDiagram: View {
                     .frame(width: layout.headBarWidth, height: IntakeDiagram.headBarHeight)
                     .position(x: layout.centerX, y: layout.headBarY)
 
-                // 2. Cylinder ports (one per cylinder) sitting on the head bar.
+                // 2. Cylinder ports — thick vertical pipe stubs joining each
+                // runner to the head bar. Drawn AFTER the runners below so the
+                // stubs cap the runner ends cleanly.
                 ForEach(0..<cylinderCount, id: \.self) { i in
                     let portX = layout.portX(at: i)
-                    Rectangle()
-                        .fill(BuilderTheme.accent)
-                        .frame(width: IntakeDiagram.portWidth,
-                               height: IntakeDiagram.portHeight)
-                        .position(x: portX,
-                                  y: layout.headBarY - IntakeDiagram.portHeight / 2)
                     Text("\(i + 1)")
                         .font(.system(size: 8, weight: .bold, design: .monospaced))
                         .foregroundColor(BuilderTheme.label)
@@ -1416,17 +1438,32 @@ private struct IntakeManifoldDiagram: View {
                     let portX = layout.portX(at: i)
                     let plenumOutletX = layout.plenumOutletX(at: i)
                     let plenumOutletY = layout.plenumBottomY
+                    let runnerEndY = layout.headBarY - IntakeDiagram.portHeight
                     Path { p in
                         p.move(to: CGPoint(x: plenumOutletX, y: plenumOutletY))
                         // Slight curve so wide-spaced banks don't look like crooked sticks.
                         p.addQuadCurve(
-                            to: CGPoint(x: portX, y: layout.headBarY - IntakeDiagram.portHeight),
+                            to: CGPoint(x: portX, y: runnerEndY),
                             control: CGPoint(x: portX,
                                              y: plenumOutletY + IntakeDiagram.runnerCurveOffset)
                         )
                     }
                     .stroke(Color.white.opacity(0.85),
-                            style: StrokeStyle(lineWidth: 5, lineCap: .round))
+                            style: StrokeStyle(lineWidth: runnerStrokeWidth, lineCap: .round))
+                }
+
+                // Port stubs drawn on top of runner ends so the junction has
+                // real visible thickness instead of a sliver of color.
+                ForEach(0..<cylinderCount, id: \.self) { i in
+                    let portX = layout.portX(at: i)
+                    Rectangle()
+                        .fill(BuilderTheme.accent)
+                        .overlay(Rectangle().stroke(BuilderTheme.accent.opacity(0.9),
+                                                    lineWidth: 1))
+                        .frame(width: IntakeDiagram.portWidth,
+                               height: IntakeDiagram.portHeight)
+                        .position(x: portX,
+                                  y: layout.headBarY - IntakeDiagram.portHeight / 2)
                 }
 
                 // 4. Plenum — fixed-position rectangle on top of the runners.
@@ -1436,8 +1473,15 @@ private struct IntakeManifoldDiagram: View {
                     .frame(width: layout.plenumWidth, height: IntakeDiagram.plenumHeight)
                     .position(x: layout.centerX, y: layout.plenumCenterY)
 
-                // 5. Throttle body — sits directly on top of the plenum, connected.
-                throttleBody
+                // 5. Throttle assembly — body, plate, stem are placed as
+                // independent absolutely-positioned shapes so the plate
+                // pivots around the body's geometric center and the stem
+                // always meets the plenum top, regardless of plate angle.
+                throttleStem
+                    .position(x: layout.centerX, y: layout.throttleStemCenterY)
+                throttleBodyBlock
+                    .position(x: layout.centerX, y: layout.throttleBodyCenterY)
+                throttlePlate
                     .position(x: layout.centerX, y: layout.throttleBodyCenterY)
 
                 // 6. CFM badge bottom-right.
@@ -1473,30 +1517,50 @@ private struct IntakeManifoldDiagram: View {
         IntakeMath.lerp(intakeCfm, from: cfmRange, to: 0.15...0.95)
     }
 
-    private var throttleBody: some View {
-        ZStack {
-            // Body block.
-            Rectangle()
-                .fill(Color.white.opacity(0.12))
-                .overlay(Rectangle().stroke(Color.white.opacity(0.8), lineWidth: 1))
-                .frame(width: IntakeDiagram.throttleBodyWidth,
-                       height: IntakeDiagram.throttleBodyHeight)
-            // Stem connecting it to the plenum below.
-            Rectangle()
-                .fill(BuilderTheme.accent)
-                .frame(width: 4, height: IntakeDiagram.throttleStemHeight)
-                .offset(y: IntakeDiagram.throttleBodyHeight / 2
-                          + IntakeDiagram.throttleStemHeight / 2)
-            // Throttle plate (line across the body).
-            Path { p in
-                p.move(to: CGPoint(x: -IntakeDiagram.throttleBodyWidth / 2 + 6, y: 0))
-                p.addLine(to: CGPoint(x: IntakeDiagram.throttleBodyWidth / 2 - 6, y: 0))
-            }
-            .stroke(BuilderTheme.accent, lineWidth: 2)
-            .rotationEffect(.degrees(-25))
-        }
-        .frame(width: IntakeDiagram.throttleBodyWidth,
-               height: IntakeDiagram.throttleBodyHeight)
+    private var runnerStrokeWidth: CGFloat {
+        IntakeMath.lerp(runnerCfm, from: runnerCfmRange,
+                        to: IntakeDiagram.runnerStrokeMinPx...IntakeDiagram.runnerStrokeMaxPx)
+    }
+
+    /// Plate rotation in degrees. The script value is a near-closed fraction
+    /// (e.g. 0.985 = barely open, 0.999 = nearly shut), so the closer to 1.0
+    /// the closer to vertical the plate rotates.
+    private var throttlePlateAngleDeg: Double {
+        let clamped = min(max(idleThrottlePosition,
+                              idleThrottleRange.lowerBound),
+                          idleThrottleRange.upperBound)
+        let span = idleThrottleRange.upperBound - idleThrottleRange.lowerBound
+        let t = span > 0 ? (clamped - idleThrottleRange.lowerBound) / span : 0
+        return -IntakeDiagram.throttlePlateMaxAngleDeg * t
+    }
+
+    /// Hollow rectangle — the throttle bore housing.
+    private var throttleBodyBlock: some View {
+        Rectangle()
+            .fill(Color.white.opacity(0.12))
+            .overlay(Rectangle().stroke(Color.white.opacity(0.8), lineWidth: 1))
+            .frame(width: IntakeDiagram.throttleBodyWidth,
+                   height: IntakeDiagram.throttleBodyHeight)
+    }
+
+    /// The pivoting plate inside the body. Drawn as a real Rectangle (not a
+    /// Path) so its bounding box is well-defined and `.rotationEffect` always
+    /// pivots around the body's geometric center.
+    private var throttlePlate: some View {
+        Rectangle()
+            .fill(BuilderTheme.accent)
+            .frame(width: IntakeDiagram.throttleBodyWidth
+                          - IntakeDiagram.throttlePlateInsetPx * 2,
+                   height: IntakeDiagram.throttlePlateThickness)
+            .rotationEffect(.degrees(throttlePlateAngleDeg))
+    }
+
+    /// Solid stub joining the throttle body to the plenum top.
+    private var throttleStem: some View {
+        Rectangle()
+            .fill(BuilderTheme.accent)
+            .frame(width: IntakeDiagram.throttleStemWidth,
+                   height: IntakeDiagram.throttleStemHeight)
     }
 
     private var cfmBadge: some View {
@@ -1532,6 +1596,11 @@ private struct IntakeLayout {
     var throttleTopY: CGFloat { 14 }
     var throttleBodyCenterY: CGFloat {
         throttleTopY + IntakeDiagram.throttleBodyHeight / 2
+    }
+    /// Center of the stem so it bridges throttle-body bottom to plenum top.
+    var throttleStemCenterY: CGFloat {
+        throttleTopY + IntakeDiagram.throttleBodyHeight
+            + IntakeDiagram.throttleStemHeight / 2
     }
     var plenumTopY: CGFloat {
         throttleBodyCenterY + IntakeDiagram.throttleBodyHeight / 2

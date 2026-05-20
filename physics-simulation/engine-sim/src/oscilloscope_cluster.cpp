@@ -212,6 +212,22 @@ void OscilloscopeCluster::sample() {
         getPvScope()->addDataPoint(
             engine->getChamber(0)->getVolume(),
             std::sqrt(engine->getChamber(0)->m_system.pressure()));
+
+        // Spark advance curve. The other scopes are time-series traces; this
+        // one is a static function (advance vs. rpm) so we re-sample the
+        // whole curve each tick — that way it always reflects the live ECU
+        // tune + ignition offset. Values are stored in RPM / degrees because
+        // the Swift display config is static-bound in those units.
+        m_sparkAdvanceScope->reset();
+        constexpr int sparkSampleCount = 40;
+        constexpr double sparkMaxRpm = 10000.0;
+        constexpr double radToDeg = 180.0 / constants::pi;
+        for (int i = 0; i < sparkSampleCount; ++i) {
+            const double rpm = (sparkMaxRpm * i) / (sparkSampleCount - 1);
+            const double advanceRad = engine->getIgnitionOffset()
+                                    + engine->getTimingAdvanceForRpm(rpm);
+            m_sparkAdvanceScope->addDataPoint(rpm, advanceRad * radToDeg);
+        }
     }
 
     // Dyno torque & power curve. The scopes are reset when a new sweep starts,

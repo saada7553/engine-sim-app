@@ -179,6 +179,10 @@ struct BuilderNavButton: View {
                 .foregroundColor(textColor)
                 .background(backgroundColor)
                 .overlay(Rectangle().stroke(borderColor, lineWidth: 1))
+                // Without this the secondary/ghost styles have a clear
+                // background — the click only registers on the text glyphs
+                // or border, making the rest of the button dead space.
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .disabled(!enabled)

@@ -99,7 +99,13 @@ enum EngineLayout: String, Codable, CaseIterable, Identifiable {
         case .v10_72:   return [1, 6, 5, 10, 2, 7, 3, 8, 4, 9]
         case .v12_60:   return [1, 12, 5, 8, 3, 10, 6, 7, 2, 11, 4, 9]
         case .flat4:    return [1, 3, 2, 4]
-        case .flat6:    return [1, 4, 3, 6, 2, 5]
+        // For a boxer-6 (bank0 = odd, bank1 = even), each bank must contain
+        // one cylinder at each crank-pin angle (0°, 120°, 240°). With the
+        // previous default [1, 4, 3, 6, 2, 5] cylinders 4 & 2 landed on the
+        // same pin within bank1 (and 3 & 5 on the same pin within bank0),
+        // creating a physically-impossible journal layout that crashed the
+        // sim. This order keeps every bank pin-angle unique.
+        case .flat6:    return [1, 4, 3, 6, 5, 2]
         }
     }
 }

@@ -58,6 +58,10 @@ enum TileType: String, Codable, CaseIterable, Identifiable {
     case engineControls = "Engine Controls"
     case ecuTuning = "ECU Tuning"
 
+    // Driver tools
+    case shiftLight = "Shift Light"
+    case zeroToSixtyTimer = "0-60 Timer"
+
     // Oscilloscopes
     case torqueOscilloscope = "Torque Scope"
     case powerOscilloscope = "Power Scope"

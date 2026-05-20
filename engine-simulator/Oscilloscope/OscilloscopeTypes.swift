@@ -80,6 +80,11 @@ struct OscilloscopeConfig {
     let lineWidth: CGFloat
     let xAxisLabel: String
     let yAxisLabel: String
+    /// Time-series traces fade older samples toward transparent so the
+    /// freshest data pops. Static curves (e.g. the spark advance map,
+    /// which is re-sampled in whole each tick) should render every point
+    /// at full strength — turn this off in that case.
+    var fadeWithAge: Bool = true
 
     /// Standard configurations matching C++ oscilloscope_cluster
     static func standard(for type: EngineScopeType) -> OscilloscopeConfig {
@@ -124,9 +129,10 @@ struct OscilloscopeConfig {
                 dynamicallyResizeY: false,
                 drawReverse: false,
                 color: .orange,
-                lineWidth: 1.0,
+                lineWidth: 1.5,
                 xAxisLabel: "RPM",
-                yAxisLabel: "deg"
+                yAxisLabel: "deg",
+                fadeWithAge: false
             )
 
         case .totalExhaustFlow:

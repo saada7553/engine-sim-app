@@ -73,6 +73,9 @@ enum ProceduralEngineAssembly {
         assembly.addChildNode(crank)
         parts.crankshaft = crank
 
+        // Decorative cooling fan attached to the crank so it spins with it.
+        FanGeometry.attach(to: crank, params: params)
+
         // ----- Per-bank parts -----
         parts.pistons = Array(repeating: SCNNode(), count: params.cylinders.count)
         parts.rods = Array(repeating: SCNNode(), count: params.cylinders.count)

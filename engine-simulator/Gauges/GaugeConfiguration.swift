@@ -142,10 +142,17 @@ struct GaugeConfiguration {
 
     // MARK: - Helper Methods
 
-    /// Convert a value to normalized position (0-1) with gamma applied
+    /// Convert a value to normalized position (0-1) with gamma applied.
+    /// Returns 0 (rather than NaN) when min == max — important because some
+    /// gauges are configured from live engine state (e.g. tachometer's max
+    /// is derived from redline) and that state can transiently be 0 during
+    /// an engine swap or load failure. NaN coords reaching context.draw()
+    /// trip libmalloc heap corruption assertions.
     func normalizedPosition(for value: Double) -> Double {
+        let span = maxValue - minValue
+        guard span > 0, span.isFinite else { return 0 }
         let clampedValue = min(max(value, minValue), maxValue)
-        let normalized = (clampedValue - minValue) / (maxValue - minValue)
+        let normalized = (clampedValue - minValue) / span
         return pow(normalized, gamma)
     }
 

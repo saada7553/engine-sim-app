@@ -47,6 +47,11 @@ class EngineViewModel: ObservableObject {
     /// hard-reset when the engine changes can use `.id(engineVm.engineId)`.
     @Published var engineId: UUID?
 
+    /// Set when the most-recent engine load failed (compile error / null
+    /// engine). RootView observes this to surface a user-facing alert. Carries
+    /// the name of the engine that failed so the alert can reference it.
+    @Published var failedEngineName: String?
+
     /// User-editable 2D ignition + fuel maps. Sampled at the current
     /// operating point (RPM × MAP load) on every polling tick and pushed
     /// into the C++ engine via setIgnitionOffset / setFuelTrim — the EcuTuningView
@@ -93,6 +98,11 @@ class EngineViewModel: ObservableObject {
     /// for built-ins with no editable spec.
     @Published var gearCount: Int = defaultGearCount
 
+    /// Final-drive ratio per forward gear (1st → top). Lets driver-tool tiles
+    /// (shift light, etc.) reason about post-shift RPM without going back
+    /// through EngineLibrary every frame.
+    @Published var gearRatios: [Double] = []
+
     /// Runners per bank — how many intake runners are visualized on the
     /// manifold cross-section. cylinderCount / bankCount.
     @Published var cylindersPerBank: Int = defaultCylindersPerBank
@@ -102,6 +112,18 @@ class EngineViewModel: ObservableObject {
     /// prevents the shifter from snapping back through old states while the
     /// sim thread catches up.
     private var pendingGear: Int?
+
+    /// Count of consecutive polling ticks where pollState returned nil while
+    /// an engine is supposedly mounted. Used to surface the load-failure
+    /// alert when the sim thread silently produces nothing (e.g. crashed on
+    /// its first step) but loadSucceeded was already set true.
+    private var emptyPollStreak: Int = 0
+    /// 30 Hz polling means ~30 ticks per second; ~60 ticks ≈ 2 s with no
+    /// state is plenty of evidence the sim isn't actually running.
+    private static let stalledPollLimit: Int = 60
+    /// Friendly name of the most-recently-loaded engine, used when we have
+    /// to surface a "load failed" alert after stall detection.
+    private var mostRecentEngineName: String?
 
     let oscilloscopeManager: OscilloscopeManager
     private var timer: Timer?
@@ -116,8 +138,13 @@ class EngineViewModel: ObservableObject {
         self.redline = newEngine?.getEngineRedline() ?? 6500.0
         self.engineId = EngineLibrary.shared.selectedEngineId
         self.gearCount = initialEntry.map(Self.gearCount(for:)) ?? defaultGearCount
+        self.gearRatios = initialEntry.flatMap { $0.effectiveSpec?.gearRatios } ?? []
         self.cylindersPerBank = initialEntry.map(Self.cylindersPerBank(for:)) ?? defaultCylindersPerBank
         self.ecu = Self.makeEcuModel(for: newEngine)
+        self.mostRecentEngineName = initialEntry?.name
+        if let engine = newEngine, !engine.loadSucceeded {
+            self.failedEngineName = initialEntry?.name ?? "engine"
+        }
         // Bind to the freshly-built ECU so edits push through immediately
         // rather than waiting for the next 30 Hz polling tick.
         bindToEcu()
@@ -136,6 +163,7 @@ class EngineViewModel: ObservableObject {
             guard let self = self, let engine = self.engine else { return }
             
             if let state = engine.pollState() {
+                self.emptyPollStreak = 0
                 self.rpm = state.rpm
                 self.applyPolledGear(Int(state.gear))
                 self.clutchPressure = state.clutchPressure
@@ -154,7 +182,7 @@ class EngineViewModel: ObservableObject {
                 self.cylinderPressure = state.cylinderPressure
                 self.intakeAFR = state.intakeAFR
                 self.exhaustO2 = state.exhaustO2
-                
+
                 // Tuning data
                 self.ignitionOffset = state.ignitionOffset
                 self.fuelTrim = state.fuelTrim
@@ -166,6 +194,16 @@ class EngineViewModel: ObservableObject {
                 // Sample the user's ECU maps at the live operating point and
                 // push the resulting offset/trim into the engine.
                 self.applyEcuTune(engine: engine)
+            } else if self.failedEngineName == nil {
+                // pollState returning nil means the simulator hasn't produced
+                // a frame yet. If we go many ticks in a row with no state
+                // while we believe the engine is loaded, treat it as a
+                // silently-stalled load and surface the error.
+                self.emptyPollStreak += 1
+                if self.emptyPollStreak >= Self.stalledPollLimit,
+                   let name = self.mostRecentEngineName {
+                    self.failedEngineName = name
+                }
             }
 
             self.advanceRevRamp()
@@ -232,12 +270,19 @@ class EngineViewModel: ObservableObject {
         redline = newEngine?.getEngineRedline() ?? 6500.0
         engineId = entry.id
         gearCount = Self.gearCount(for: entry)
+        gearRatios = entry.effectiveSpec?.gearRatios ?? []
         cylindersPerBank = Self.cylindersPerBank(for: entry)
         pendingGear = nil
         // Rebuild the ECU map: bin range + seed values come from the new
         // engine's redline and base timing curve.
         ecu = Self.makeEcuModel(for: newEngine)
         bindToEcu()
+
+        // Surface load failures so the UI can prompt the user to pick a
+        // different engine instead of silently sitting on a dead simulator.
+        mostRecentEngineName = entry.name
+        emptyPollStreak = 0
+        failedEngineName = (newEngine?.loadSucceeded == true) ? nil : entry.name
     }
 
     /// Build an EcuTuneModel seeded from the engine's current redline and
@@ -339,6 +384,14 @@ class EngineViewModel: ObservableObject {
             revActive = false
         }
     }
+    /// Dismiss the "engine failed to load" alert without changing the
+    /// selected engine. The user can then re-pick a working one from the
+    /// sidebar.
+    func acknowledgeEngineLoadError() {
+        failedEngineName = nil
+        emptyPollStreak = 0
+    }
+
     func toggleClutch() {
         // Optimistically flip locally so the UI responds instantly; the next
         // poll authoritatively re-syncs from the native clutchPressure.

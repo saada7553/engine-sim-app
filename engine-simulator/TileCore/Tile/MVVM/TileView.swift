@@ -109,6 +109,12 @@ struct TileView: View {
             // EcuTuningView observes vm.ecu via its inner editor whose .id is
             // keyed to ObjectIdentifier(vm.ecu), so swaps are handled inside.
             return AnyView(EcuTuningView(vm: tile.engineVm).id(engineResetId))
+
+        // Driver tools
+        case .shiftLight:
+            return AnyView(ShiftLightView(vm: tile.engineVm).id(engineResetId))
+        case .zeroToSixtyTimer:
+            return AnyView(ZeroToSixtyView(vm: tile.engineVm).id(engineResetId))
             
         // Oscilloscopes
         case .torqueOscilloscope:
