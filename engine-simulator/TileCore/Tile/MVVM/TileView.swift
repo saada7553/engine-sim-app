@@ -42,6 +42,8 @@ struct TileView: View {
             return AnyView(SelectView(tile: tile))
         case .engine3DView:
             return AnyView(Engine3DView(vm: tile.engineVm))
+        case .engine3DProcedural:
+            return AnyView(Engine3DProceduralView(vm: tile.engineVm))
 
         // Gauges
         case .speedometerGauge:
@@ -96,6 +98,8 @@ struct TileView: View {
         // Controls
         case .engineControls:
             return AnyView(EngineControlsView(vm: tile.engineVm))
+        case .ecuTuning:
+            return AnyView(EcuTuningView(vm: tile.engineVm))
             
         // Oscilloscopes
         case .torqueOscilloscope:

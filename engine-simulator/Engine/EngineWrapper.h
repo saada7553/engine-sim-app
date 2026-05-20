@@ -36,6 +36,11 @@
 // Dynamometer state
 @property (nonatomic, assign) BOOL dynoEnabled;
 
+// ECU Tuning State
+@property (nonatomic, assign) double ignitionOffset;    // degrees
+@property (nonatomic, assign) double fuelTrim;          // multiplier (1.0 = base)
+@property (nonatomic, strong) NSArray<ScopePoint *> *ignitionMap; // Live 2D map data
+
 @end
 
 typedef NS_ENUM(NSInteger, EngineScopeType) {
@@ -102,6 +107,10 @@ typedef NS_ENUM(NSInteger, EngineScopeType) {
 - (double)getTravelledDistance;
 - (double)getEngineRedline;
 - (double)getTotalVolumeFuelConsumed; 
+
+// Tuning Setters
+- (void)setIgnitionOffset:(double)offset;
+- (void)setFuelTrim:(double)trim;
 
 // Other
 - (void)resetTravelledDistance;

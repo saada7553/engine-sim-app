@@ -46,6 +46,11 @@ class EngineViewModel: ObservableObject {
     @Published var intakeAFR: Double = 0.0             // Air-Fuel Ratio
     @Published var exhaustO2: Double = 0.0             // O2 percentage
     
+    // ECU Tuning Data
+    @Published var ignitionOffset: Double = 0.0
+    @Published var fuelTrim: Double = 1.0
+    @Published var ignitionMap: [ScopePoint] = []
+    
     // Inputs
     @Published var throttlePosition: Double = 0.0 {
         didSet { engine?.setThrottle(throttlePosition) }
@@ -94,6 +99,11 @@ class EngineViewModel: ObservableObject {
                 self.cylinderPressure = state.cylinderPressure
                 self.intakeAFR = state.intakeAFR
                 self.exhaustO2 = state.exhaustO2
+                
+                // Tuning data
+                self.ignitionOffset = state.ignitionOffset
+                self.fuelTrim = state.fuelTrim
+                self.ignitionMap = state.ignitionMap
 
                 // Pass engine wrapper to oscilloscope manager for sampling
                 self.oscilloscopeManager.sample(from: engine)
@@ -103,6 +113,17 @@ class EngineViewModel: ObservableObject {
         }
         RunLoop.main.add(timer, forMode: .common)
         self.timer = timer
+    }
+    
+    // Tuning Methods
+    func setIgnitionOffset(_ offset: Double) {
+        engine?.setIgnitionOffset(offset)
+        ignitionOffset = offset
+    }
+    
+    func setFuelTrim(_ trim: Double) {
+        engine?.setFuelTrim(trim)
+        fuelTrim = trim
     }
     
     deinit {

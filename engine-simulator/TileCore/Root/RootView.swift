@@ -12,22 +12,28 @@ struct RootView: View {
     @ObservedObject public var vm: RootViewModel
 
     var body: some View {
-        Group {
-            if vm.isBuildingEngine {
-                EngineBuilderView(onClose: { vm.finishEngineBuild() })
-            } else {
-                TileContainerView(
-                    tile: vm.rootTile,
-                    focusedTile: $vm.focusedTile,
-                    browserMode: $vm.browserMode,
-                    hoveredTile: $vm.hoveredTile,
-                    hoverPosition: $vm.hoverPosition
-                ) { tile in
-                    vm.deleteTile(tile)
-                    vm.browserMode = .operational
+        VStack(spacing: 0) {
+            if !vm.isBuildingEngine {
+                CustomTopBar(vm: vm.engineVm)
+            }
+            
+            Group {
+                if vm.isBuildingEngine {
+                    EngineBuilderView(onClose: { vm.finishEngineBuild() })
+                } else {
+                    TileContainerView(
+                        tile: vm.rootTile,
+                        focusedTile: $vm.focusedTile,
+                        browserMode: $vm.browserMode,
+                        hoveredTile: $vm.hoveredTile,
+                        hoverPosition: $vm.hoverPosition
+                    ) { tile in
+                        vm.deleteTile(tile)
+                        vm.browserMode = .operational
+                    }
                 }
             }
+            .toolbarVisibility(.hidden)
         }
-        .toolbar(removing: .title)
     }
 }

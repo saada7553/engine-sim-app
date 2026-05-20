@@ -11,7 +11,7 @@ struct SelectView: View {
     @ObservedObject var tile: TileViewModel
 
     // Grouped tile types for organized selection
-    private let visualizationTypes: [TileType] = [.engine3DView]
+    private let visualizationTypes: [TileType] = [.engine3DView, .engine3DProcedural]
 
     private let gaugeTypes: [TileType] = [
         .speedometerGauge, .rpmGauge, .manifoldPressureGauge,
@@ -19,7 +19,7 @@ struct SelectView: View {
         .exhaustO2Gauge, .cylinderPressureGauge
     ]
 
-    private let controlTypes: [TileType] = [.engineControls]
+    private let controlTypes: [TileType] = [.engineControls, .ecuTuning]
 
     private let oscilloscopeTypes: [TileType] = [
         .torqueOscilloscope, .powerOscilloscope, .dynoOscilloscope,

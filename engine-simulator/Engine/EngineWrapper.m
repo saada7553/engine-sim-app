@@ -274,6 +274,25 @@ static const double kDynoMinThrottle = 0.05;         // throttle threshold that 
                 // Exhaust O2 percentage (multiply by 100 to get percentage)
                 state.exhaustO2 = engine->getExhaustO2() * 100.0;
                 
+                // --- ECU Tuning Map Retrieval ---
+                state.ignitionOffset = engine->getIgnitionOffset();
+                state.fuelTrim = engine->getFuelTrim();
+                
+                // Sample the ignition map (20 points from 0 to redline)
+                NSMutableArray *mapPoints = [NSMutableArray array];
+                double maxRpm = [self getEngineRedline];
+                for (int i = 0; i <= 20; ++i) {
+                    double sampleRpm = (maxRpm / 20.0) * i;
+                    double advance = engine->getIgnitionOffset() + 
+                                     engine->getTimingAdvanceForRpm(sampleRpm);
+                    
+                    ScopePoint *p = [[ScopePoint alloc] init];
+                    p.x = sampleRpm;
+                    p.y = advance;
+                    [mapPoints addObject:p];
+                }
+                state.ignitionMap = mapPoints;
+
                 // Update C++ Oscilloscopes
                 _oscilloscopeCluster->sample();
                 
@@ -378,6 +397,18 @@ static const double kDynoMinThrottle = 0.05;         // throttle threshold that 
     // Simple toggle logic
     double current = _sim->getTransmission()->getClutchPressure();
     _sim->getTransmission()->setClutchPressure(current > 0.5 ? 0.0 : 1.0);
+}
+
+- (void)setIgnitionOffset:(double)offset {
+    if (_engine) {
+        _engine->setIgnitionOffset(offset);
+    }
+}
+
+- (void)setFuelTrim:(double)trim {
+    if (_engine) {
+        _engine->setFuelTrim(trim);
+    }
 }
 
 - (void)setDynoEnabled:(BOOL)enabled {
