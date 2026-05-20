@@ -6,6 +6,10 @@
 import SwiftUI
 import Combine
 
+// MARK: - Layout Constants
+
+private let peakMarkerDiameter: CGFloat = 7
+
 // MARK: - Helper Functions
 
 private func calculateGridLines(minVal: Double, maxVal: Double, size: CGFloat) -> [Double] {
@@ -204,32 +208,45 @@ struct OscilloscopeView: View {
     }
 
     private func peakAnnotations(geometry: GeometryProxy, xBounds x: (min: Double, max: Double)) -> some View {
-        ZStack(alignment: .topLeading) {
-            ForEach(configs.indices, id: \.self) { i in
+        // Markers sit on the peak data points; labels stack vertically in the
+        // top-leading corner using SwiftUI's natural layout so they can never
+        // overlap regardless of where each curve peaks.
+        let peaks: [(config: OscilloscopeConfig, data: CGPoint, screen: CGPoint)] =
+            configs.indices.compactMap { i in
                 let config = configs[i]
                 let y = channelYBounds(i)
                 let points = manager.getPoints(for: config.type, config: config)
-                if let peak = points.max(by: { $0.y < $1.y }), peak.y > 0 {
-                    let px = convertX(Double(peak.x), bounds: (x.min, x.max), width: geometry.size.width)
-                    let py = convertY(Double(peak.y), bounds: (y.min, y.max), height: geometry.size.height)
+                guard let peak = points.max(by: { $0.y < $1.y }), peak.y > 0 else { return nil }
+                let screen = CGPoint(
+                    x: convertX(Double(peak.x), bounds: (x.min, x.max), width: geometry.size.width),
+                    y: convertY(Double(peak.y), bounds: (y.min, y.max), height: geometry.size.height)
+                )
+                return (config, peak, screen)
+            }
 
-                    Circle()
-                        .fill(config.color)
-                        .overlay(Circle().stroke(Color.white, lineWidth: 1))
-                        .frame(width: 7, height: 7)
-                        .position(x: px, y: py)
+        return ZStack {
+            ForEach(peaks.indices, id: \.self) { idx in
+                Circle()
+                    .fill(peaks[idx].config.color)
+                    .overlay(Circle().stroke(Color.white, lineWidth: 1))
+                    .frame(width: peakMarkerDiameter, height: peakMarkerDiameter)
+                    .position(peaks[idx].screen)
+            }
 
-                    Text("PEAK \(config.type.displayName.uppercased()) \(Int(peak.y.rounded())) \(config.yAxisLabel) @ \(Int(peak.x.rounded())) RPM")
+            VStack(alignment: .leading, spacing: 2) {
+                ForEach(peaks.indices, id: \.self) { idx in
+                    let p = peaks[idx]
+                    Text("PEAK \(p.config.type.displayName.uppercased()) \(Int(p.data.y.rounded())) \(p.config.yAxisLabel) @ \(Int(p.data.x.rounded())) RPM")
                         .font(.system(size: 8, weight: .bold, design: .monospaced))
-                        .foregroundColor(config.color)
+                        .foregroundColor(p.config.color)
                         .padding(.horizontal, 4)
                         .padding(.vertical, 2)
                         .background(Color.black.opacity(0.65))
                         .cornerRadius(3)
-                        .position(x: min(max(px, 86), geometry.size.width - 86),
-                                  y: max(py - 14, 14))
                 }
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
+            .padding(6)
         }
     }
 

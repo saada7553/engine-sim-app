@@ -26,8 +26,7 @@
 static const double kDynoTorqueThresholdFtLb = 1.0;  // ft-lb of torque required for the dyno to keep accelerating
 static const double kDynoRampRateRpm = 500.0;        // rpm/sec the dyno speed climbs while loaded
 static const double kFrameTimestep = 1.0 / 30.0;     // seconds per simulation frame
-static const double kDynoMinThrottle = 0.05;         // a run aborts if the throttle drops below this
-static const double kDynoRunStartedRpm = 500.0;      // dyno speed past which a run counts as underway
+static const double kDynoMinThrottle = 0.05;         // throttle threshold that marks a run started / ends it
 
 @interface EngineWrapper ()
 @property (atomic, strong) EngineState *latestState;
@@ -57,6 +56,7 @@ static const double kDynoRunStartedRpm = 500.0;      // dyno speed past which a 
 
     // Dynamometer sweep state.
     BOOL _dynoSweepRequested;
+    BOOL _dynoRunStarted; // becomes YES once the throttle opens past the min during a sweep
     double _dynoSpeed;   // current dyno rotation speed (rad/s)
     double _throttle;    // last commanded throttle position (0-1)
     
@@ -76,6 +76,7 @@ static const double kDynoRunStartedRpm = 500.0;      // dyno speed past which a 
     }
     _targetGear = -1;
     _dynoSweepRequested = NO;
+    _dynoRunStarted = NO;
     _dynoSpeed = 0.0;
     _throttle = 0.0;
     return self;
@@ -341,7 +342,10 @@ static const double kDynoRunStartedRpm = 500.0;      // dyno speed past which a 
     _sim->getTransmission()->setClutchPressure(current > 0.5 ? 0.0 : 1.0);
 }
 
-- (void)setDynoEnabled:(BOOL)enabled { _dynoSweepRequested = enabled; }
+- (void)setDynoEnabled:(BOOL)enabled {
+    _dynoSweepRequested = enabled;
+    _dynoRunStarted = NO;
+}
 - (BOOL)isDynoEnabled { return _dynoSweepRequested; }
 
 // Drives the dyno sweep each frame: loads the engine and accelerates it,
@@ -353,6 +357,13 @@ static const double kDynoRunStartedRpm = 500.0;      // dyno speed past which a 
         dyno.m_enabled = true;
         dyno.m_hold = false;
 
+        // The user "starts" a run by opening the throttle past the min. After
+        // that point, dropping back below ends the sweep — no rpm gate, so
+        // even a brief blip captures the whole curve.
+        if (_throttle >= kDynoMinThrottle) {
+            _dynoRunStarted = YES;
+        }
+
         const double torqueThreshold = units::torque(kDynoTorqueThresholdFtLb, units::ft_lb);
         if (_sim->getFilteredDynoTorque() > torqueThreshold) {
             _dynoSpeed += units::rpm(kDynoRampRateRpm) * dt;
@@ -360,14 +371,12 @@ static const double kDynoRunStartedRpm = 500.0;      // dyno speed past which a 
             _dynoSpeed *= 1.0 / (1.0 + dt);
         }
 
-        // A run ends at the redline, or early if the driver lifts off the
-        // throttle once the sweep is underway.
         const bool reachedRedline = _dynoSpeed > _engine->getRedline();
-        const bool throttleReleased =
-            _dynoSpeed > units::rpm(kDynoRunStartedRpm) && _throttle < kDynoMinThrottle;
+        const bool throttleReleased = _dynoRunStarted && _throttle < kDynoMinThrottle;
 
         if (reachedRedline || throttleReleased) {
             _dynoSweepRequested = NO;
+            _dynoRunStarted = NO;
             dyno.m_enabled = false;
             _dynoSpeed = 0.0;
         }
@@ -375,6 +384,7 @@ static const double kDynoRunStartedRpm = 500.0;      // dyno speed past which a 
         dyno.m_enabled = false;
         dyno.m_hold = false;
         _dynoSpeed = 0.0;
+        _dynoRunStarted = NO;
     }
 
     const double minSpeed = _engine->getDynoMinSpeed();

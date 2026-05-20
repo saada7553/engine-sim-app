@@ -105,6 +105,10 @@ class EngineViewModel: ObservableObject {
         let newValue = !dynoEnabled
         engine?.setDynoEnabled(newValue)
         dynoEnabled = newValue
+
+        // Drop into neutral on enable so the dyno isn't fighting the drivetrain;
+        // the run reads only what the engine itself can produce.
+        if newValue { setGear(-1) }
     }
 
     /// Latches the throttle at its current position so it no longer decays.

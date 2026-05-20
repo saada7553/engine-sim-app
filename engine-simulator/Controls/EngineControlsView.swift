@@ -8,35 +8,44 @@
 
 import SwiftUI
 
-private let systemPanelHeight: CGFloat = 130
-private let transmissionPanelHeight: CGFloat = 230
-private let throttlePanelHeight: CGFloat = 200
+// Vertical share of the remaining space (after the status row) given to each
+// panel. Weights mirror the prior fixed heights (130 / 230 / 200) so the
+// proportions stay familiar while the panels now resize with the tile.
+private let systemPanelWeight: CGFloat = 130
+private let transmissionPanelWeight: CGFloat = 230
+private let throttlePanelWeight: CGFloat = 200
 
 struct EngineControlsView: View {
     @ObservedObject var vm: EngineViewModel
 
     var body: some View {
-        ScrollView {
-            VStack(spacing: 10) {
-                EngineStatusIndicators(vm: vm)
+        VStack(spacing: 10) {
+            EngineStatusIndicators(vm: vm)
 
-                RetroPanel("SYSTEM") {
-                    SystemControlView(vm: vm)
-                        .frame(height: systemPanelHeight)
-                }
+            GeometryReader { geo in
+                let totalWeight = systemPanelWeight + transmissionPanelWeight + throttlePanelWeight
+                let spacing: CGFloat = 10
+                let usableHeight = max(geo.size.height - 2 * spacing, 0)
 
-                RetroPanel("TRANSMISSION") {
-                    GearShiftView(vm: vm)
-                        .frame(height: transmissionPanelHeight)
-                }
+                VStack(spacing: spacing) {
+                    RetroPanel("SYSTEM") {
+                        SystemControlView(vm: vm)
+                    }
+                    .frame(height: usableHeight * systemPanelWeight / totalWeight)
 
-                RetroPanel("THROTTLE & CLUTCH") {
-                    ThrottleView(vm: vm)
-                        .frame(height: throttlePanelHeight)
+                    RetroPanel("TRANSMISSION") {
+                        GearShiftView(vm: vm)
+                    }
+                    .frame(height: usableHeight * transmissionPanelWeight / totalWeight)
+
+                    RetroPanel("THROTTLE & CLUTCH") {
+                        ThrottleView(vm: vm)
+                    }
+                    .frame(height: usableHeight * throttlePanelWeight / totalWeight)
                 }
             }
-            .padding(10)
         }
+        .padding(10)
         .background(Color.appBackground)
     }
 }
