@@ -9,23 +9,14 @@ import Foundation
 
 private let mrIndent = "    "
 private let twoStrokeCycleDeg = 720.0
-
-// Placeholder vehicle / transmission shared by every user-built engine
-private let placeholderVehicleMassLb = 3400.0
-private let placeholderVehicleDrag = 0.4
-private let placeholderVehicleAreaW = 66.0  // inches
-private let placeholderVehicleAreaH = 50.0  // inches
-private let placeholderDiffRatio = 3.15
-private let placeholderTireRadiusIn = 10.0
-private let placeholderRollingResistanceN = 500.0
-private let placeholderClutchTorqueLbFt = 500.0
-private let placeholderGearRatios: [Double] = [5.25, 3.36, 2.17, 1.72, 1.32, 1.0]
+private let fallbackGearRatios: [Double] = [3.0, 2.0, 1.4, 1.0]
 
 enum MRWriter {
 
     /// Returns the .mr file body for the given spec.
     static func script(for spec: EngineSpec) -> String {
         let nodeName = spec.nodeName
+        let firingOrder = effectiveFiringOrder(for: spec)
 
         var out = ""
         out += header()
@@ -33,18 +24,18 @@ enum MRWriter {
         out += wiresNode(cylinderCount: spec.layout.cylinderCount)
         out += "\n"
         out += ignitionNode(nodeName: nodeName,
-                            firingOrder: spec.layout.firingOrder,
+                            firingOrder: firingOrder,
                             cylinderCount: spec.layout.cylinderCount)
         out += "\n"
-        out += camshaftBuilderNode(nodeName: nodeName, spec: spec)
+        out += camshaftBuilderNode(nodeName: nodeName, spec: spec, firingOrder: firingOrder)
         out += "\n"
         out += headNode(nodeName: nodeName, spec: spec)
         out += "\n"
-        out += engineNode(nodeName: nodeName, spec: spec)
+        out += engineNode(nodeName: nodeName, spec: spec, firingOrder: firingOrder)
         out += "\n"
-        out += vehicleNode(nodeName: nodeName)
+        out += vehicleNode(nodeName: nodeName, spec: spec)
         out += "\n"
-        out += transmissionNode(nodeName: nodeName)
+        out += transmissionNode(nodeName: nodeName, spec: spec)
         out += "\n"
         out += mainNode(nodeName: nodeName)
         return out
@@ -104,10 +95,11 @@ enum MRWriter {
     // MARK: - Camshaft builder
 
     /// Emits a node that builds intake/exhaust cams for bank 0 (and bank 1 if a V engine).
-    private static func camshaftBuilderNode(nodeName: String, spec: EngineSpec) -> String {
+    private static func camshaftBuilderNode(nodeName: String,
+                                            spec: EngineSpec,
+                                            firingOrder: [Int]) -> String {
         let layout = spec.layout
         let n = layout.cylinderCount
-        let firingOrder = layout.firingOrder
         let rotPerFiring = twoStrokeCycleDeg / Double(n)   // degrees between consecutive firings
 
         let bank0Cyls = bank0Cylinders(layout: layout)
@@ -226,10 +218,11 @@ enum MRWriter {
 
     // MARK: - Engine main node
 
-    private static func engineNode(nodeName: String, spec: EngineSpec) -> String {
+    private static func engineNode(nodeName: String,
+                                   spec: EngineSpec,
+                                   firingOrder: [Int]) -> String {
         let layout = spec.layout
         let n = layout.cylinderCount
-        let firingOrder = layout.firingOrder
         let rotPerFiring = twoStrokeCycleDeg / Double(n)
         let halfV = layout.bankHalfAngleDeg
 
@@ -514,31 +507,32 @@ enum MRWriter {
 
     // MARK: - Vehicle / transmission (placeholders)
 
-    private static func vehicleNode(nodeName: String) -> String {
+    private static func vehicleNode(nodeName: String, spec: EngineSpec) -> String {
         """
         private node \(nodeName)_vehicle {
         \(mrIndent)alias output __out:
         \(mrIndent)\(mrIndent)vehicle(
-        \(mrIndent)\(mrIndent)\(mrIndent)mass: \(placeholderVehicleMassLb) * units.lb,
-        \(mrIndent)\(mrIndent)\(mrIndent)drag_coefficient: \(placeholderVehicleDrag),
-        \(mrIndent)\(mrIndent)\(mrIndent)cross_sectional_area: (\(placeholderVehicleAreaW) * units.inch) * (\(placeholderVehicleAreaH) * units.inch),
-        \(mrIndent)\(mrIndent)\(mrIndent)diff_ratio: \(placeholderDiffRatio),
-        \(mrIndent)\(mrIndent)\(mrIndent)tire_radius: \(placeholderTireRadiusIn) * units.inch,
-        \(mrIndent)\(mrIndent)\(mrIndent)rolling_resistance: \(placeholderRollingResistanceN) * units.N
+        \(mrIndent)\(mrIndent)\(mrIndent)mass: \(spec.vehicleMassLb) * units.lb,
+        \(mrIndent)\(mrIndent)\(mrIndent)drag_coefficient: \(spec.dragCoefficient),
+        \(mrIndent)\(mrIndent)\(mrIndent)cross_sectional_area: (\(spec.frontalAreaWidthIn) * units.inch) * (\(spec.frontalAreaHeightIn) * units.inch),
+        \(mrIndent)\(mrIndent)\(mrIndent)diff_ratio: \(spec.diffRatio),
+        \(mrIndent)\(mrIndent)\(mrIndent)tire_radius: \(spec.tireRadiusIn) * units.inch,
+        \(mrIndent)\(mrIndent)\(mrIndent)rolling_resistance: \(spec.rollingResistanceN) * units.N
         \(mrIndent)\(mrIndent));
         }
 
         """
     }
 
-    private static func transmissionNode(nodeName: String) -> String {
+    private static func transmissionNode(nodeName: String, spec: EngineSpec) -> String {
+        let ratios = spec.gearRatios.isEmpty ? fallbackGearRatios : spec.gearRatios
         var s = "private node \(nodeName)_transmission {\n"
         s += "\(mrIndent)alias output __out:\n"
         s += "\(mrIndent)\(mrIndent)transmission(\n"
-        s += "\(mrIndent)\(mrIndent)\(mrIndent)max_clutch_torque: \(placeholderClutchTorqueLbFt) * units.lb_ft\n"
+        s += "\(mrIndent)\(mrIndent)\(mrIndent)max_clutch_torque: \(spec.clutchTorqueLbFt) * units.lb_ft\n"
         s += "\(mrIndent)\(mrIndent))"
-        for (i, ratio) in placeholderGearRatios.enumerated() {
-            let term = i == placeholderGearRatios.count - 1 ? ";" : ""
+        for (i, ratio) in ratios.enumerated() {
+            let term = i == ratios.count - 1 ? ";" : ""
             s += "\n\(mrIndent)\(mrIndent)\(mrIndent).add_gear(\(ratio))\(term)"
         }
         s += "\n}\n"
@@ -556,6 +550,13 @@ enum MRWriter {
     }
 
     // MARK: - Helpers
+
+    /// Use the spec's firing order if it's a valid permutation; otherwise fall
+    /// back to the layout default. Keeps generated .mr files valid even if the
+    /// editor leaves the spec in an intermediate state.
+    private static func effectiveFiringOrder(for spec: EngineSpec) -> [Int] {
+        spec.firingOrderIsValid ? spec.firingOrder : spec.layout.firingOrder
+    }
 
     private static func bank0Cylinders(layout: EngineLayout) -> [Int] {
         let n = layout.cylinderCount

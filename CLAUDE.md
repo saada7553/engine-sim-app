@@ -41,10 +41,17 @@ You should also play this noise if you need my permission to do something / are 
 # Current TODOs:
 1) The very first thing you need to do is request to play the sound notification so I can grant you permission for it.
 2) The c++ simulator reads engine information from .mr files. The docs/mr_config_report.md file outlines the configurations this file allows. 
-    - I want the user to be able to create new engines
-    - When the user clicks the + icon on the engines, a new build ui should pop up instead of the layout
-    - lets just focus on the engine for now. The user should be able to control every single engine related tunable parameter tha the mr file supports
-    - The UI should not be a generic macos UI, it needs to fit in with the theme of the app. Avoid making it look "AI generated" (too many icons / emojis / gradients)
-    - The UI should be inspiring, i.e a cool experience to select the number of pistons, layout, etc
-    - When the user selects all the configurables and presses save, a new entry should populate in the engines section, and the user should be able to select that new entry (it should just auto select by default)
-    - when the user selects that new entry, the simulation should restart witht that new engine. lets just use a standard transmission / vehicle specs that are currently being used, just like a placeholder. note that yohu will have to save the user defined stuff in some new MR file that will be read.
+   - The intake and exhaust diagrams have bugs:
+        - They do not scale with the number of pistons selected correctly (always 4)
+        - The diagrams for both the intake and exhasut suck (disconnected parts that make no sense. everythign needs to be intentional in the diagram and needs to make sense and be realistic. currenlty its just some shapes slapped there)
+        - redo these graphics
+        
+    - The engine sizing diagram has bugs where adjusting an unrelated parameter adjusts unrelated things in the diagram. For example, adjusting the rod length makes the bore difference as the whoel view resizes. you need to take all the size differences into account and view behaviour to ensure that the model behaves correctly
+
+    - The firing order ui is not good, it takes a long time to give the order you want and the UI is just uninspiring overall, it could be more interesting
+
+    - The vehicle UI is very bad, it mentions front cross section but shows the tires as if you were viewing them from the side, it makes no sense
+
+    - I am confused as setting the rev limit is presented in multiple locations, and additionally it seems to have to do with spark advance which we can't even adjust as much as we want? should we auto gen spark advance based off the rev limit? we need to have one source of truth for rev limit and reconsile it with the advance in a way which makes sense
+
+    - The cam lobe UI is confusing, IDK what is going on, either explain it or desin a better UI (I probably just dont understand it)

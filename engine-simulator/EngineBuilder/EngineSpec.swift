@@ -224,15 +224,35 @@ struct EngineSpec: Codable, Identifiable, Equatable {
     var exhaustAudioVolume: Double
     var impulseResponse: ImpulseResponseChoice
 
-    // Ignition
-    var revLimitRpm: Double
+    // Ignition. revLimit is no longer a separate field — it derives from redlineRpm.
     var ignitionTiming: [TimingPoint]    // ascending RPM
     var limiterDurationSec: Double
+
+    // Firing order: 1-indexed cylinder numbers in firing sequence.
+    // Always has layout.cylinderCount entries; reset to layout default when layout changes.
+    var firingOrder: [Int]
 
     // Fuel
     var fuel: FuelPreset
 
+    // Transmission
+    var clutchTorqueLbFt: Double
+    var gearRatios: [Double]   // ordered: 1st → top
+
+    // Vehicle
+    var vehicleMassLb: Double
+    var dragCoefficient: Double
+    var frontalAreaWidthIn: Double
+    var frontalAreaHeightIn: Double
+    var diffRatio: Double
+    var tireRadiusIn: Double
+    var rollingResistanceN: Double
+
     // MARK: Derived
+
+    /// Rev limit derives from redline — single source of truth for "max RPM".
+    /// The hardware limiter and the displayed redline are intentionally the same value.
+    var revLimitRpm: Double { redlineRpm }
 
     /// Total displacement in cubic centimeters.
     var displacementCc: Double {
@@ -293,12 +313,34 @@ struct EngineSpec: Codable, Identifiable, Equatable {
             exhaustAudioVolume: 0.2,
             impulseResponse: .mildExhaustReverb,
 
-            revLimitRpm: 7000,
             ignitionTiming: defaultTimingCurve(),
             limiterDurationSec: 0.1,
+            firingOrder: layout.firingOrder,
 
-            fuel: .gasoline
+            fuel: .gasoline,
+
+            clutchTorqueLbFt: 500,
+            gearRatios: [5.25, 3.36, 2.17, 1.72, 1.32, 1.0],
+
+            vehicleMassLb: 3400,
+            dragCoefficient: 0.4,
+            frontalAreaWidthIn: 66,
+            frontalAreaHeightIn: 50,
+            diffRatio: 3.15,
+            tireRadiusIn: 10,
+            rollingResistanceN: 500
         )
+    }
+
+    /// True when firingOrder is a valid permutation of 1...cylinderCount.
+    var firingOrderIsValid: Bool {
+        let expected = Set(1...layout.cylinderCount)
+        return Set(firingOrder) == expected && firingOrder.count == layout.cylinderCount
+    }
+
+    /// Reset firingOrder to the layout's default. Call when layout changes.
+    mutating func resyncFiringOrderForLayout() {
+        firingOrder = layout.firingOrder
     }
 
     static func defaultTimingCurve() -> [TimingPoint] {

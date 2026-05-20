@@ -15,7 +15,7 @@ struct AdvancedStep: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
-            BuilderSectionHeading(title: "Step 8 · Advanced")
+            BuilderSectionHeading(title: "Step 9 · Advanced")
             Text("These knobs round out the spec. Defaults give a running engine — change them only if you want a specific behaviour.")
                 .font(.system(size: 12, weight: .regular, design: .monospaced))
                 .foregroundColor(BuilderTheme.label)
@@ -95,20 +95,84 @@ private struct AdvancedSection<Content: View>: View {
 private struct TimingCurveEditor: View {
     @Binding var points: [TimingPoint]
 
+    private let minPoints = 2
+    private let maxRpm: Double = 12000
+    private let maxAdvance: Double = 60
+
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             ForEach(points.indices, id: \.self) { idx in
-                HStack(spacing: 12) {
-                    Text("\(Int(points[idx].rpm)) rpm")
-                        .font(.system(size: 12, weight: .regular, design: .monospaced))
+                pointRow(idx: idx)
+            }
+
+            HStack(spacing: 8) {
+                Button(action: addPoint) {
+                    Text("+ ADD POINT")
+                        .font(.system(size: 10, weight: .bold, design: .monospaced))
+                        .tracking(2)
                         .foregroundColor(BuilderTheme.label)
-                        .frame(width: 90, alignment: .leading)
-                    BuilderSlider(label: "advance",
-                                  value: $points[idx].advanceDeg,
-                                  range: 0...50, step: 0.5, unit: "°")
+                        .padding(.horizontal, 12).padding(.vertical, 7)
+                        .overlay(Rectangle().stroke(BuilderTheme.line, lineWidth: 1))
                 }
+                .buttonStyle(.plain)
             }
         }
+    }
+
+    private func pointRow(idx: Int) -> some View {
+        HStack(spacing: 12) {
+            BuilderSlider(label: "rpm",
+                          value: rpmBinding(at: idx),
+                          range: 0...maxRpm, step: 100, unit: "rpm", format: "%.0f")
+                .frame(maxWidth: 220)
+            BuilderSlider(label: "advance",
+                          value: advanceBinding(at: idx),
+                          range: 0...maxAdvance, step: 0.5, unit: "°")
+
+            Button(action: { removePoint(at: idx) }) {
+                Image(systemName: "trash")
+                    .font(.system(size: 11))
+                    .foregroundColor(BuilderTheme.label)
+                    .frame(width: 22, height: 22)
+                    .overlay(Rectangle().stroke(BuilderTheme.line, lineWidth: 1))
+            }
+            .buttonStyle(.plain)
+            .disabled(points.count <= minPoints)
+            .opacity(points.count <= minPoints ? 0.35 : 1)
+        }
+    }
+
+    private func rpmBinding(at idx: Int) -> Binding<Double> {
+        Binding(
+            get: { idx < points.count ? points[idx].rpm : 0 },
+            set: { newValue in
+                guard idx < points.count else { return }
+                points[idx].rpm = newValue
+                points.sort { $0.rpm < $1.rpm }
+            }
+        )
+    }
+
+    private func advanceBinding(at idx: Int) -> Binding<Double> {
+        Binding(
+            get: { idx < points.count ? points[idx].advanceDeg : 0 },
+            set: { newValue in
+                guard idx < points.count else { return }
+                points[idx].advanceDeg = newValue
+            }
+        )
+    }
+
+    private func addPoint() {
+        let lastRpm = points.last?.rpm ?? 0
+        let lastAdvance = points.last?.advanceDeg ?? 12
+        points.append(TimingPoint(rpm: lastRpm + 1000, advanceDeg: lastAdvance))
+    }
+
+    private func removePoint(at idx: Int) {
+        guard points.count > minPoints,
+              idx >= 0, idx < points.count else { return }
+        points.remove(at: idx)
     }
 }
 
@@ -120,7 +184,7 @@ struct ReviewStep: View {
     var body: some View {
         HStack(alignment: .top, spacing: 48) {
             VStack(alignment: .leading, spacing: 18) {
-                BuilderSectionHeading(title: "Step 9 · Review and save")
+                BuilderSectionHeading(title: "Step 10 · Review and save")
 
                 Text(state.spec.name.isEmpty ? "Untitled" : state.spec.name)
                     .font(.system(size: 40, weight: .regular, design: .monospaced))
