@@ -2,23 +2,16 @@
 //  CrankshaftGeometry.swift
 //  engine-simulator
 //
-//  Procedural crankshaft. Each cylinder slot produces one crank throw made of:
-//    • a rod pin (cylinder along Y, offset from main-journal axis by crankThrow,
-//      angled by the slot's phaseOffset)
-//    • two fan / kidney-shaped webs (one per side of the rod-bearing region),
-//      built as extruded SCNGeometry — same construction style as the cam lobe.
+//  Procedural crankshaft. One throw per cylinder (split-pin design): each
+//  cylinder gets its own pin and pair of fan/kidney-shaped webs at the
+//  cylinder's own phase angle, positioned at the cylinder's yOffset.
+//  V/Flat engines pack two such throws side-by-side on each slot (one per
+//  bank), with the inner webs meeting at the slot center.
 //
-//  Each web's outline is the convex hull of two circles in the X-Z plane:
-//    • a pin-side boss around the rod pin (small circle)
-//    • a counterweight tip opposite the pin (large circle)
-//  joined by external common tangents. The result reads as a real forged crank
-//  cheek with integrated counterweight.
-//
-//  Web layout along the crank axis follows the rod-bearing span:
-//    inline → one rod per throw → rodSpanHalf = rodBearingWidth / 2
-//    V/Flat → two rods stacked → rodSpanHalf = rodBearingWidth
-//  Webs sit at slotCenter ± (rodSpanHalf + webPlateThickness/2), so their inner
-//  faces just clear the rod bearings.
+//  Each web is built as an extruded SCNGeometry (same construction style as
+//  the cam lobe). The web outline is the convex hull of two circles in the
+//  X-Z plane: a pin-side boss around the rod pin (small) and a counterweight
+//  tip opposite (large), joined by external common tangents.
 //
 
 import SceneKit
@@ -42,46 +35,47 @@ enum CrankshaftGeometry {
         let node = SCNNode()
         node.name = "crankshaft"
 
-        // Group cylinders by slot so V/Flat engines collapse their two banks
-        // onto one shared throw centered on slotCenterY.
-        var slotsByY: [(y: Double, angleRad: Double)] = []
-        var seenSlots = Set<Int>()
-        for placement in p.cylinders.sorted(by: { $0.slotCenterY < $1.slotCenterY }) {
-            if seenSlots.insert(placement.slotIndex).inserted {
-                slotsByY.append((placement.slotCenterY, placement.phaseOffsetRad))
-            }
-        }
-        guard let firstSlotY = slotsByY.first?.y,
-              let lastSlotY = slotsByY.last?.y else { return node }
+        // One throw per cylinder, sorted along the crank axis. Each throw
+        // carries its own pin (at the cylinder's phase) and two webs flanking
+        // the rod-bearing region. For V/Flat engines, the two cylinders on a
+        // slot end up with their inner webs touching at the slot center.
+        let throws_ = p.cylinders.map { (y: $0.yOffset, angleRad: $0.phaseOffsetRad) }
+                                  .sorted(by: { $0.y < $1.y })
+        guard let firstThrowY = throws_.first?.y,
+              let lastThrowY = throws_.last?.y else { return node }
 
         let mainRadius = p.mainJournalDiameter / 2.0
         let endPad = p.bore * mainJournalEndPadFactorOfBore
         let snoutLen = p.bore * snoutLengthFactorOfBore
+        let webHalfSpan = p.crankWebCenterOffset + p.crankWebPlateThickness / 2.0
 
         // Front snout (input side).
-        let frontSnoutStart = firstSlotY - endPad - snoutLen
-        let frontSnoutEnd = firstSlotY - endPad
+        let frontSnoutStart = firstThrowY - endPad - snoutLen
+        let frontSnoutEnd = firstThrowY - endPad
         addMainJournal(to: node, fromY: frontSnoutStart, toY: frontSnoutEnd,
                        radius: mainRadius * frontSnoutRadiusBoost)
         addMainJournal(to: node, fromY: frontSnoutEnd,
-                       toY: firstSlotY - p.crankWebCenterOffset - p.crankWebPlateThickness / 2.0,
+                       toY: firstThrowY - webHalfSpan,
                        radius: mainRadius)
 
-        for (i, slot) in slotsByY.enumerated() {
-            addThrow(to: node, slotY: slot.y, throwAngleRad: slot.angleRad, params: p)
+        for (i, t) in throws_.enumerated() {
+            addThrow(to: node, slotY: t.y, throwAngleRad: t.angleRad, params: p)
 
+            // Main journal between this throw and the next. For V/Flat engines
+            // the two paired throws within a slot overlap in Y, so the journal
+            // segment ends up zero-length and addMainJournal skips it.
             let nextStart: Double
-            if i + 1 < slotsByY.count {
-                nextStart = slotsByY[i + 1].y - p.crankWebCenterOffset - p.crankWebPlateThickness / 2.0
+            if i + 1 < throws_.count {
+                nextStart = throws_[i + 1].y - webHalfSpan
             } else {
-                nextStart = lastSlotY + endPad
+                nextStart = lastThrowY + endPad
             }
-            let thisEnd = slot.y + p.crankWebCenterOffset + p.crankWebPlateThickness / 2.0
+            let thisEnd = t.y + webHalfSpan
             addMainJournal(to: node, fromY: thisEnd, toY: nextStart, radius: mainRadius)
         }
 
         // Rear snout + flywheel flange.
-        let rearSnoutStart = lastSlotY + endPad
+        let rearSnoutStart = lastThrowY + endPad
         let rearSnoutEnd = rearSnoutStart + snoutLen * rearSnoutRadiusBoost
         addMainJournal(to: node, fromY: rearSnoutStart, toY: rearSnoutEnd,
                        radius: mainRadius * rearSnoutRadiusBoost)

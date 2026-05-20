@@ -168,6 +168,12 @@ struct Engine3DProceduralView: NSViewRepresentable {
             scene.rootNode.childNode(withName: "proceduralEngineRoot", recursively: false)?.removeFromParentNode()
             parts = nil
 
+            // Reset the animation clock so the new engine starts at crank=0
+            // (rather than wherever the previous one was spinning), and so the
+            // first dt is bounded.
+            accumulatedAngle = 0.0
+            lastUpdateTime = 0.0
+
             guard let spec = spec else {
                 currentSpecId = nil
                 currentSpecFingerprint = 0

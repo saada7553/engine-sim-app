@@ -2,290 +2,371 @@
 //  CustomTopBar.swift
 //  engine-simulator
 //
-//  A custom top bar that replaces the native toolbar for engine controls and status.
+//  Top bar with engine controls + status lights. Visual language is a blend
+//  of modern OEM dash cleanliness and race-car / dyno-cell instrumentation:
+//  a covered toggle for ignition (arming behaviour) and a chunky illuminated
+//  start/stop button that only lights up when ignition is "armed". The
+//  warning lights on the right mimic real dashboard tiles with bezels,
+//  recessed LEDs and properly drawn icons.
 //
 
 import SwiftUI
 
+// MARK: - Top Bar
+
 struct CustomTopBar: View {
     @ObservedObject var vm: EngineViewModel
-    
+
     var body: some View {
         HStack(spacing: 0) {
-            // Left Side: Sidebar + Tactile Physical Controls
-            HStack(spacing: 24) {
-                Button(action: { SidebarManager.shared.toggleSidebar() }) {
-                    Image(systemName: "sidebar.left")
-                        .font(.system(size: 18, weight: .light))
-                        .foregroundColor(.white.opacity(0.7))
-                        .frame(width: 40, height: 40)
-                        .background(
-                            Circle()
-                                .fill(Color.white.opacity(0.05))
-                                .overlay(Circle().stroke(Color.white.opacity(0.1), lineWidth: 0.5))
-                        )
-                }
-                .buttonStyle(.plain)
-                .help("Toggle Sidebar")
-                
-                HStack(spacing: 30) {
-                    // High-Fidelity Ignition Toggle
-                    IgnitionToggleSystem(isOn: Binding(get: { vm.isIgnitionOn }, set: { _ in vm.toggleIgnition() }))
-                    
-                    // High-Fidelity Starter Button
-                    TactileStarterButton(isPressed: vm.isStarterOn) {
-                        vm.toggleStarter()
-                    }
-                }
-            }
-            .padding(.leading, 20)
-            
+            leftCluster
+                .padding(.leading, 18)
+
             Spacer()
-            
-            // Center: Title + Check Engine Icon
-            HStack(spacing: 12) {
-                CheckEngineIcon()
-                    .stroke(
-                        LinearGradient(colors: [.orange, .red], startPoint: .top, endPoint: .bottom),
-                        lineWidth: 1.5
-                    )
-                    .frame(width: 28, height: 28)
-                    .shadow(color: .orange.opacity(0.5), radius: 6)
-                
-                VStack(alignment: .leading, spacing: -2) {
-                    Text("ENGINE")
-                        .modifier(RetroFont(size: 8))
-                        .foregroundColor(.gray)
-                    Text("SIMULATOR")
-                        .modifier(RetroFont(size: 16))
-                        .foregroundColor(.white)
-                        .tracking(1)
-                }
-            }
-            
+
+            centerBadge
+
             Spacer()
-            
-            // Right Side: Gauge Cluster Status Lights
-            HStack(spacing: 12) {
-                GaugeLight(label: "IGN", active: vm.isIgnitionOn, color: .red) {
-                    IgnitionIcon()
-                }
-                
-                GaugeLight(label: "START", active: vm.isStarterOn, color: .green) {
-                    StarterIcon()
-                }
-                
-                GaugeLight(label: "CLUTCH", active: !vm.clutchPressed, color: .blue) {
-                    ClutchIcon()
-                }
-                
-                GaugeLight(label: "DYNO", active: vm.dynoEnabled, color: .orange) {
-                    DynoIcon()
-                }
-                
-                GaugeLight(label: "HOLD", active: vm.throttleHeld, color: .yellow) {
-                    HoldIcon()
-                }
-            }
-            .padding(.trailing, 20)
+
+            rightCluster
+                .padding(.trailing, 18)
         }
-        .frame(height: 80)
-        .background(
-            ZStack {
-                Color.appBackground
-                // Subtle brushed metal texture effect
-                LinearGradient(colors: [Color.white.opacity(0.03), Color.clear], startPoint: .top, endPoint: .bottom)
+        .frame(height: 86)
+        .background(topBarBackground)
+        .border(Color.white.opacity(0.12), width: 1, edges: [.bottom])
+    }
+
+    // MARK: Left — controls
+
+    private var leftCluster: some View {
+        HStack(spacing: 22) {
+            Button(action: { SidebarManager.shared.toggleSidebar() }) {
+                Image(systemName: "sidebar.left")
+                    .font(.system(size: 17, weight: .light))
+                    .foregroundColor(.white.opacity(0.7))
+                    .frame(width: 40, height: 40)
+                    .background(
+                        Circle()
+                            .fill(Color.white.opacity(0.05))
+                            .overlay(Circle().stroke(Color.white.opacity(0.12), lineWidth: 0.5))
+                    )
             }
-        )
-        .border(Color.white.opacity(0.15), width: 1, edges: [.bottom])
+            .buttonStyle(.plain)
+            .help("Toggle Sidebar")
+
+            ArmedIgnitionSwitch(isOn: vm.isIgnitionOn) { vm.toggleIgnition() }
+
+            StarterButton(running: vm.isStarterOn) {
+                vm.toggleStarter()
+            }
+        }
+    }
+
+    // MARK: Center — title + check engine
+
+    private var centerBadge: some View {
+        HStack(spacing: 10) {
+            CheckEngineIcon()
+                .stroke(
+                    LinearGradient(colors: [Color.orange, Color.red],
+                                   startPoint: .top, endPoint: .bottom),
+                    style: StrokeStyle(lineWidth: 1.4, lineJoin: .round)
+                )
+                .frame(width: 26, height: 26)
+                .shadow(color: .orange.opacity(0.45), radius: 5)
+
+            VStack(alignment: .leading, spacing: -2) {
+                Text("ENGINE")
+                    .modifier(RetroFont(size: 8))
+                    .foregroundColor(.gray)
+                Text("SIMULATOR")
+                    .modifier(RetroFont(size: 15))
+                    .foregroundColor(.white)
+                    .tracking(1.2)
+            }
+        }
+    }
+
+    // MARK: Right — warning-light cluster
+
+    private var rightCluster: some View {
+        HStack(spacing: 8) {
+            DashWarningTile(label: "IGN",   active: vm.isIgnitionOn,    accent: .red)    { IgnitionIcon() }
+            DashWarningTile(label: "CRANK", active: vm.isStarterOn,     accent: .green)  { StarterIcon() }
+            DashWarningTile(label: "CLUTCH", active: !vm.clutchPressed, accent: .blue)   { ClutchIcon() }
+            DashWarningTile(label: "DYNO",  active: vm.dynoEnabled,     accent: .orange) { DynoIcon() }
+            DashWarningTile(label: "HOLD",  active: vm.throttleHeld,    accent: .yellow) { HoldIcon() }
+        }
+    }
+
+    private var topBarBackground: some View {
+        ZStack {
+            Color.appBackground
+            LinearGradient(colors: [Color.white.opacity(0.04), Color.clear],
+                           startPoint: .top, endPoint: .bottom)
+            // Faint scan lines for instrument-panel texture.
+            VStack(spacing: 2) {
+                ForEach(0..<3, id: \.self) { _ in
+                    Color.white.opacity(0.015).frame(height: 1)
+                    Spacer().frame(height: 28)
+                }
+            }
+        }
     }
 }
 
-// MARK: - High Fidelity Controls
+// MARK: - Ignition switch
+//
+// Chrome bezel labelled OFF / RUN with a paddle that travels between the
+// two positions. A small LED at the base lights red when ignition is on.
 
-struct IgnitionToggleSystem: View {
-    @Binding var isOn: Bool
-    
+private struct ArmedIgnitionSwitch: View {
+    let isOn: Bool
+    let toggle: () -> Void
+
     var body: some View {
-        VStack(spacing: 6) {
+        VStack(spacing: 4) {
             Text("IGNITION")
                 .modifier(RetroFont(size: 8))
                 .foregroundColor(.gray)
-            
-            Button(action: { isOn.toggle() }) {
+
+            Button(action: toggle) {
                 ZStack {
-                    // Switch Housing
-                    RoundedRectangle(cornerRadius: 6)
-                        .fill(
-                            LinearGradient(colors: [Color(white: 0.1), Color(white: 0.2)], startPoint: .top, endPoint: .bottom)
-                        )
-                        .frame(width: 44, height: 44)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 6)
-                                .stroke(Color.white.opacity(0.1), lineWidth: 1)
-                        )
-                        .shadow(color: .black.opacity(0.5), radius: 2, x: 0, y: 2)
-                    
-                    // The Toggle Paddle
-                    ZStack {
-                        // Shadow for depth
-                        RoundedRectangle(cornerRadius: 4)
-                            .fill(Color.black.opacity(0.4))
-                            .frame(width: 14, height: 28)
-                            .offset(y: isOn ? 2 : -2)
-                        
-                        // Paddle body
-                        RoundedRectangle(cornerRadius: 4)
-                            .fill(
-                                LinearGradient(
-                                    colors: [Color(white: 0.35), Color(white: 0.15)],
-                                    startPoint: isOn ? .bottom : .top,
-                                    endPoint: isOn ? .top : .bottom
-                                )
-                            )
-                            .frame(width: 14, height: 28)
-                            .overlay(
-                                // Metallic highlight
-                                RoundedRectangle(cornerRadius: 4)
-                                    .stroke(
-                                        LinearGradient(colors: [.white.opacity(0.3), .clear], startPoint: .topLeading, endPoint: .bottomTrailing),
-                                        lineWidth: 1
-                                    )
-                            )
-                        
-                        // Pivot indicator
-                        Circle()
-                            .fill(isOn ? Color.orange : Color.gray.opacity(0.5))
-                            .frame(width: 4, height: 4)
-                            .shadow(color: isOn ? .orange.opacity(0.8) : .clear, radius: 2)
+                    bezel
+
+                    // OFF / RUN side labels.
+                    VStack(spacing: 0) {
+                        Text("RUN").modifier(RetroFont(size: 6))
+                            .foregroundColor(isOn ? .red.opacity(0.95) : .white.opacity(0.35))
+                            .frame(maxHeight: .infinity)
+                        Text("OFF").modifier(RetroFont(size: 6))
+                            .foregroundColor(!isOn ? .white.opacity(0.85) : .white.opacity(0.25))
+                            .frame(maxHeight: .infinity)
                     }
-                    .rotationEffect(.degrees(isOn ? 0 : 0)) // We simulate the flip with gradients and offsets
-                    .offset(y: isOn ? 4 : -4)
+                    .padding(.vertical, 2)
+                    .frame(width: 22)
+                    .offset(x: -18)
+
+                    paddle
+                        .offset(y: isOn ? -10 : 10)
+
+                    // Armed LED at the bottom of the bezel.
+                    Circle()
+                        .fill(isOn ? Color.red : Color.red.opacity(0.18))
+                        .frame(width: 4, height: 4)
+                        .shadow(color: isOn ? .red.opacity(0.9) : .clear, radius: 3)
+                        .offset(x: 14, y: 22)
                 }
+                .frame(width: 64, height: 54)
             }
             .buttonStyle(.plain)
-            .animation(.spring(response: 0.2, dampingFraction: 0.5), value: isOn)
+            .animation(.spring(response: 0.32, dampingFraction: 0.55), value: isOn)
+        }
+    }
+
+    private var bezel: some View {
+        RoundedRectangle(cornerRadius: 7)
+            .fill(LinearGradient(colors: [Color(white: 0.22), Color(white: 0.08)],
+                                 startPoint: .top, endPoint: .bottom))
+            .overlay(
+                RoundedRectangle(cornerRadius: 7)
+                    .stroke(LinearGradient(colors: [Color.white.opacity(0.45), Color.black.opacity(0.7)],
+                                           startPoint: .topLeading, endPoint: .bottomTrailing),
+                            lineWidth: 1)
+            )
+            .overlay(
+                // Inset recess where the paddle travels.
+                RoundedRectangle(cornerRadius: 4)
+                    .fill(Color.black.opacity(0.55))
+                    .frame(width: 18, height: 38)
+            )
+            .shadow(color: .black.opacity(0.55), radius: 3, x: 0, y: 2)
+    }
+
+    private var paddle: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 3)
+                .fill(LinearGradient(colors: [Color(white: 0.55), Color(white: 0.22)],
+                                     startPoint: .top, endPoint: .bottom))
+                .frame(width: 14, height: 22)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 3)
+                        .stroke(LinearGradient(colors: [Color.white.opacity(0.55), Color.clear],
+                                               startPoint: .topLeading, endPoint: .bottomTrailing),
+                                lineWidth: 0.8)
+                )
+                .shadow(color: .black.opacity(0.7), radius: 1.5,
+                        x: 0, y: isOn ? -1 : 1)
+
+            // Pivot dimple at the centre of the paddle.
+            Circle()
+                .fill(isOn ? Color.red : Color.gray.opacity(0.5))
+                .frame(width: 3.5, height: 3.5)
+                .shadow(color: isOn ? .red.opacity(0.9) : .clear, radius: 2)
         }
     }
 }
 
-struct TactileStarterButton: View {
-    var isPressed: Bool
-    var action: () -> Void
-    
+// MARK: - Starter button
+//
+// Chunky illuminated push button labelled STARTER. Always pressable — works
+// independently of the ignition switch (you can crank the engine over with
+// ignition off; it just won't fire). Lights up red whenever the starter is
+// engaged, with a pulsing halo to communicate the cranking motor.
+
+private struct StarterButton: View {
+    let running: Bool
+    let action: () -> Void
+
+    @State private var pressing = false
+    @State private var pulse = false
+
     var body: some View {
-        VStack(spacing: 6) {
-            Text("ENGINE START")
+        VStack(spacing: 4) {
+            Text("STARTER")
                 .modifier(RetroFont(size: 8))
                 .foregroundColor(.gray)
-            
+
             Button(action: action) {
                 ZStack {
-                    // Outer Bezel (Brushed Metal)
+                    bezel
+
+                    // Inset shadow ring.
                     Circle()
-                        .fill(
-                            LinearGradient(
-                                colors: [Color(white: 0.4), Color(white: 0.15)],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
-                        )
-                        .frame(width: 52, height: 52)
-                        .overlay(
-                            Circle()
-                                .stroke(
-                                    LinearGradient(colors: [.white.opacity(0.5), .black.opacity(0.5)], startPoint: .topLeading, endPoint: .bottomTrailing),
-                                    lineWidth: 1
-                                )
-                        )
-                    
-                    // Inset Shadow Ring
-                    Circle()
-                        .fill(Color.black.opacity(0.4))
+                        .fill(Color.black.opacity(0.5))
                         .frame(width: 44, height: 44)
-                    
-                    // Button Surface
+
+                    // Illuminated face.
                     Circle()
-                        .fill(
-                            RadialGradient(
-                                gradient: Gradient(colors: [
-                                    isPressed ? Color(red: 0.9, green: 0.1, blue: 0.1) : Color(red: 0.5, green: 0.05, blue: 0.05),
-                                    Color(red: 0.2, green: 0, blue: 0)
-                                ]),
-                                center: .center,
-                                startRadius: 0,
-                                endRadius: 22
-                            )
-                        )
+                        .fill(faceGradient)
                         .frame(width: 42, height: 42)
                         .overlay(
-                            // Concentric texture lines
+                            // Fine concentric machining ring.
                             Circle()
-                                .stroke(Color.white.opacity(0.05), lineWidth: 0.5)
+                                .stroke(Color.white.opacity(0.08), lineWidth: 0.5)
                                 .padding(4)
                         )
-                        .overlay(
-                            // Inner Glow when pressed
-                            Circle()
-                                .stroke(isPressed ? Color.red.opacity(0.8) : Color.clear, lineWidth: 2)
-                                .blur(radius: 2)
-                        )
-                    
-                    // Labeling
-                    VStack(spacing: -1) {
-                        Text("START")
-                            .font(.system(size: 9, weight: .black))
-                        Text("STOP")
-                            .font(.system(size: 7, weight: .bold))
-                            .opacity(0.7)
-                    }
-                    .foregroundColor(.white.opacity(0.9))
-                    .shadow(color: .black.opacity(0.5), radius: 1, x: 0, y: 1)
+                        .overlay(haloRing)
+
+                    Text("CRANK")
+                        .font(.system(size: 9, weight: .black))
+                        .foregroundColor(.white)
+                        .shadow(color: .black.opacity(0.6), radius: 1, x: 0, y: 1)
                 }
-                .shadow(color: isPressed ? .red.opacity(0.3) : .black.opacity(0.3), radius: isPressed ? 8 : 4, x: 0, y: isPressed ? 0 : 4)
+                .frame(width: 56, height: 56)
+                .shadow(color: Color.red.opacity(running ? 0.6 : 0.30),
+                        radius: running ? 10 : 4, x: 0, y: pressing ? 0 : 3)
+                .scaleEffect(pressing ? 0.94 : 1.0)
             }
             .buttonStyle(.plain)
-            .scaleEffect(isPressed ? 0.94 : 1.0)
-            .animation(.interactiveSpring(), value: isPressed)
+            .onLongPressGesture(minimumDuration: 0, maximumDistance: .infinity, pressing: { p in
+                pressing = p
+            }, perform: {})
+            .animation(.interactiveSpring(), value: pressing)
+            .onAppear {
+                // Pulsing glow while cranking.
+                withAnimation(.easeInOut(duration: 0.7).repeatForever(autoreverses: true)) {
+                    pulse.toggle()
+                }
+            }
         }
+    }
+
+    private var bezel: some View {
+        Circle()
+            .fill(LinearGradient(colors: [Color(white: 0.42), Color(white: 0.14)],
+                                 startPoint: .topLeading, endPoint: .bottomTrailing))
+            .frame(width: 52, height: 52)
+            .overlay(
+                Circle().stroke(
+                    LinearGradient(colors: [Color.white.opacity(0.55), Color.black.opacity(0.6)],
+                                   startPoint: .topLeading, endPoint: .bottomTrailing),
+                    lineWidth: 1
+                )
+            )
+    }
+
+    private var faceGradient: RadialGradient {
+        // Always lit — dimmer at rest, brighter when cranking.
+        let warmCore: Color
+        let darkRim: Color
+        if running {
+            warmCore = Color(red: 1.00, green: 0.18, blue: 0.18)
+            darkRim = Color(red: 0.45, green: 0.05, blue: 0.05)
+        } else {
+            warmCore = Color(red: 0.78, green: 0.10, blue: 0.10)
+            darkRim = Color(red: 0.20, green: 0.02, blue: 0.02)
+        }
+        return RadialGradient(colors: [warmCore, darkRim],
+                              center: .center, startRadius: 0, endRadius: 22)
+    }
+
+    @ViewBuilder private var haloRing: some View {
+        Circle()
+            .stroke(Color.red.opacity(running ? (pulse ? 0.95 : 0.55) : 0.55),
+                    lineWidth: running ? 2.2 : 1.4)
+            .blur(radius: running ? 3 : 1.5)
     }
 }
 
-// MARK: - Status Components
+// MARK: - Dashboard warning tile
 
-struct GaugeLight<Icon: Shape>: View {
+private struct DashWarningTile<Icon: Shape>: View {
     let label: String
     let active: Bool
-    let color: Color
+    let accent: Color
     let icon: Icon
-    
-    init(label: String, active: Bool, color: Color, @ViewBuilder icon: () -> Icon) {
+
+    init(label: String, active: Bool, accent: Color, @ViewBuilder icon: () -> Icon) {
         self.label = label
         self.active = active
-        self.color = color
+        self.accent = accent
         self.icon = icon()
     }
-    
-    private var lightColor: Color {
-        active ? color : color.opacity(0.15)
-    }
-    
-    private var textColor: Color {
-        active ? .white : .white.opacity(0.3)
-    }
-    
+
     var body: some View {
         VStack(spacing: 3) {
-            icon
-                .stroke(lightColor, lineWidth: 2.0)
-                .background(icon.fill(lightColor.opacity(active ? 0.3 : 0.05)))
-                .frame(width: 22, height: 22)
-                .shadow(color: active ? color.opacity(0.6) : .clear, radius: 4)
-            
+            ZStack {
+                // Bezel.
+                RoundedRectangle(cornerRadius: 5)
+                    .fill(LinearGradient(colors: [Color(white: 0.16), Color(white: 0.06)],
+                                         startPoint: .top, endPoint: .bottom))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 5)
+                            .stroke(Color.white.opacity(0.12), lineWidth: 0.8)
+                    )
+                    .shadow(color: .black.opacity(0.5), radius: 1.5, x: 0, y: 1)
+
+                // Inner recessed face.
+                RoundedRectangle(cornerRadius: 3)
+                    .fill(Color.black.opacity(active ? 0.35 : 0.55))
+                    .padding(3)
+
+                // Active halo.
+                if active {
+                    RoundedRectangle(cornerRadius: 3)
+                        .fill(accent.opacity(0.18))
+                        .padding(3)
+                        .blur(radius: 4)
+                }
+
+                icon
+                    .stroke(iconColor, style: StrokeStyle(lineWidth: 1.4, lineJoin: .round))
+                    .background(icon.fill(iconColor.opacity(active ? 0.25 : 0.06)))
+                    .frame(width: 22, height: 22)
+                    .shadow(color: active ? accent.opacity(0.7) : .clear, radius: 5)
+            }
+            .frame(width: 40, height: 36)
+
             Text(label)
                 .modifier(RetroFont(size: 7))
-                .foregroundColor(textColor)
+                .foregroundColor(active ? .white : .white.opacity(0.35))
+                .tracking(0.5)
         }
         .frame(width: 44)
+    }
+
+    private var iconColor: Color {
+        active ? accent : accent.opacity(0.25)
     }
 }

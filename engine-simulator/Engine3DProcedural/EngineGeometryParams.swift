@@ -219,15 +219,15 @@ struct EngineGeometryParams {
         self.mainJournalDiameter = bore * mainJournalDiameterFactorOfBore
         self.rodBearingWidth = bore * rodBearingWidthFactorOfBore
 
-        // Throw layout: V/Flat engines stack two rod bearings on a single crank
-        // pin (offset cylinders, shared throw); inline engines have one per throw.
-        let bankCount = spec.layout.bankCount
-        let rodSpanHalfVal = (bankCount == 2) ? (bore * rodBearingWidthFactorOfBore)
-                                              : (bore * rodBearingWidthFactorOfBore / 2.0)
+        // Throw layout: each cylinder has its own crank pin at its own phase
+        // angle (split-pin design). V/Flat engines therefore have 2× the
+        // throws of the inline equivalent, packed side-by-side per slot. This
+        // keeps the visual correct for any firing order, including those where
+        // two cylinders on the same slot don't reach TDC together.
         let webPlateThick = bore * crankWebPlateThicknessFactorOfBore
-        self.rodSpanHalf = rodSpanHalfVal
+        self.rodSpanHalf = bore * rodBearingWidthFactorOfBore / 2.0
         self.crankWebPlateThickness = webPlateThick
-        self.crankWebCenterOffset = rodSpanHalfVal + webPlateThick / 2.0
+        self.crankWebCenterOffset = self.rodSpanHalf + webPlateThick / 2.0
 
         let cwReach = crankThrow * counterweightReachFactorOfThrow
         let cwTipR = cwReach * counterweightTipRadiusFactorOfReach
@@ -260,12 +260,12 @@ struct EngineGeometryParams {
         let usedSlotCount = max(cylindersPerBank, 1)
         let firstSlotY = -Double(usedSlotCount - 1) * cylinderPitch / 2.0
 
-        // For V/flat engines, offset bank 1 forward along the crank axis by one
-        // rod-bearing width so the paired rods sit side-by-side on a shared crank
-        // throw instead of intersecting. Bank 0 shifts backward by the same amount,
-        // keeping the engine centered. The block slab and cylinder head follow the
-        // bank's shift downstream, so cylinder bores stay over their pistons.
-        let bankAxialShift: Double = (layout.bankCount == 2) ? (bore * rodBearingWidthFactorOfBore / 2.0) : 0.0
+        // For V/flat engines, offset the two banks along the crank axis so
+        // their connecting rods don't intersect each other. The shift is one
+        // full rod-bearing width per side: with the rod's I-beam flanges being
+        // rodBearingWidth wide along Y, this leaves a clear rodBearingWidth gap
+        // between the two rods at the slot — matching what real V engines do.
+        let bankAxialShift: Double = (layout.bankCount == 2) ? (bore * rodBearingWidthFactorOfBore) : 0.0
         self.bankAxialShift = bankAxialShift
 
         for cylNumber in 1...layout.cylinderCount {

@@ -46,6 +46,7 @@ enum BuiltInEngineSpecs {
         spec.compressionHeightMm = 32.8
         spec.redlineRpm = 6000
         spec.firingOrder = EngineLayout.inline6.firingOrder
+        spec.gearRatios = [5.25, 3.36, 2.17, 1.72, 1.32, 1.0]
         return spec
     }()
 
@@ -59,6 +60,7 @@ enum BuiltInEngineSpecs {
         spec.compressionHeightMm = 1.0 * inchToMm
         spec.redlineRpm = 6500
         spec.firingOrder = EngineLayout.v8_90.firingOrder
+        spec.gearRatios = [2.97, 2.07, 1.43, 1.00, 0.71, 0.57]
         return spec
     }()
 
@@ -72,6 +74,7 @@ enum BuiltInEngineSpecs {
         spec.compressionHeightMm = 1.0 * inchToMm
         spec.redlineRpm = 9000
         spec.firingOrder = EngineLayout.v8_90.firingOrder
+        spec.gearRatios = [3.23, 2.19, 1.61, 1.23, 0.97, 0.8]
         return spec
     }()
 
@@ -85,6 +88,7 @@ enum BuiltInEngineSpecs {
         spec.compressionHeightMm = 1.0 * inchToMm
         spec.redlineRpm = 9000
         spec.firingOrder = EngineLayout.v10_72.firingOrder
+        spec.gearRatios = [3.23, 2.19, 1.61, 1.23, 0.97, 0.8]
         return spec
     }()
 }

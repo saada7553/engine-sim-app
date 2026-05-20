@@ -5,22 +5,49 @@
 
 import SwiftUI
 
+// Spacing / sizing fractions used by the gate geometry. Tied to the rectangle
+// it renders into so the shifter scales with the tile.
+private let columnSpacingFraction: CGFloat = 0.2
+private let columnSpacingMin: CGFloat = 30
+private let travelFraction: CGFloat = 0.30
+private let travelMin: CGFloat = 28
+private let slotFraction: CGFloat = 0.085
+private let slotMin: CGFloat = 11
+private let slotMax: CGFloat = 18
+private let knobFraction: CGFloat = 0.20
+private let knobMin: CGFloat = 24
+private let knobMax: CGFloat = 38
+// Drag resolution: the knob snaps to the closest column/lane if released
+// within this fraction of the column/lane travel; otherwise it returns to
+// neutral. Picked so a half-pulled lever still commits to a gear.
+private let resolveTargetRadiusFraction: CGFloat = 0.65
+private let neutralBandFraction: CGFloat = 0.6
+// Paddle layout.
+private let paddleHeight: CGFloat = 44
+private let paddleReadoutWidth: CGFloat = 36
+// Bounds for spec-driven gear count; the builder already clamps to this range.
+private let supportedGearMin: Int = 2
+private let supportedGearMax: Int = 8
+
 // MARK: - Top-level View
 
 struct GearShiftView: View {
     @ObservedObject var vm: EngineViewModel
 
     var body: some View {
-        GeometryReader { _ in
-            VStack(spacing: 6) {
-                GearHeader(gear: vm.gear)
-                HPatternShifter(gear: vm.gear, onShift: vm.setGear)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                ShifterPaddles(gear: vm.gear, onShift: vm.setGear)
-                    .frame(height: 44)
-            }
-            .padding(8)
+        let count = clampedGearCount(vm.gearCount)
+        VStack(spacing: 6) {
+            GearHeader(gear: vm.gear)
+            HPatternShifter(gear: vm.gear, gearCount: count, onShift: vm.setGear)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            ShifterPaddles(gear: vm.gear, gearCount: count, onShift: vm.setGear)
+                .frame(height: paddleHeight)
         }
+        .padding(8)
+    }
+
+    private func clampedGearCount(_ raw: Int) -> Int {
+        min(max(raw, supportedGearMin), supportedGearMax)
     }
 }
 
@@ -46,13 +73,14 @@ private struct GearHeader: View {
 
 private struct HPatternShifter: View {
     let gear: Int
+    let gearCount: Int
     let onShift: (Int) -> Void
     @State private var livePos: CGPoint? = nil
     @State private var isDragging = false
 
     var body: some View {
         GeometryReader { geo in
-            let g = Gate(size: geo.size)
+            let g = Gate(size: geo.size, gearCount: gearCount)
             let knobPos = livePos ?? g.gearPos(gear)
 
             ZStack {
@@ -70,12 +98,13 @@ private struct HPatternShifter: View {
                     }
                     .onEnded { v in
                         isDragging = false
-                        let pos = g.constrain(v.location)
-                        let resolved = g.resolveGear(at: pos)
+                        let resolved = g.resolveGear(at: g.constrain(v.location))
                         onShift(resolved)
-                        withAnimation(.interpolatingSpring(stiffness: 500, damping: 25)) {
-                            livePos = nil
-                        }
+                        // Drop livePos without an animation: knobPos falls back
+                        // to g.gearPos(gear), which is exactly where we just
+                        // committed. Animating between two identical points
+                        // produces the snap-to-middle flicker we want to avoid.
+                        livePos = nil
                     }
             )
         }
@@ -90,72 +119,110 @@ private struct Gate {
     let slotWidth: CGFloat
     let knob: CGFloat
     let cols: [CGFloat]
+    let gearCount: Int
 
     var topY: CGFloat { cy - travel }
     var botY: CGFloat { cy + travel }
 
-    init(size: CGSize) {
-        let _cx = size.width / 2
-        let _cy = size.height / 2
-        let spacing = max(size.width * 0.2, 32)
-        cx = _cx
-        cy = _cy
-        travel = max(size.height * 0.32, 28)
+    /// Number of columns in the gate: ceil(gearCount / 2).
+    var columnCount: Int { (gearCount + 1) / 2 }
+
+    init(size: CGSize, gearCount: Int) {
+        self.gearCount = gearCount
+
+        let centerX = size.width / 2
+        let centerY = size.height / 2
+        cx = centerX
+        cy = centerY
+        travel = max(size.height * travelFraction, travelMin)
+
         let ref = min(size.width, size.height)
-        slotWidth = max(ref * 0.1, 12)
-        knob = max(ref * 0.22, 26)
-        cols = [-1, 0, 1].map { _cx + CGFloat($0) * spacing }
+        slotWidth = min(max(ref * slotFraction, slotMin), slotMax)
+        knob = min(max(ref * knobFraction, knobMin), knobMax)
+
+        let columns = (gearCount + 1) / 2
+        let availableWidth = size.width - knob
+        let evenSpacing = columns > 1 ? availableWidth / CGFloat(columns - 1) : 0
+        let spacing = max(min(evenSpacing, size.width * columnSpacingFraction * 1.5),
+                          columnSpacingMin)
+
+        let totalSpan = spacing * CGFloat(columns - 1)
+        let firstX = centerX - totalSpan / 2
+        cols = (0..<columns).map { firstX + CGFloat($0) * spacing }
     }
 
+    /// Returns the resting position of `gear` in the gate. For the last
+    /// column when gearCount is odd, only the top slot is occupied.
     func gearPos(_ gear: Int) -> CGPoint {
-        guard gear >= 0 else { return CGPoint(x: cx, y: cy) }
-        return CGPoint(x: cols[gear / 2], y: gear % 2 == 0 ? topY : botY)
+        guard gear >= 0 && gear < gearCount else { return CGPoint(x: cx, y: cy) }
+        let col = gear / 2
+        let onTop = gear % 2 == 0
+        return CGPoint(x: cols[col], y: onTop ? topY : botY)
     }
 
+    /// Constrains the user's pointer to the gate's permitted travel: along
+    /// columns that have a slot at that lane, or along the neutral cross-bar.
     func constrain(_ raw: CGPoint) -> CGPoint {
         let hw = slotWidth / 2
-        let (nearCol, colDist) = nearestColumn(to: raw.x)
+        let (nearColIdx, nearCol, colDist) = nearestColumn(to: raw.x)
         let onNeutral = abs(raw.y - cy) <= hw
         let onColumn = colDist <= hw
+        let goingUp = raw.y < cy
 
         if onColumn && !onNeutral {
-            return CGPoint(x: nearCol, y: min(max(raw.y, topY), botY))
+            // Last column has no bottom slot when gearCount is odd.
+            if columnHasSlot(at: nearColIdx, onTop: goingUp) {
+                return CGPoint(x: nearCol, y: clampY(raw.y))
+            }
+            return CGPoint(x: nearCol, y: cy)
         }
-        if onNeutral {
+        if onNeutral || abs(raw.y - cy) < colDist {
             return CGPoint(x: clampX(raw.x), y: cy)
         }
-        if abs(raw.y - cy) < colDist {
-            return CGPoint(x: clampX(raw.x), y: cy)
+        if columnHasSlot(at: nearColIdx, onTop: goingUp) {
+            return CGPoint(x: nearCol, y: clampY(raw.y))
         }
-        return CGPoint(x: nearCol, y: min(max(raw.y, topY), botY))
+        return CGPoint(x: nearCol, y: cy)
     }
 
+    /// Returns the gear index the pointer best matches at release. Anything
+    /// near the neutral cross-bar resolves to -1 (N).
     func resolveGear(at pos: CGPoint) -> Int {
-        let nearCenter = abs(pos.y - cy) < slotWidth * 0.6
-        if nearCenter { return -1 }
+        if abs(pos.y - cy) < slotWidth * neutralBandFraction { return -1 }
 
         var best = -1
-        var bestD: CGFloat = .infinity
-        for i in 0..<6 {
+        var bestDist: CGFloat = .infinity
+        for i in 0..<gearCount {
             let t = gearPos(i)
             let d = hypot(pos.x - t.x, pos.y - t.y)
-            if d < bestD { bestD = d; best = i }
+            if d < bestDist { bestDist = d; best = i }
         }
-        return bestD <= travel * 0.65 ? best : -1
+        return bestDist <= travel * resolveTargetRadiusFraction ? best : -1
     }
 
-    private func nearestColumn(to x: CGFloat) -> (CGFloat, CGFloat) {
-        var nearCol = cols[0]
-        var nearDist = CGFloat.infinity
-        for c in cols {
+    /// True if the slot at `colIdx` on the top/bottom row exists.
+    /// Odd gear counts leave the bottom of the final column empty.
+    func columnHasSlot(at colIdx: Int, onTop: Bool) -> Bool {
+        let isOddLastColumn = (gearCount % 2 == 1) && (colIdx == columnCount - 1)
+        return onTop || !isOddLastColumn
+    }
+
+    private func nearestColumn(to x: CGFloat) -> (Int, CGFloat, CGFloat) {
+        var bestIdx = 0
+        var bestDist = CGFloat.infinity
+        for (i, c) in cols.enumerated() {
             let d = abs(x - c)
-            if d < nearDist { nearDist = d; nearCol = c }
+            if d < bestDist { bestDist = d; bestIdx = i }
         }
-        return (nearCol, nearDist)
+        return (bestIdx, cols[bestIdx], bestDist)
     }
 
     private func clampX(_ x: CGFloat) -> CGFloat {
         min(max(x, cols.first!), cols.last!)
+    }
+
+    private func clampY(_ y: CGFloat) -> CGFloat {
+        min(max(y, topY), botY)
     }
 }
 
@@ -181,9 +248,17 @@ private struct GatePath: Shape {
         var p = Path()
         p.move(to: CGPoint(x: g.cols.first!, y: g.cy))
         p.addLine(to: CGPoint(x: g.cols.last!, y: g.cy))
-        for col in g.cols {
-            p.move(to: CGPoint(x: col, y: g.topY))
-            p.addLine(to: CGPoint(x: col, y: g.botY))
+        for (idx, col) in g.cols.enumerated() {
+            let topReachable = g.columnHasSlot(at: idx, onTop: true)
+            let botReachable = g.columnHasSlot(at: idx, onTop: false)
+            if topReachable {
+                p.move(to: CGPoint(x: col, y: g.cy))
+                p.addLine(to: CGPoint(x: col, y: g.topY))
+            }
+            if botReachable {
+                p.move(to: CGPoint(x: col, y: g.cy))
+                p.addLine(to: CGPoint(x: col, y: g.botY))
+            }
         }
         return p
     }
@@ -194,15 +269,15 @@ private struct GearLabels: View {
     let activeGear: Int
 
     var body: some View {
-        ForEach(0..<6, id: \.self) { i in
+        ForEach(0..<g.gearCount, id: \.self) { i in
             let pos = g.gearPos(i)
-            let above = i % 2 == 0
+            let onTop = i % 2 == 0
             let offset = g.slotWidth / 2 + 9
 
             Text("\(i + 1)")
                 .modifier(RetroFont(size: 9, weight: .bold))
                 .foregroundColor(activeGear == i ? .orange : Color(white: 0.28))
-                .position(x: pos.x, y: pos.y + (above ? -offset : offset))
+                .position(x: pos.x, y: pos.y + (onTop ? -offset : offset))
         }
     }
 }
@@ -247,17 +322,37 @@ private struct ShifterKnob: View {
 }
 
 // MARK: - Paddle Shifters
+//
+// Aesthetic: dark flat fills (matches RetroPanel), single hairline border,
+// no body gradient. Pressed state replaces the fill with a desaturated orange
+// wash and lights up a notch indicator on the inner edge. Shape is a slim
+// asymmetric blade with one beveled inner corner — reads as a paddle without
+// leaning on glossy gradients.
+
+private let paddleStrokeColor = Color.white.opacity(0.18)
+private let paddlePressedStrokeColor = Color.orange.opacity(0.6)
+private let paddleIdleFill = Color(white: 0.10)
+private let paddlePressedFill = Color(red: 0.22, green: 0.10, blue: 0.0)
+private let paddleAccentIdle = Color(white: 0.35)
+private let paddleAccentActive = Color.orange
+private let paddleBevelDepthFraction: CGFloat = 0.18
+private let paddleCornerRadius: CGFloat = 3
 
 private struct ShifterPaddles: View {
     let gear: Int
+    let gearCount: Int
     let onShift: (Int) -> Void
 
     var body: some View {
         HStack(spacing: 0) {
-            Paddle(side: .left) { onShift(max(-1, gear - 1)) }
+            Paddle(side: .left, enabled: gear > -1) {
+                onShift(max(-1, gear - 1))
+            }
             PaddleGearReadout(gear: gear)
-                .frame(width: 36)
-            Paddle(side: .right) { onShift(min(5, gear + 1)) }
+                .frame(width: paddleReadoutWidth)
+            Paddle(side: .right, enabled: gear < gearCount - 1) {
+                onShift(min(gearCount - 1, gear + 1))
+            }
         }
     }
 }
@@ -278,6 +373,7 @@ private struct PaddleGearReadout: View {
 private struct Paddle: View {
     nonisolated enum Side: Equatable { case left, right }
     let side: Side
+    let enabled: Bool
     let action: () -> Void
     @State private var pressed = false
 
@@ -287,69 +383,50 @@ private struct Paddle: View {
             action()
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) { pressed = false }
         }) {
-            GeometryReader { geo in
-                PaddleContent(side: side, pressed: pressed, height: geo.size.height)
-                    .frame(width: geo.size.width, height: geo.size.height)
-            }
-            .scaleEffect(x: 1.0, y: pressed ? 0.94 : 1.0, anchor: side == .left ? .trailing : .leading)
-            .animation(.easeOut(duration: 0.08), value: pressed)
+            PaddleContent(side: side, pressed: pressed)
         }
         .buttonStyle(.plain)
+        .disabled(!enabled)
+        .opacity(enabled ? 1.0 : 0.35)
+        .scaleEffect(x: 1.0, y: pressed ? 0.94 : 1.0, anchor: side == .left ? .trailing : .leading)
+        .animation(.easeOut(duration: 0.08), value: pressed)
     }
 }
 
 private struct PaddleContent: View {
     let side: Paddle.Side
     let pressed: Bool
-    let height: CGFloat
 
     var body: some View {
-        ZStack {
-            PaddleShape(side: side)
-                .fill(paddleFill)
-                .overlay(PaddleShape(side: side).stroke(paddleStroke, lineWidth: 1))
-                .shadow(
-                    color: pressed ? Color.orange.opacity(0.3) : .black.opacity(0.5),
-                    radius: pressed ? 4 : 2,
-                    x: side == .left ? 2 : -2,
-                    y: 0
-                )
+        GeometryReader { geo in
+            let h = geo.size.height
 
-            HStack(spacing: 3) {
-                ForEach(0..<3, id: \.self) { _ in
-                    RoundedRectangle(cornerRadius: 0.5)
-                        .fill(Color.orange.opacity(pressed ? 0.2 : 0.06))
-                        .frame(width: 1, height: height * 0.4)
+            ZStack {
+                PaddleShape(side: side)
+                    .fill(pressed ? paddlePressedFill : paddleIdleFill)
+                    .overlay(PaddleShape(side: side).stroke(
+                        pressed ? paddlePressedStrokeColor : paddleStrokeColor,
+                        lineWidth: 1
+                    ))
+
+                // Inner-edge accent line — runs along the inboard side of the
+                // paddle and lights up on press. Replaces the old gradient.
+                Rectangle()
+                    .fill(pressed ? paddleAccentActive : paddleAccentIdle)
+                    .frame(width: 1.5, height: h * 0.55)
+                    .frame(maxWidth: .infinity, alignment: side == .left ? .trailing : .leading)
+                    .padding(.horizontal, 6)
+                    .opacity(pressed ? 1.0 : 0.5)
+
+                VStack(spacing: 2) {
+                    Image(systemName: side == .left ? "chevron.left" : "chevron.right")
+                        .font(.system(size: 12, weight: .black))
+                    Text(side == .left ? "DN" : "UP")
+                        .modifier(RetroFont(size: 7))
                 }
+                .foregroundColor(pressed ? paddleAccentActive : Color(white: 0.55))
             }
-
-            VStack(spacing: 2) {
-                Image(systemName: side == .left ? "chevron.left" : "chevron.right")
-                    .font(.system(size: 12, weight: .black))
-                Text(side == .left ? "DN" : "UP")
-                    .modifier(RetroFont(size: 7))
-            }
-            .foregroundColor(pressed ? .orange : Color(white: 0.45))
         }
-    }
-
-    private var paddleFill: LinearGradient {
-        LinearGradient(
-            colors: pressed
-                ? [Color(red: 0.35, green: 0.18, blue: 0.0), Color(red: 0.2, green: 0.08, blue: 0.0)]
-                : [Color(white: 0.16), Color(white: 0.07)],
-            startPoint: .top, endPoint: .bottom
-        )
-    }
-
-    private var paddleStroke: LinearGradient {
-        LinearGradient(
-            colors: [
-                pressed ? Color.orange.opacity(0.5) : Color.white.opacity(0.1),
-                Color.white.opacity(0.02)
-            ],
-            startPoint: .top, endPoint: .bottom
-        )
     }
 }
 
@@ -357,31 +434,43 @@ private struct PaddleShape: Shape {
     let side: Paddle.Side
 
     func path(in r: CGRect) -> Path {
-        let cr: CGFloat = 4
-        let taper = r.height * 0.12
-
+        let cr: CGFloat = paddleCornerRadius
+        let bevel = r.height * paddleBevelDepthFraction
         var p = Path()
+
         if side == .left {
-            p.move(to: CGPoint(x: cr, y: taper))
-            p.addLine(to: CGPoint(x: r.width - cr, y: 0))
-            p.addQuadCurve(to: CGPoint(x: r.width, y: cr), control: CGPoint(x: r.width, y: 0))
-            p.addLine(to: CGPoint(x: r.width, y: r.height - cr))
-            p.addQuadCurve(to: CGPoint(x: r.width - cr, y: r.height), control: CGPoint(x: r.width, y: r.height))
-            p.addLine(to: CGPoint(x: cr, y: r.height - taper))
-            p.addQuadCurve(to: CGPoint(x: 0, y: r.height - taper - cr), control: CGPoint(x: 0, y: r.height - taper))
-            p.addLine(to: CGPoint(x: 0, y: taper + cr))
-            p.addQuadCurve(to: CGPoint(x: cr, y: taper), control: CGPoint(x: 0, y: taper))
-        } else {
+            // Inboard (right) edge tapers in at the top — reads like a blade.
             p.move(to: CGPoint(x: cr, y: 0))
-            p.addQuadCurve(to: CGPoint(x: 0, y: cr), control: CGPoint(x: 0, y: 0))
-            p.addLine(to: CGPoint(x: 0, y: r.height - cr))
-            p.addQuadCurve(to: CGPoint(x: cr, y: r.height), control: CGPoint(x: 0, y: r.height))
-            p.addLine(to: CGPoint(x: r.width - cr, y: r.height - taper))
-            p.addQuadCurve(to: CGPoint(x: r.width, y: r.height - taper - cr), control: CGPoint(x: r.width, y: r.height - taper))
-            p.addLine(to: CGPoint(x: r.width, y: taper + cr))
-            p.addQuadCurve(to: CGPoint(x: r.width - cr, y: taper), control: CGPoint(x: r.width, y: taper))
-            p.closeSubpath()
+            p.addLine(to: CGPoint(x: r.width - bevel - cr, y: 0))
+            p.addQuadCurve(to: CGPoint(x: r.width - bevel, y: cr),
+                           control: CGPoint(x: r.width - bevel, y: 0))
+            p.addLine(to: CGPoint(x: r.width, y: r.height - cr))
+            p.addQuadCurve(to: CGPoint(x: r.width - cr, y: r.height),
+                           control: CGPoint(x: r.width, y: r.height))
+            p.addLine(to: CGPoint(x: cr, y: r.height))
+            p.addQuadCurve(to: CGPoint(x: 0, y: r.height - cr),
+                           control: CGPoint(x: 0, y: r.height))
+            p.addLine(to: CGPoint(x: 0, y: cr))
+            p.addQuadCurve(to: CGPoint(x: cr, y: 0),
+                           control: CGPoint(x: 0, y: 0))
+        } else {
+            // Inboard (left) edge tapers in at the top.
+            p.move(to: CGPoint(x: bevel + cr, y: 0))
+            p.addLine(to: CGPoint(x: r.width - cr, y: 0))
+            p.addQuadCurve(to: CGPoint(x: r.width, y: cr),
+                           control: CGPoint(x: r.width, y: 0))
+            p.addLine(to: CGPoint(x: r.width, y: r.height - cr))
+            p.addQuadCurve(to: CGPoint(x: r.width - cr, y: r.height),
+                           control: CGPoint(x: r.width, y: r.height))
+            p.addLine(to: CGPoint(x: cr, y: r.height))
+            p.addQuadCurve(to: CGPoint(x: 0, y: r.height - cr),
+                           control: CGPoint(x: 0, y: r.height))
+            p.addLine(to: CGPoint(x: 0, y: bevel + cr))
+            p.addQuadCurve(to: CGPoint(x: bevel, y: bevel),
+                           control: CGPoint(x: 0, y: bevel))
+            p.addLine(to: CGPoint(x: bevel + cr, y: 0))
         }
+        p.closeSubpath()
         return p
     }
 }

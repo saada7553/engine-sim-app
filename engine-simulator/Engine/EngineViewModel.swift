@@ -14,6 +14,11 @@ import Combine
 private let revAveragingFactor: Double = 0.35
 // Throttle below this is treated as fully idle and snapped to zero.
 private let revIdleThreshold: Double = 0.001
+// Native clutchPressure ≥ this means the clutch is engaged (power flows);
+// "pressed" in the UI is the inverse — the pedal is down so the clutch is disengaged.
+private let clutchEngagedThreshold: Double = 0.5
+// Fallback gear count used when no spec is available for the active engine.
+private let defaultGearCount: Int = 6
 
 class EngineViewModel: ObservableObject {
     private var engine: EngineWrapper?
@@ -27,6 +32,9 @@ class EngineViewModel: ObservableObject {
     @Published var distanceTravelled: Double = 0.0
     @Published var fuelConsumed: Double = 0.0
     @Published var redline: Double
+    /// Mirror of EngineLibrary.shared.selectedEngineId. Views that need to
+    /// hard-reset when the engine changes can use `.id(engineVm.engineId)`.
+    @Published var engineId: UUID?
 
     // Dynamometer sweep
     @Published var dynoEnabled: Bool = false
@@ -57,17 +65,30 @@ class EngineViewModel: ObservableObject {
     }
     
     @Published var clutchPressed: Bool = true
-    
+
+    /// Number of forward gears available on the active engine's transmission.
+    /// Sourced from the EngineSpec when present; falls back to defaultGearCount
+    /// for built-ins with no editable spec.
+    @Published var gearCount: Int = defaultGearCount
+
+    /// Set by setGear() to the gear the user just selected. Polling will not
+    /// overwrite `gear` until the native side reports the same value — this
+    /// prevents the shifter from snapping back through old states while the
+    /// sim thread catches up.
+    private var pendingGear: Int?
+
     let oscilloscopeManager: OscilloscopeManager
     private var timer: Timer?
     private var selectionCancellable: AnyCancellable?
 
     init(oscillioscopeManager: OscilloscopeManager) {
         self.oscilloscopeManager = oscillioscopeManager
-        let initialPath = EngineLibrary.shared.selectedEntry?.mrPath
-        let newEngine = initialPath.map { EngineWrapper(mrPath: $0) } ?? EngineWrapper()
+        let initialEntry = EngineLibrary.shared.selectedEntry
+        let newEngine = initialEntry.map { EngineWrapper(mrPath: $0.mrPath) } ?? EngineWrapper()
         self.engine = newEngine
         self.redline = newEngine?.getEngineRedline() ?? 6500.0
+        self.engineId = EngineLibrary.shared.selectedEngineId
+        self.gearCount = initialEntry.map(Self.gearCount(for:)) ?? defaultGearCount
 
         // Rebuild the EngineWrapper whenever the user picks a different engine.
         self.selectionCancellable = EngineLibrary.shared.$selectedEngineId
@@ -84,7 +105,8 @@ class EngineViewModel: ObservableObject {
             
             if let state = engine.pollState() {
                 self.rpm = state.rpm
-                self.gear = Int(state.gear)
+                self.applyPolledGear(Int(state.gear))
+                self.clutchPressed = state.clutchPressure < clutchEngagedThreshold
                 self.isIgnitionOn = state.isIgnitionOn
                 self.isStarterOn = state.isStarterOn
                 self.vehicleSpeed = state.vehicleSpeed
@@ -154,6 +176,29 @@ class EngineViewModel: ObservableObject {
         let newEngine = EngineWrapper(mrPath: entry.mrPath)
         engine = newEngine
         redline = newEngine?.getEngineRedline() ?? 6500.0
+        engineId = entry.id
+        gearCount = Self.gearCount(for: entry)
+        pendingGear = nil
+    }
+
+    /// Forward gear count for the entry, preferring the editable spec and
+    /// falling back to the canned built-in spec when present.
+    private static func gearCount(for entry: EngineEntry) -> Int {
+        entry.effectiveSpec?.gearRatios.count ?? defaultGearCount
+    }
+
+    /// Adopt the gear value reported by polling, unless we're still waiting
+    /// for the native side to catch up to a user-initiated shift.
+    private func applyPolledGear(_ polled: Int) {
+        if let pending = pendingGear {
+            if polled == pending {
+                pendingGear = nil
+                gear = polled
+            }
+            // Else: keep the locally-set gear; the next poll will reconcile.
+        } else {
+            gear = polled
+        }
     }
 
     func toggleIgnition() { engine?.toggleIgnition() }
@@ -203,15 +248,17 @@ class EngineViewModel: ObservableObject {
         }
     }
     func toggleClutch() {
+        // Optimistically flip locally so the UI responds instantly; the next
+        // poll authoritatively re-syncs from the native clutchPressure.
         clutchPressed.toggle()
         engine?.toggleClutch()
     }
-    
+
     // New function to support H-Shifter
     func setGear(_ newGear: Int) {
         engine?.setGear(Int32(newGear))
-        // Manually update local state for instant UI feedback
-        self.gear = newGear
+        gear = newGear
+        pendingGear = newGear
     }
     
     // Keep these for legacy compatibility if needed

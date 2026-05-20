@@ -37,13 +37,19 @@ struct TileView: View {
     }
     
     private func getView() -> some View {
+        // Hard-reset hook: any view that should fully re-create when the user
+        // picks a new engine gets `.id(engineResetId)`. Tied to the current
+        // EngineLibrary selection so gauges drop their needle physics, the 3D
+        // view rebuilds its assembly, etc.
+        let engineResetId = tile.engineVm.engineId ?? UUID()
+
         switch tile.data.type {
         case .select:
             return AnyView(SelectView(tile: tile))
         case .engine3DView:
-            return AnyView(Engine3DView(vm: tile.engineVm))
+            return AnyView(Engine3DView(vm: tile.engineVm).id(engineResetId))
         case .engine3DProcedural:
-            return AnyView(Engine3DProceduralView(vm: tile.engineVm))
+            return AnyView(Engine3DProceduralView(vm: tile.engineVm).id(engineResetId))
 
         // Gauges
         case .speedometerGauge:
@@ -51,49 +57,49 @@ struct TileView: View {
                 engineVm: tile.engineVm,
                 config: GaugePresets.speedometer(),
                 valueKeyPath: \.vehicleSpeed
-            ))
+            ).id(engineResetId))
         case .rpmGauge:
             return AnyView(UniversalGauge(
                 engineVm: tile.engineVm,
                 config: GaugePresets.tachometer(redline: tile.engineVm.redline),
                 valueKeyPath: \.rpm
-            ))
+            ).id(engineResetId))
         case .manifoldPressureGauge:
             return AnyView(UniversalGauge(
                 engineVm: tile.engineVm,
                 config: GaugePresets.manifoldPressure(),
                 valueKeyPath: \.manifoldPressure
-            ))
+            ).id(engineResetId))
         case .volumetricEfficiencyGauge:
             return AnyView(UniversalGauge(
                 engineVm: tile.engineVm,
                 config: GaugePresets.volumetricEfficiency(),
                 valueKeyPath: \.volumetricEfficiency
-            ))
+            ).id(engineResetId))
         case .airScfmGauge:
             return AnyView(UniversalGauge(
                 engineVm: tile.engineVm,
                 config: GaugePresets.airScfm(),
                 valueKeyPath: \.intakeFlowRate
-            ))
+            ).id(engineResetId))
         case .intakeAfrGauge:
             return AnyView(UniversalGauge(
                 engineVm: tile.engineVm,
                 config: GaugePresets.intakeAfr(),
                 valueKeyPath: \.intakeAFR
-            ))
+            ).id(engineResetId))
         case .exhaustO2Gauge:
             return AnyView(UniversalGauge(
                 engineVm: tile.engineVm,
                 config: GaugePresets.exhaustO2(),
                 valueKeyPath: \.exhaustO2
-            ))
+            ).id(engineResetId))
         case .cylinderPressureGauge:
             return AnyView(UniversalGauge(
                 engineVm: tile.engineVm,
                 config: GaugePresets.cylinderPressure(),
                 valueKeyPath: \.cylinderPressure
-            ))
+            ).id(engineResetId))
 
         // Controls
         case .engineControls:

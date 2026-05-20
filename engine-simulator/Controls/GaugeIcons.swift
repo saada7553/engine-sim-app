@@ -2,182 +2,275 @@
 //  GaugeIcons.swift
 //  engine-simulator
 //
-//  Custom drawn icons for the engine status lights, mimicking car gauge cluster warning lights.
+//  Hand-drawn icons used in the top-bar warning-light cluster. Each icon is
+//  a `Shape` so the call site can stroke + fill it with whatever color the
+//  light is currently lit in. The silhouettes lean on real-car warning-light
+//  conventions (battery, starter motor, clutch disc, dyno roller, lock)
+//  rather than generic geometric shapes.
 //
 
 import SwiftUI
 
+// MARK: - IGN (battery)
+
 struct IgnitionIcon: Shape {
     func path(in rect: CGRect) -> Path {
-        var path = Path()
+        var p = Path()
         let w = rect.width
         let h = rect.height
-        
-        // Battery body
-        path.addRoundedRect(in: CGRect(x: w * 0.1, y: h * 0.3, width: w * 0.8, height: h * 0.55), cornerSize: CGSize(width: 2, height: 2))
-        
-        // Battery terminals
-        path.addRect(CGRect(x: w * 0.2, y: h * 0.2, width: w * 0.2, height: h * 0.1))
-        path.addRect(CGRect(x: w * 0.6, y: h * 0.2, width: w * 0.2, height: h * 0.1))
-        
-        // Plus and Minus signs
-        // Minus (left)
-        path.move(to: CGPoint(x: w * 0.2, y: h * 0.575))
-        path.addLine(to: CGPoint(x: w * 0.4, y: h * 0.575))
-        
-        // Plus (right)
-        path.move(to: CGPoint(x: w * 0.6, y: h * 0.575))
-        path.addLine(to: CGPoint(x: w * 0.8, y: h * 0.575))
-        path.move(to: CGPoint(x: w * 0.7, y: h * 0.475))
-        path.addLine(to: CGPoint(x: w * 0.7, y: h * 0.675))
-        
-        return path
+        let bodyTop = h * 0.30
+        let bodyHeight = h * 0.55
+        let bodyRect = CGRect(x: w * 0.10, y: bodyTop, width: w * 0.80, height: bodyHeight)
+        p.addRoundedRect(in: bodyRect, cornerSize: CGSize(width: w * 0.06, height: w * 0.06))
+
+        // Two raised terminal nubs on top.
+        let termW = w * 0.18
+        let termH = h * 0.12
+        p.addRoundedRect(in: CGRect(x: w * 0.22, y: bodyTop - termH, width: termW, height: termH + 1),
+                         cornerSize: CGSize(width: 1, height: 1))
+        p.addRoundedRect(in: CGRect(x: w - w * 0.22 - termW, y: bodyTop - termH, width: termW, height: termH + 1),
+                         cornerSize: CGSize(width: 1, height: 1))
+
+        // Polarity markers: + on the right cell, − on the left.
+        let cellY = bodyTop + bodyHeight * 0.50
+        let minusLen = w * 0.16
+        let plusLen = w * 0.16
+        // Minus
+        p.move(to: CGPoint(x: w * 0.22, y: cellY))
+        p.addLine(to: CGPoint(x: w * 0.22 + minusLen, y: cellY))
+        // Plus (horizontal)
+        p.move(to: CGPoint(x: w - w * 0.22 - plusLen, y: cellY))
+        p.addLine(to: CGPoint(x: w - w * 0.22, y: cellY))
+        // Plus (vertical)
+        p.move(to: CGPoint(x: w - w * 0.22 - plusLen / 2, y: cellY - plusLen / 2))
+        p.addLine(to: CGPoint(x: w - w * 0.22 - plusLen / 2, y: cellY + plusLen / 2))
+
+        return p
     }
 }
+
+// MARK: - START (starter motor)
 
 struct StarterIcon: Shape {
     func path(in rect: CGRect) -> Path {
-        var path = Path()
+        var p = Path()
         let w = rect.width
         let h = rect.height
-        let center = CGPoint(x: w/2, y: h/2)
-        
-        // Circular arrow (Starter motor / circular movement)
-        path.addArc(center: center, radius: w * 0.35, startAngle: .degrees(45), endAngle: .degrees(315), clockwise: false)
-        
-        // Arrow head
-        path.move(to: CGPoint(x: w * 0.6, y: h * 0.1))
-        path.addLine(to: CGPoint(x: w * 0.85, y: h * 0.25))
-        path.addLine(to: CGPoint(x: w * 0.65, y: h * 0.45))
-        
-        // Inner "S" or bolt to suggest motor
-        path.move(to: CGPoint(x: w * 0.4, y: h * 0.4))
-        path.addLine(to: CGPoint(x: w * 0.6, y: h * 0.4))
-        path.addLine(to: CGPoint(x: w * 0.4, y: h * 0.6))
-        path.addLine(to: CGPoint(x: w * 0.6, y: h * 0.6))
-        
-        return path
+        let cx = w / 2
+        let cy = h / 2
+        let outerR = min(w, h) * 0.40
+
+        // Toothed gear: alternating outer and inner radii produce the teeth.
+        let toothCount = 10
+        let innerR = outerR * 0.78
+        for i in 0..<(toothCount * 2) {
+            let frac = CGFloat(i) / CGFloat(toothCount * 2)
+            let angle: CGFloat = frac * 2.0 * .pi - .pi / 2
+            let r = (i % 2 == 0) ? outerR : innerR
+            let x = cx + cos(angle) * r
+            let y = cy + sin(angle) * r
+            if i == 0 { p.move(to: CGPoint(x: x, y: y)) }
+            else { p.addLine(to: CGPoint(x: x, y: y)) }
+        }
+        p.closeSubpath()
+
+        // Central bore and lightning bolt (cranking power).
+        p.addEllipse(in: CGRect(x: cx - outerR * 0.18, y: cy - outerR * 0.18,
+                                width: outerR * 0.36, height: outerR * 0.36))
+
+        let boltTop = CGPoint(x: cx - outerR * 0.18, y: cy - outerR * 0.50)
+        let boltMidR = CGPoint(x: cx + outerR * 0.10, y: cy - outerR * 0.05)
+        let boltMidL = CGPoint(x: cx - outerR * 0.04, y: cy + outerR * 0.05)
+        let boltBottom = CGPoint(x: cx + outerR * 0.20, y: cy + outerR * 0.50)
+        p.move(to: boltTop)
+        p.addLine(to: boltMidR)
+        p.addLine(to: boltMidL)
+        p.addLine(to: boltBottom)
+
+        return p
     }
 }
+
+// MARK: - CLUTCH (disc)
 
 struct ClutchIcon: Shape {
     func path(in rect: CGRect) -> Path {
-        var path = Path()
+        var p = Path()
         let w = rect.width
         let h = rect.height
-        let center = CGPoint(x: w/2, y: h/2)
-        
-        // Clutch Pressure Plate / Disc Look
-        path.addEllipse(in: CGRect(x: w * 0.1, y: h * 0.1, width: w * 0.8, height: h * 0.8))
-        path.addEllipse(in: CGRect(x: w * 0.3, y: h * 0.3, width: w * 0.4, height: h * 0.4))
-        
-        // Friction material sections
-        for i in 0..<6 {
-            let angle = CGFloat(i) * .pi / 3
-            let inner = CGPoint(x: center.x + cos(angle) * w * 0.2, y: center.y + sin(angle) * h * 0.2)
-            let outer = CGPoint(x: center.x + cos(angle) * w * 0.4, y: center.y + sin(angle) * h * 0.4)
-            path.move(to: inner)
-            path.addLine(to: outer)
+        let cx = w / 2
+        let cy = h / 2
+        let outer = min(w, h) * 0.42
+        let inner = outer * 0.30
+
+        // Outer disc + central hub.
+        p.addEllipse(in: CGRect(x: cx - outer, y: cy - outer, width: outer * 2, height: outer * 2))
+        p.addEllipse(in: CGRect(x: cx - inner, y: cy - inner, width: inner * 2, height: inner * 2))
+
+        // Six friction pads arranged radially.
+        let padCount = 6
+        let padInner = outer * 0.45
+        let padOuter = outer * 0.82
+        let padHalfAngle: CGFloat = .pi / CGFloat(padCount) * 0.65
+        for i in 0..<padCount {
+            let baseAngle: CGFloat = CGFloat(i) * 2.0 * .pi / CGFloat(padCount) - .pi / 2
+            let p1 = CGPoint(x: cx + cos(baseAngle - padHalfAngle) * padInner,
+                             y: cy + sin(baseAngle - padHalfAngle) * padInner)
+            let p2 = CGPoint(x: cx + cos(baseAngle + padHalfAngle) * padInner,
+                             y: cy + sin(baseAngle + padHalfAngle) * padInner)
+            let p3 = CGPoint(x: cx + cos(baseAngle + padHalfAngle) * padOuter,
+                             y: cy + sin(baseAngle + padHalfAngle) * padOuter)
+            let p4 = CGPoint(x: cx + cos(baseAngle - padHalfAngle) * padOuter,
+                             y: cy + sin(baseAngle - padHalfAngle) * padOuter)
+            p.move(to: p1)
+            p.addLine(to: p2)
+            p.addLine(to: p3)
+            p.addLine(to: p4)
+            p.closeSubpath()
         }
-        
-        // Dashed outer ring for a more mechanical feel
-        for i in 0..<12 {
-            let angle = CGFloat(i) * .pi / 6
-            let start = CGPoint(x: center.x + cos(angle) * w * 0.42, y: center.y + sin(angle) * h * 0.42)
-            let end = CGPoint(x: center.x + cos(angle + 0.2) * w * 0.42, y: center.y + sin(angle + 0.2) * h * 0.42)
-            path.move(to: start)
-            path.addLine(to: end)
+
+        // Splines on the central hub.
+        let splineCount = 8
+        for i in 0..<splineCount {
+            let a: CGFloat = CGFloat(i) * 2.0 * .pi / CGFloat(splineCount)
+            let s = CGPoint(x: cx + cos(a) * inner * 0.55, y: cy + sin(a) * inner * 0.55)
+            let e = CGPoint(x: cx + cos(a) * inner * 0.95, y: cy + sin(a) * inner * 0.95)
+            p.move(to: s)
+            p.addLine(to: e)
         }
-        
-        return path
+
+        return p
     }
 }
+
+// MARK: - DYNO (roller drum)
 
 struct DynoIcon: Shape {
     func path(in rect: CGRect) -> Path {
-        var path = Path()
+        var p = Path()
         let w = rect.width
         let h = rect.height
-        
-        // "Check Engine" / Engine Block silhouette (common for Dyno/Engine status)
-        path.move(to: CGPoint(x: w * 0.2, y: h * 0.4))
-        path.addLine(to: CGPoint(x: w * 0.3, y: h * 0.4))
-        path.addLine(to: CGPoint(x: w * 0.3, y: h * 0.3))
-        path.addLine(to: CGPoint(x: w * 0.6, y: h * 0.3))
-        path.addLine(to: CGPoint(x: w * 0.6, y: h * 0.4))
-        path.addLine(to: CGPoint(x: w * 0.8, y: h * 0.4))
-        path.addLine(to: CGPoint(x: w * 0.8, y: h * 0.7))
-        path.addLine(to: CGPoint(x: w * 0.2, y: h * 0.7))
-        path.closeSubpath()
-        
-        // Fan/Pulley circle
-        path.addEllipse(in: CGRect(x: w * 0.35, y: h * 0.45, width: w * 0.2, height: h * 0.2))
-        
-        // Lightning bolt overlay to suggest "Power/Dyno"
-        path.move(to: CGPoint(x: w * 0.65, y: h * 0.35))
-        path.addLine(to: CGPoint(x: w * 0.55, y: h * 0.55))
-        path.addLine(to: CGPoint(x: w * 0.65, y: h * 0.55))
-        path.addLine(to: CGPoint(x: w * 0.5, y: h * 0.8))
-        
-        return path
+
+        // Horizontal drum: an oval cap on each end and a body rectangle between.
+        let drumLeft = w * 0.10
+        let drumRight = w * 0.90
+        let drumTop = h * 0.36
+        let drumBottom = h * 0.78
+        let drumHeight = drumBottom - drumTop
+        let capWidth = drumHeight * 0.45
+        let drumMid = (drumTop + drumBottom) / 2
+
+        // Drum body sides.
+        p.move(to: CGPoint(x: drumLeft + capWidth / 2, y: drumTop))
+        p.addLine(to: CGPoint(x: drumRight - capWidth / 2, y: drumTop))
+        p.move(to: CGPoint(x: drumLeft + capWidth / 2, y: drumBottom))
+        p.addLine(to: CGPoint(x: drumRight - capWidth / 2, y: drumBottom))
+        // End caps.
+        p.addEllipse(in: CGRect(x: drumLeft, y: drumTop, width: capWidth, height: drumHeight))
+        p.addEllipse(in: CGRect(x: drumRight - capWidth, y: drumTop, width: capWidth, height: drumHeight))
+
+        // Rotation indicator: curved arrow over the drum.
+        let arcCenter = CGPoint(x: w / 2, y: drumMid)
+        let arcR = drumHeight * 1.05
+        p.addArc(center: arcCenter, radius: arcR,
+                 startAngle: .degrees(195), endAngle: .degrees(345), clockwise: false)
+        // Arrowhead at the right end of the arc.
+        let tipAngle: CGFloat = -.pi / 9  // ≈ -20°
+        let tip = CGPoint(x: arcCenter.x + cos(tipAngle) * arcR,
+                          y: arcCenter.y + sin(tipAngle) * arcR)
+        let arrowSize = drumHeight * 0.35
+        p.move(to: tip)
+        p.addLine(to: CGPoint(x: tip.x - arrowSize, y: tip.y - arrowSize * 0.4))
+        p.move(to: tip)
+        p.addLine(to: CGPoint(x: tip.x - arrowSize * 0.3, y: tip.y + arrowSize))
+
+        // Small stand legs under the drum.
+        let legY = h * 0.90
+        p.move(to: CGPoint(x: drumLeft + capWidth / 2, y: drumBottom))
+        p.addLine(to: CGPoint(x: drumLeft + capWidth / 2 - capWidth * 0.4, y: legY))
+        p.move(to: CGPoint(x: drumRight - capWidth / 2, y: drumBottom))
+        p.addLine(to: CGPoint(x: drumRight - capWidth / 2 + capWidth * 0.4, y: legY))
+
+        return p
     }
 }
+
+// MARK: - HOLD (throttle latch)
 
 struct HoldIcon: Shape {
     func path(in rect: CGRect) -> Path {
-        var path = Path()
+        var p = Path()
         let w = rect.width
         let h = rect.height
-        let center = CGPoint(x: w/2, y: h * 0.6)
-        
-        // Speedometer-like "Cruise Control" / "Hold" icon
-        path.addArc(center: center, radius: w * 0.4, startAngle: .degrees(180), endAngle: .degrees(0), clockwise: false)
-        
-        // Tick marks
-        for i in 0...4 {
-            let angle = CGFloat(i) * .pi / 4 + .pi
-            let start = CGPoint(x: center.x + cos(angle) * w * 0.3, y: center.y + sin(angle) * h * 0.3)
-            let end = CGPoint(x: center.x + cos(angle) * w * 0.4, y: center.y + sin(angle) * h * 0.4)
-            path.move(to: start)
-            path.addLine(to: end)
-        }
-        
-        // Needle pointing at a fixed position
-        let needleAngle: CGFloat = -.pi / 4
-        path.move(to: center)
-        path.addLine(to: CGPoint(x: center.x + cos(needleAngle) * w * 0.35, y: center.y + sin(needleAngle) * h * 0.35))
-        
-        // "HOLD" lock base
-        path.addRoundedRect(in: CGRect(x: w * 0.4, y: h * 0.65, width: w * 0.2, height: h * 0.15), cornerSize: CGSize(width: 1, height: 1))
-        
-        return path
+
+        // Padlock body.
+        let bodyW = w * 0.55
+        let bodyH = h * 0.40
+        let bodyX = (w - bodyW) / 2
+        let bodyY = h * 0.50
+        p.addRoundedRect(in: CGRect(x: bodyX, y: bodyY, width: bodyW, height: bodyH),
+                         cornerSize: CGSize(width: w * 0.05, height: w * 0.05))
+
+        // Shackle (closed loop above the body).
+        let shackleCenterX = w / 2
+        let shackleR = bodyW * 0.32
+        let shackleCY = bodyY
+        p.move(to: CGPoint(x: shackleCenterX - shackleR, y: shackleCY))
+        p.addArc(center: CGPoint(x: shackleCenterX, y: shackleCY), radius: shackleR,
+                 startAngle: .degrees(180), endAngle: .degrees(0), clockwise: false)
+        p.addLine(to: CGPoint(x: shackleCenterX + shackleR, y: shackleCY + bodyH * 0.10))
+        p.move(to: CGPoint(x: shackleCenterX - shackleR, y: shackleCY))
+        p.addLine(to: CGPoint(x: shackleCenterX - shackleR, y: shackleCY + bodyH * 0.10))
+
+        // Keyhole inside the body.
+        let kx = w / 2
+        let ky = bodyY + bodyH * 0.45
+        p.addEllipse(in: CGRect(x: kx - bodyW * 0.06, y: ky - bodyW * 0.06,
+                                width: bodyW * 0.12, height: bodyW * 0.12))
+        p.move(to: CGPoint(x: kx, y: ky))
+        p.addLine(to: CGPoint(x: kx, y: bodyY + bodyH * 0.85))
+
+        return p
     }
 }
+
+// MARK: - CHECK ENGINE (engine block)
 
 struct CheckEngineIcon: Shape {
     func path(in rect: CGRect) -> Path {
-        var path = Path()
+        var p = Path()
         let w = rect.width
         let h = rect.height
-        
-        // Classic "Check Engine" silhouette
-        path.move(to: CGPoint(x: w * 0.15, y: h * 0.45))
-        path.addLine(to: CGPoint(x: w * 0.25, y: h * 0.45))
-        path.addLine(to: CGPoint(x: w * 0.25, y: h * 0.35))
-        path.addLine(to: CGPoint(x: w * 0.65, y: h * 0.35))
-        path.addLine(to: CGPoint(x: w * 0.65, y: h * 0.45))
-        path.addLine(to: CGPoint(x: w * 0.85, y: h * 0.45))
-        path.addLine(to: CGPoint(x: w * 0.85, y: h * 0.75))
-        path.addLine(to: CGPoint(x: w * 0.15, y: h * 0.75))
-        path.closeSubpath()
-        
-        // Air filter / intake box
-        path.addRect(CGRect(x: w * 0.3, y: h * 0.25, width: w * 0.3, height: h * 0.1))
-        
-        // Fan / pulley circle
-        path.addEllipse(in: CGRect(x: w * 0.4, y: h * 0.5, width: w * 0.15, height: h * 0.15))
-        
-        return path
+
+        // Stylised engine-block silhouette (rocker cover + sump).
+        p.move(to: CGPoint(x: w * 0.18, y: h * 0.40))
+        p.addLine(to: CGPoint(x: w * 0.32, y: h * 0.40))
+        p.addLine(to: CGPoint(x: w * 0.32, y: h * 0.28))
+        p.addLine(to: CGPoint(x: w * 0.68, y: h * 0.28))
+        p.addLine(to: CGPoint(x: w * 0.68, y: h * 0.40))
+        p.addLine(to: CGPoint(x: w * 0.86, y: h * 0.40))
+        p.addLine(to: CGPoint(x: w * 0.86, y: h * 0.72))
+        p.addLine(to: CGPoint(x: w * 0.74, y: h * 0.72))
+        p.addLine(to: CGPoint(x: w * 0.74, y: h * 0.84))
+        p.addLine(to: CGPoint(x: w * 0.26, y: h * 0.84))
+        p.addLine(to: CGPoint(x: w * 0.26, y: h * 0.72))
+        p.addLine(to: CGPoint(x: w * 0.14, y: h * 0.72))
+        p.closeSubpath()
+
+        // Intake snorkel sticking out the top.
+        p.addRect(CGRect(x: w * 0.42, y: h * 0.20, width: w * 0.16, height: h * 0.10))
+
+        // Pulley / fan circle.
+        p.addEllipse(in: CGRect(x: w * 0.42, y: h * 0.50, width: w * 0.16, height: h * 0.16))
+
+        // "Check" indicator: small exclamation mark in the lower-right.
+        let exX = w * 0.66
+        let exTop = h * 0.50
+        let exBottom = h * 0.66
+        p.move(to: CGPoint(x: exX, y: exTop))
+        p.addLine(to: CGPoint(x: exX, y: exBottom))
+        p.addEllipse(in: CGRect(x: exX - 1, y: exBottom + 2, width: 2, height: 2))
+
+        return p
     }
 }
-
