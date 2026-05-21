@@ -4,6 +4,12 @@ workspace/
 # Build directory
 build/
 build-debug/
+physics-simulation/engine-sim/build-ios-debug/
+physics-simulation/engine-sim/build-ios-sim-debug/
+physics-simulation/engine-sim/build-ios-sim/
+physics-simulation/engine-sim/build-ios/
+physics-simulation/engine-sim/include/thermal_system.h
+physics-simulation/engine-sim/src/thermal_system.cpp
 
 # clangd cache and code completion files
 .cache
