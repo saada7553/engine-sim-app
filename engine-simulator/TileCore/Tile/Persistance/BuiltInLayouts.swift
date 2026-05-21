@@ -98,9 +98,9 @@ enum BuiltInLayouts {
         rootData: BuiltInBuilder.split(.horizontal, [
             BuiltInBuilder.split(.vertical, [
                 BuiltInBuilder.leaf(.engine3DProcedural,
-                                    size: CGSize(width: 680, height: 520)),
+                                    size: CGSize(width: 680, height: 400)),
                 BuiltInBuilder.leaf(.engineControls,
-                                    size: CGSize(width: 680, height: 480)),
+                                    size: CGSize(width: 680, height: 600)),
             ], size: CGSize(width: 680, height: 1000)),
             BuiltInBuilder.split(.horizontal, [
                 BuiltInBuilder.split(.vertical, [

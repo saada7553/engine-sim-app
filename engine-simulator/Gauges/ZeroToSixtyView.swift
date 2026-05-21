@@ -36,12 +36,44 @@ private let availableTargets: [LaunchTarget] = [
 
 private let launchHysteresisMph: Double = 0.3   // forward-motion threshold for stop runs
 private let rollingMatchToleranceMph: Double = 2.0
-private let displayCornerRadius: CGFloat = 8
-private let buttonHeight: CGFloat = 44
-private let chipHeight: CGFloat = 34
+
+// Reference dimensions — everything below is multiplied by the smaller of
+// (actualWidth / referenceWidth, actualHeight / referenceHeight) so the
+// tile collapses gracefully when the user shrinks it in either axis. The
+// 420×300 reference matches the default Track-layout slot.
+private let referenceWidth: CGFloat = 420
+private let referenceHeight: CGFloat = 300
+private let minScale: CGFloat = 0.4
+private let maxScale: CGFloat = 1.4
+
+private let baseOuterPadding: CGFloat = 20
+private let baseVStackSpacing: CGFloat = 18
+private let baseTargetSelectorSpacing: CGFloat = 8
+private let baseButtonRowSpacing: CGFloat = 10
+private let baseStatusLineSpacing: CGFloat = 10
+private let baseSpeedRowSpacing: CGFloat = 6
+private let baseSpeedRowHorizontalPadding: CGFloat = 4
+
+private let baseDisplayCornerRadius: CGFloat = 8
+private let baseDisplayVerticalPadding: CGFloat = 18
+private let baseDisplayFontSize: CGFloat = 64
+private let baseButtonHeight: CGFloat = 44
+private let baseChipHeight: CGFloat = 34
+private let baseChipCornerRadius: CGFloat = 6
+private let baseButtonHorizontalPadding: CGFloat = 14
+private let baseChipHorizontalPadding: CGFloat = 12
+private let baseHeaderFontSize: CGFloat = 10
+private let baseStatusIconFontSize: CGFloat = 13
+private let baseStatusTextFontSize: CGFloat = 14
+private let baseSpeedLabelFontSize: CGFloat = 10
+private let baseSpeedValueFontSize: CGFloat = 15
+private let baseButtonFontSize: CGFloat = 13
+private let baseChipFontSize: CGFloat = 12
+private let textShrinkFloor: CGFloat = 0.5
+private let displayShrinkFloor: CGFloat = 0.3
+
 private let displayPanelFill = Color.white.opacity(0.04)
 private let displayPanelStroke = Color.white.opacity(0.12)
-private let chipCornerRadius: CGFloat = 6
 
 // MARK: - Phase model
 
@@ -62,114 +94,141 @@ struct ZeroToSixtyView: View {
     @State private var phase: LaunchPhase = .idle
 
     var body: some View {
-        VStack(spacing: 18) {
-            header
-            targetSelector
-            timeDisplay
-            statusLine
-            buttonRow
-            speedRow
+        GeometryReader { geo in
+            let scale = layoutScale(for: geo.size)
+            VStack(spacing: baseVStackSpacing * scale) {
+                header(scale: scale)
+                targetSelector(scale: scale)
+                timeDisplay(scale: scale)
+                statusLine(scale: scale)
+                buttonRow(scale: scale)
+                speedRow(scale: scale)
+            }
+            .padding(baseOuterPadding * scale)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            .background(Color.appBackground)
+            .onChange(of: vm.vehicleSpeed) { _, newSpeed in
+                handleSpeed(newSpeed)
+            }
+            .onChange(of: target) { _, _ in
+                // Switching the target while armed/mid-run is confusing — reset.
+                phase = .idle
+            }
         }
-        .padding(20)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color.appBackground)
-        .onChange(of: vm.vehicleSpeed) { _, newSpeed in
-            handleSpeed(newSpeed)
-        }
-        .onChange(of: target) { _, _ in
-            // Switching the target while armed/mid-run is confusing — reset.
-            phase = .idle
-        }
+    }
+
+    private func layoutScale(for size: CGSize) -> CGFloat {
+        let raw = min(size.width / referenceWidth, size.height / referenceHeight)
+        return max(minScale, min(maxScale, raw))
     }
 
     // MARK: Sub-views
 
-    private var header: some View {
+    private func header(scale: CGFloat) -> some View {
         HStack {
             Text("LAUNCH TIMER")
-                .modifier(RetroFont(size: 10))
+                .modifier(RetroFont(size: baseHeaderFontSize * scale))
                 .foregroundColor(.gray)
+                .lineLimit(1)
+                .minimumScaleFactor(textShrinkFloor)
             Spacer()
             Text(phaseHeaderLabel)
-                .modifier(RetroFont(size: 10, weight: .bold))
+                .modifier(RetroFont(size: baseHeaderFontSize * scale, weight: .bold))
                 .foregroundColor(phaseAccentColor)
                 .tracking(1.2)
+                .lineLimit(1)
+                .minimumScaleFactor(textShrinkFloor)
         }
     }
 
-    private var targetSelector: some View {
-        HStack(spacing: 8) {
+    private func targetSelector(scale: CGFloat) -> some View {
+        HStack(spacing: baseTargetSelectorSpacing * scale) {
             ForEach(availableTargets) { entry in
                 TargetChip(
                     label: entry.label,
                     selected: target.id == entry.id,
+                    scale: scale,
                     action: { target = entry }
                 )
             }
         }
     }
 
-    /// Big monospaced clock face. Dropped the "0 → 60 · SECONDS" subtext
-    /// — the target chip already says which run is selected and "seconds"
-    /// is obvious from the digit layout.
-    private var timeDisplay: some View {
+    /// Big monospaced clock face. Font scales with tile size and uses a
+    /// generous `minimumScaleFactor` so the digits never wrap or truncate
+    /// when the user narrows the tile.
+    private func timeDisplay(scale: CGFloat) -> some View {
         TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { context in
             Text(displayTimeString(at: context.date.timeIntervalSinceReferenceDate))
-                .font(.system(size: 64, weight: .regular, design: .monospaced))
+                .font(.system(size: baseDisplayFontSize * scale,
+                              weight: .regular,
+                              design: .monospaced))
                 .foregroundColor(.white)
+                .lineLimit(1)
+                .minimumScaleFactor(displayShrinkFloor)
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, 18)
+                .padding(.vertical, baseDisplayVerticalPadding * scale)
                 .background(
-                    RoundedRectangle(cornerRadius: displayCornerRadius)
+                    RoundedRectangle(cornerRadius: baseDisplayCornerRadius * scale)
                         .fill(displayPanelFill)
-                        .overlay(RoundedRectangle(cornerRadius: displayCornerRadius)
+                        .overlay(RoundedRectangle(cornerRadius: baseDisplayCornerRadius * scale)
                                     .stroke(displayPanelStroke, lineWidth: 1))
                 )
         }
     }
 
-    private var statusLine: some View {
-        HStack(spacing: 10) {
+    private func statusLine(scale: CGFloat) -> some View {
+        HStack(spacing: baseStatusLineSpacing * scale) {
             Image(systemName: statusIcon)
-                .font(.system(size: 13, weight: .semibold))
+                .font(.system(size: baseStatusIconFontSize * scale, weight: .semibold))
                 .foregroundColor(phaseAccentColor)
             Text(statusMessage)
-                .font(.system(size: 14))
+                .font(.system(size: baseStatusTextFontSize * scale))
                 .foregroundColor(.white.opacity(0.8))
+                .lineLimit(2)
+                .minimumScaleFactor(textShrinkFloor)
             Spacer()
         }
     }
 
-    private var buttonRow: some View {
-        HStack(spacing: 10) {
+    private func buttonRow(scale: CGFloat) -> some View {
+        HStack(spacing: baseButtonRowSpacing * scale) {
             TimerButton(
                 label: armButtonLabel,
                 style: .primary,
+                scale: scale,
                 action: handleArm
             )
             TimerButton(
                 label: "RESET",
                 style: .secondary,
+                scale: scale,
                 action: reset
             )
         }
     }
 
-    private var speedRow: some View {
-        HStack(spacing: 6) {
+    private func speedRow(scale: CGFloat) -> some View {
+        HStack(spacing: baseSpeedRowSpacing * scale) {
             Text("CURRENT")
-                .modifier(RetroFont(size: 10, weight: .bold))
+                .modifier(RetroFont(size: baseSpeedLabelFontSize * scale, weight: .bold))
                 .foregroundColor(.white.opacity(0.45))
                 .tracking(1.2)
+                .lineLimit(1)
+                .minimumScaleFactor(textShrinkFloor)
             Spacer()
             Text(String(format: "%.1f", vm.vehicleSpeed))
-                .modifier(RetroFont(size: 15))
+                .modifier(RetroFont(size: baseSpeedValueFontSize * scale))
                 .foregroundColor(.white)
+                .lineLimit(1)
+                .minimumScaleFactor(textShrinkFloor)
             Text("mph")
-                .modifier(RetroFont(size: 10))
+                .modifier(RetroFont(size: baseSpeedLabelFontSize * scale))
                 .foregroundColor(.white.opacity(0.45))
+                .lineLimit(1)
+                .minimumScaleFactor(textShrinkFloor)
         }
-        .padding(.horizontal, 4)
+        .padding(.horizontal, baseSpeedRowHorizontalPadding * scale)
     }
 
     // MARK: Phase-driven labels & colors
@@ -342,6 +401,7 @@ private enum TimerButtonStyle {
 private struct TimerButton: View {
     let label: String
     let style: TimerButtonStyle
+    let scale: CGFloat
     let action: () -> Void
     @State private var hovered = false
 
@@ -355,22 +415,24 @@ private struct TimerButton: View {
     var body: some View {
         Button(action: action) {
             Text(label)
-                .modifier(RetroFont(size: 13, weight: .bold))
+                .modifier(RetroFont(size: baseButtonFontSize * scale, weight: .bold))
                 .tracking(2)
                 .foregroundColor(hovered ? .white : accent)
+                .lineLimit(1)
+                .minimumScaleFactor(textShrinkFloor)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .padding(.horizontal, 14)
+                .padding(.horizontal, baseButtonHorizontalPadding * scale)
                 .background(
-                    RoundedRectangle(cornerRadius: chipCornerRadius)
+                    RoundedRectangle(cornerRadius: baseChipCornerRadius * scale)
                         .fill(hovered ? accent.opacity(0.18) : Color.white.opacity(0.04))
                 )
                 .overlay(
-                    RoundedRectangle(cornerRadius: chipCornerRadius)
+                    RoundedRectangle(cornerRadius: baseChipCornerRadius * scale)
                         .stroke(accent.opacity(hovered ? 0.85 : 0.5), lineWidth: 1)
                 )
         }
         .buttonStyle(.plain)
-        .frame(height: buttonHeight)
+        .frame(height: baseButtonHeight * scale)
         .onHover { hovered = $0 }
     }
 }
@@ -378,30 +440,33 @@ private struct TimerButton: View {
 private struct TargetChip: View {
     let label: String
     let selected: Bool
+    let scale: CGFloat
     let action: () -> Void
     @State private var hovered = false
 
     var body: some View {
         Button(action: action) {
             Text(label)
-                .modifier(RetroFont(size: 12, weight: .bold))
+                .modifier(RetroFont(size: baseChipFontSize * scale, weight: .bold))
                 .tracking(1.2)
                 .foregroundColor(selected ? .orange : (hovered ? .white : .white.opacity(0.55)))
+                .lineLimit(1)
+                .minimumScaleFactor(textShrinkFloor)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .padding(.horizontal, 12)
+                .padding(.horizontal, baseChipHorizontalPadding * scale)
                 .background(
-                    RoundedRectangle(cornerRadius: chipCornerRadius)
+                    RoundedRectangle(cornerRadius: baseChipCornerRadius * scale)
                         .fill(selected ? Color.orange.opacity(0.18)
                                        : (hovered ? Color.white.opacity(0.05) : Color.clear))
                 )
                 .overlay(
-                    RoundedRectangle(cornerRadius: chipCornerRadius)
+                    RoundedRectangle(cornerRadius: baseChipCornerRadius * scale)
                         .stroke(selected ? Color.orange.opacity(0.7) : Color.white.opacity(0.18),
                                 lineWidth: 1)
                 )
         }
         .buttonStyle(.plain)
-        .frame(height: chipHeight)
+        .frame(height: baseChipHeight * scale)
         .onHover { hovered = $0 }
     }
 }

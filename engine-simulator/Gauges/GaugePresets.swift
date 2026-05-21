@@ -222,7 +222,13 @@ enum GaugePresets {
 
     // MARK: - Air SCFM
 
-    /// Air flow gauge configuration (Standard Cubic Feet per Minute)
+    /// Air flow gauge configuration (Standard Cubic Feet per Minute).
+    ///
+    /// Range capped at 500 SCFM. The built-in engines top out around
+    /// 250 SCFM (small NA) to ~540 SCFM (5L V8 at redline, ~90% VE); a
+    /// 1200 SCFM dial left the needle asleep below the halfway point.
+    /// 500 covers every catalog engine and leaves room for a beefier
+    /// custom build to peg the gauge, which is itself informative.
     static func airScfm() -> GaugeConfiguration {
         return GaugeConfiguration(
             title: "AIR SCFM",
@@ -230,16 +236,16 @@ enum GaugePresets {
             precision: 1,
             spaceBeforeUnit: false,
             minValue: 0,
-            maxValue: 1200,
+            maxValue: 500,
             gamma: 1.0,
             ticks: GaugeTickConfig(
-                minorStep: 20,
-                majorStep: 100,
+                minorStep: 10,
+                majorStep: 50,
                 minorTickWidth: 1,
                 majorTickWidth: 2,
                 minorTickLength: 5,
                 majorTickLength: 10,
-                maxMinorTick: 1200
+                maxMinorTick: 500
             ),
             needle: GaugeNeedleConfig(
                 innerRadiusRatio: -0.1,

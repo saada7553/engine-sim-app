@@ -1,16 +1,25 @@
 import SwiftUI
 import WebKit
 
+/// RevenueCat sandbox key. Swap to the production key on release.
+private let revenueCatAPIKey = "test_ZYpdwVJIKcNhwMICqAkYNPRCGur"
+
 @main
 struct TileSurfApp: App {
     @StateObject private var rootViewModel: RootViewModel
     @StateObject private var engineViewModel: EngineViewModel
+    @StateObject private var purchaseManager: PurchaseManager
     @State private var keyboardController: KeyboardController
 
     init() {
+        // Boot RevenueCat before any view binds to PurchaseManager — the
+        // singleton subscribes to customerInfoStream during bootstrap.
+        PurchaseManager.configure(apiKey: revenueCatAPIKey)
+
         let oscilloscopeManager = OscilloscopeManager()
         let engineViewModelInst = EngineViewModel(oscillioscopeManager: oscilloscopeManager)
         self._engineViewModel = StateObject(wrappedValue: engineViewModelInst)
+        self._purchaseManager = StateObject(wrappedValue: PurchaseManager.shared)
         // Resolve the layout to boot into. Order: last-used (per UserDefaults)
         // → Default. The lookup goes through TileStore.shared.layouts, which
         // already merges built-ins with user-saved layouts, so a custom one
@@ -41,6 +50,7 @@ struct TileSurfApp: App {
             } detail: {
                 detailView
             }
+            .environmentObject(purchaseManager)
             .background(Color.appBackground)
             .toolbarBackground(Color.appBackground, for: .windowToolbar)
             .toolbarColorScheme(.dark, for: .windowToolbar)

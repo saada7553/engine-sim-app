@@ -159,8 +159,13 @@ struct EngineBuilderView: View {
     }
 
     private func save() {
-        EngineLibrary.shared.saveUserEngine(state.spec)
-        onClose()
+        // Gated: lets the user design freely, but committing the engine to
+        // the library is a Pro feature. PurchaseManager raises the paywall
+        // when the user isn't entitled; the save + close run on a Pro user.
+        PurchaseManager.shared.gatePro {
+            EngineLibrary.shared.saveUserEngine(state.spec)
+            onClose()
+        }
     }
 }
 

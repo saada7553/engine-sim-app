@@ -35,6 +35,7 @@ struct SideBarView: View {
     @ObservedObject private var tileStore: TileStore = .shared
     @ObservedObject private var engineLibrary: EngineLibrary = .shared
     @ObservedObject var rootViewModel: RootViewModel
+    @EnvironmentObject private var purchaseManager: PurchaseManager
 
     var body: some View {
         VStack(spacing: 0) {
@@ -65,7 +66,7 @@ struct SideBarView: View {
                 EngineRow(
                     entry: entry,
                     isSelected: engineLibrary.selectedEngineId == entry.id,
-                    onSelect: { engineLibrary.selectedEngineId = entry.id },
+                    onSelect: { selectEngine(entry) },
                     onDelete: { engineLibrary.deleteUserEngine(id: entry.id) }
                 )
             }
@@ -95,6 +96,18 @@ struct SideBarView: View {
             if rootViewModel.isLayoutDirty {
                 UnsavedLayoutRow(onSave: { rootViewModel.presentSaveLayout() })
             }
+        }
+    }
+
+    /// Switch to `entry` if it's free or the user owns Pro; otherwise raise
+    /// the paywall and leave the current selection alone.
+    private func selectEngine(_ entry: EngineEntry) {
+        if engineLibrary.isPaywalled(entry.id) {
+            purchaseManager.gatePro {
+                engineLibrary.selectedEngineId = entry.id
+            }
+        } else {
+            engineLibrary.selectedEngineId = entry.id
         }
     }
 

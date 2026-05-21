@@ -10,6 +10,13 @@ import SwiftUI
 
 struct TileView: View {
     @ObservedObject var tile: TileViewModel
+    /// Observe the engine VM directly so `engineId` / `redline` / config
+    /// changes propagate to `body`. `@ObservedObject` on a nested class
+    /// property inside `TileViewModel` doesn't republish through
+    /// `TileViewModel.objectWillChange`, so without this an engine swap
+    /// would not re-run `getView()` — the gauges would stay keyed to the
+    /// old `engineResetId` and keep the previous engine's redline / bands.
+    @ObservedObject var engineVm: EngineViewModel
     let isFocused: Bool
     let browserMode: BrowserMode
     let isHovered: Bool
@@ -40,8 +47,10 @@ struct TileView: View {
         // Hard-reset hook: any view that should fully re-create when the user
         // picks a new engine gets `.id(engineResetId)`. Tied to the current
         // EngineLibrary selection so gauges drop their needle physics, the 3D
-        // view rebuilds its assembly, etc.
-        let engineResetId = tile.engineVm.engineId ?? UUID()
+        // view rebuilds its assembly, etc. Reads from `engineVm` (the
+        // @ObservedObject) so SwiftUI re-runs body — and recomputes this id
+        // — when the engine swaps.
+        let engineResetId = engineVm.engineId ?? UUID()
 
         switch tile.data.type {
         case .select:

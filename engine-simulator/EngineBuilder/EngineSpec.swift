@@ -20,6 +20,7 @@ enum EngineLayout: String, Codable, CaseIterable, Identifiable {
     case v8_90
     case v10_72
     case v12_60
+    case v12_75
     case flat4
     case flat6
 
@@ -36,6 +37,7 @@ enum EngineLayout: String, Codable, CaseIterable, Identifiable {
         case .v8_90:   return "V8 (90°)"
         case .v10_72:  return "V10 (72°)"
         case .v12_60:  return "V12 (60°)"
+        case .v12_75:  return "V12 (75°)"
         case .flat4:   return "Flat 4"
         case .flat6:   return "Flat 6"
         }
@@ -50,7 +52,7 @@ enum EngineLayout: String, Codable, CaseIterable, Identifiable {
         case .v6_60, .v6_90:   return "V6"
         case .v8_90:           return "V8"
         case .v10_72:          return "V10"
-        case .v12_60:          return "V12"
+        case .v12_60, .v12_75: return "V12"
         case .flat4:           return "F4"
         case .flat6:           return "F6"
         }
@@ -64,14 +66,14 @@ enum EngineLayout: String, Codable, CaseIterable, Identifiable {
         case .inline6, .v6_60, .v6_90, .flat6: return 6
         case .v8_90:                    return 8
         case .v10_72:                   return 10
-        case .v12_60:                   return 12
+        case .v12_60, .v12_75:          return 12
         }
     }
 
     var bankCount: Int {
         switch self {
         case .inline3, .inline4, .inline5, .inline6: return 1
-        case .v6_60, .v6_90, .v8_90, .v10_72, .v12_60: return 2
+        case .v6_60, .v6_90, .v8_90, .v10_72, .v12_60, .v12_75: return 2
         case .flat4, .flat6: return 2
         }
     }
@@ -83,6 +85,7 @@ enum EngineLayout: String, Codable, CaseIterable, Identifiable {
         case .v6_60, .v12_60: return 30
         case .v8_90, .v6_90:  return 45
         case .v10_72:         return 36
+        case .v12_75:         return 37.5
         case .flat4, .flat6:  return 90
         }
     }
@@ -97,7 +100,7 @@ enum EngineLayout: String, Codable, CaseIterable, Identifiable {
         case .v6_60, .v6_90: return [1, 4, 2, 5, 3, 6]
         case .v8_90:    return [1, 8, 4, 3, 6, 5, 7, 2]
         case .v10_72:   return [1, 6, 5, 10, 2, 7, 3, 8, 4, 9]
-        case .v12_60:   return [1, 12, 5, 8, 3, 10, 6, 7, 2, 11, 4, 9]
+        case .v12_60, .v12_75: return [1, 12, 5, 8, 3, 10, 6, 7, 2, 11, 4, 9]
         case .flat4:    return [1, 3, 2, 4]
         // For a boxer-6 (bank0 = odd, bank1 = even), each bank must contain
         // one cylinder at each crank-pin angle (0°, 120°, 240°). With the

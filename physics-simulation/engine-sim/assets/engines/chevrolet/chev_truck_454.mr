@@ -226,3 +226,32 @@ public node chev_truck_454 {
         )
     )
 }
+
+private node chev_truck_454_vehicle {
+    alias output __out:
+        vehicle(
+            mass: 5500 * units.lb,
+            drag_coefficient: 0.45,
+            cross_sectional_area: (80 * units.inch) * (70 * units.inch),
+            diff_ratio: 4.10,
+            tire_radius: 15 * units.inch,
+            rolling_resistance: 700 * units.N
+        );
+}
+
+private node chev_truck_454_transmission {
+    alias output __out:
+        transmission(
+            max_clutch_torque: 800 * units.lb_ft
+        )
+        .add_gear(2.48)
+        .add_gear(1.48)
+        .add_gear(1.00)
+        .add_gear(0.75);
+}
+
+public node main {
+    set_engine(chev_truck_454())
+    set_vehicle(chev_truck_454_vehicle())
+    set_transmission(chev_truck_454_transmission())
+}

@@ -10,6 +10,7 @@ import SwiftUI
 
 struct RootView: View {
     @ObservedObject public var vm: RootViewModel
+    @EnvironmentObject private var purchaseManager: PurchaseManager
 
     var body: some View {
         ZStack {
@@ -59,6 +60,9 @@ struct RootView: View {
                 .disabled(vm.pendingLayoutName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
         } message: {
             Text("Name this tile arrangement to keep it in your layouts list.")
+        }
+        .sheet(isPresented: $purchaseManager.isPresentingPaywall) {
+            PaywallSheet(manager: purchaseManager)
         }
     }
 }

@@ -25,10 +25,30 @@ private let peakTorqueFraction: Double = 0.72
 private let topGearShiftFraction: Double = 0.98
 private let preShiftBlankFraction: Double = 0.65   // RPM below this leaves the bar dark
 private let flashPeriodSeconds: Double = 0.10      // strobing cadence above shift point
-private let ledSpacing: CGFloat = 6
-private let ledHeight: CGFloat = 22
-private let ledCornerRadius: CGFloat = 3
-private let panelCornerRadius: CGFloat = 8
+
+// Reference dimensions for the layout. All sizes below are scaled by
+// (actualHeight / referenceHeight), clamped to [minScale, maxScale], so the
+// tile collapses cleanly when the user drags it shorter than the 140-px
+// default it ships with in the Track layout.
+private let referenceHeight: CGFloat = 140
+private let minScale: CGFloat = 0.35
+private let maxScale: CGFloat = 1.4
+
+private let baseLedSpacing: CGFloat = 6
+private let baseLedHeight: CGFloat = 22
+private let baseLedCornerRadius: CGFloat = 3
+private let basePanelCornerRadius: CGFloat = 8
+private let basePadding: CGFloat = 16
+private let basePanelPadding: CGFloat = 12
+private let baseVStackSpacing: CGFloat = 14
+private let baseReadoutSpacing: CGFloat = 18
+private let baseGlowRadius: CGFloat = 8
+private let baseHeaderFontSize: CGFloat = 10
+private let baseBadgeFontSize: CGFloat = 9
+private let baseReadoutLabelFontSize: CGFloat = 8
+private let baseReadoutValueFontSize: CGFloat = 22
+private let textShrinkFloor: CGFloat = 0.5
+
 private let panelStrokeColor = Color.white.opacity(0.12)
 private let panelFill = Color.white.opacity(0.03)
 private let ledOffColor = Color.white.opacity(0.06)
@@ -36,7 +56,6 @@ private let ledOffStroke = Color.white.opacity(0.10)
 private let ledGreenColor = Color.green
 private let ledYellowColor = Color.yellow
 private let ledRedColor = Color.red
-private let glowRadius: CGFloat = 8
 
 // MARK: - View
 
@@ -44,33 +63,45 @@ struct ShiftLightView: View {
     @ObservedObject var vm: EngineViewModel
 
     var body: some View {
-        VStack(spacing: 14) {
-            header
-            ledBar
-            readouts
+        GeometryReader { geo in
+            let scale = layoutScale(for: geo.size)
+            VStack(spacing: baseVStackSpacing * scale) {
+                header(scale: scale)
+                ledBar(scale: scale)
+                readouts(scale: scale)
+            }
+            .padding(basePadding * scale)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            .background(Color.appBackground)
         }
-        .padding(16)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color.appBackground)
     }
 
-    private var header: some View {
+    private func layoutScale(for size: CGSize) -> CGFloat {
+        let raw = size.height / referenceHeight
+        return max(minScale, min(maxScale, raw))
+    }
+
+    private func header(scale: CGFloat) -> some View {
         HStack {
             Text("SHIFT LIGHT")
-                .modifier(RetroFont(size: 10))
+                .modifier(RetroFont(size: baseHeaderFontSize * scale))
                 .foregroundColor(.gray)
+                .lineLimit(1)
+                .minimumScaleFactor(textShrinkFloor)
             Spacer()
-            statusBadge
+            statusBadge(scale: scale)
         }
     }
 
-    private var statusBadge: some View {
+    private func statusBadge(scale: CGFloat) -> some View {
         let progress = currentProgress
         let (label, color) = statusFor(progress: progress)
         return Text(label)
-            .modifier(RetroFont(size: 9, weight: .bold))
+            .modifier(RetroFont(size: baseBadgeFontSize * scale, weight: .bold))
             .foregroundColor(color)
             .tracking(1.2)
+            .lineLimit(1)
+            .minimumScaleFactor(textShrinkFloor)
     }
 
     private func statusFor(progress: Double) -> (String, Color) {
@@ -80,62 +111,73 @@ struct ShiftLightView: View {
         return ("OVER REV", .red)
     }
 
-    private var ledBar: some View {
+    private func ledBar(scale: CGFloat) -> some View {
         TimelineView(.animation(minimumInterval: 1.0 / 60.0)) { context in
-            HStack(spacing: ledSpacing) {
+            HStack(spacing: baseLedSpacing * scale) {
                 ForEach(0..<ledCount, id: \.self) { idx in
-                    led(at: idx, now: context.date.timeIntervalSinceReferenceDate)
+                    led(at: idx,
+                        now: context.date.timeIntervalSinceReferenceDate,
+                        scale: scale)
                 }
             }
-            .padding(12)
+            .padding(basePanelPadding * scale)
             .background(
-                RoundedRectangle(cornerRadius: panelCornerRadius)
+                RoundedRectangle(cornerRadius: basePanelCornerRadius * scale)
                     .fill(panelFill)
-                    .overlay(RoundedRectangle(cornerRadius: panelCornerRadius)
+                    .overlay(RoundedRectangle(cornerRadius: basePanelCornerRadius * scale)
                                 .stroke(panelStrokeColor, lineWidth: 1))
             )
         }
         .frame(maxWidth: .infinity)
     }
 
-    private func led(at idx: Int, now: TimeInterval) -> some View {
+    private func led(at idx: Int, now: TimeInterval, scale: CGFloat) -> some View {
         let lit = shouldLight(idx: idx, now: now)
         let color = ledColor(for: idx)
-        return RoundedRectangle(cornerRadius: ledCornerRadius)
+        let corner = baseLedCornerRadius * scale
+        return RoundedRectangle(cornerRadius: corner)
             .fill(lit ? color : ledOffColor)
             .overlay(
-                RoundedRectangle(cornerRadius: ledCornerRadius)
+                RoundedRectangle(cornerRadius: corner)
                     .stroke(lit ? color.opacity(0.9) : ledOffStroke, lineWidth: 1)
             )
-            .frame(height: ledHeight)
+            .frame(height: baseLedHeight * scale)
             .frame(maxWidth: .infinity)
-            .shadow(color: lit ? color.opacity(0.85) : .clear, radius: glowRadius)
+            .shadow(color: lit ? color.opacity(0.85) : .clear,
+                    radius: baseGlowRadius * scale)
     }
 
-    private var readouts: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 18) {
+    private func readouts(scale: CGFloat) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: baseReadoutSpacing * scale) {
             readout(label: "RPM",
                     value: "\(Int(vm.rpm))",
-                    color: .white)
+                    color: .white,
+                    scale: scale)
             readout(label: "OPTIMAL",
                     value: "\(Int(shiftRpm))",
-                    color: .orange)
+                    color: .orange,
+                    scale: scale)
             readout(label: "GEAR",
                     value: vm.gear == -1 ? "N" : "\(vm.gear + 1)",
-                    color: vm.gear == -1 ? .green : .orange)
+                    color: vm.gear == -1 ? .green : .orange,
+                    scale: scale)
             Spacer()
         }
     }
 
-    private func readout(label: String, value: String, color: Color) -> some View {
+    private func readout(label: String, value: String, color: Color, scale: CGFloat) -> some View {
         VStack(alignment: .leading, spacing: 1) {
             Text(label)
-                .modifier(RetroFont(size: 8, weight: .bold))
+                .modifier(RetroFont(size: baseReadoutLabelFontSize * scale, weight: .bold))
                 .foregroundColor(.white.opacity(0.45))
                 .tracking(1.2)
+                .lineLimit(1)
+                .minimumScaleFactor(textShrinkFloor)
             Text(value)
-                .modifier(RetroFont(size: 22))
+                .modifier(RetroFont(size: baseReadoutValueFontSize * scale))
                 .foregroundColor(color)
+                .lineLimit(1)
+                .minimumScaleFactor(textShrinkFloor)
         }
     }
 

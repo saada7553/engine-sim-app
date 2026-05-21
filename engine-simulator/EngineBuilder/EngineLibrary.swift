@@ -40,18 +40,51 @@ private struct BuiltInEntry {
 }
 
 private let builtInCatalog: [BuiltInEntry] = [
+    // Metro lives at index 0 so it shows up first in the sidebar and acts
+    // as the free / default selection. The other engines below are
+    // Pro-gated; selecting any of them runs through the paywall.
+    BuiltInEntry(name: "Geo Metro G10", displacement: "1.0L", cylinders: 3,
+                 relativePath: "engines/atg-video-2/00_geo_metro_g10.mr",
+                 stableUUID: BuiltInEngineIds.geoMetroG10),
+    BuiltInEntry(name: "Suzuki Hayabusa", displacement: "1.3L", cylinders: 4,
+                 relativePath: "engines/atg-video-1/04_hayabusa.mr",
+                 stableUUID: BuiltInEngineIds.suzukiHayabusa),
+    BuiltInEntry(name: "Honda F20C (VTEC)", displacement: "2.0L", cylinders: 4,
+                 relativePath: "engines/atg-video-1/05_honda_vtec.mr",
+                 stableUUID: BuiltInEngineIds.hondaVtecF20C),
+    BuiltInEntry(name: "Audi 2.2 I5", displacement: "2.2L", cylinders: 5,
+                 relativePath: "engines/audi/i5.mr",
+                 stableUUID: BuiltInEngineIds.audiI5),
+    BuiltInEntry(name: "Subaru EJ25 (Equal-Length Headers)", displacement: "2.5L", cylinders: 4,
+                 relativePath: "engines/atg-video-2/01_subaru_ej25_eh.mr",
+                 stableUUID: BuiltInEngineIds.subaruEJ25EH),
+    BuiltInEntry(name: "Subaru EJ25 (Boxer Rumble)", displacement: "2.5L", cylinders: 4,
+                 relativePath: "engines/atg-video-2/02_subaru_ej25_uh.mr",
+                 stableUUID: BuiltInEngineIds.subaruEJ25UH),
+    BuiltInEntry(name: "BMW M52B28", displacement: "2.8L", cylinders: 6,
+                 relativePath: "engines/bmw/M52B28.mr",
+                 stableUUID: BuiltInEngineIds.bmwM52B28),
     BuiltInEntry(name: "Toyota 2JZ", displacement: "3.0L", cylinders: 6,
                  relativePath: "engines/atg-video-2/03_2jz.mr",
-                 stableUUID: UUID(uuidString: "11111111-0000-0000-0000-000000000001")!),
-    BuiltInEntry(name: "GM LS V8", displacement: "5.7L", cylinders: 8,
-                 relativePath: "engines/atg-video-2/07_gm_ls.mr",
-                 stableUUID: UUID(uuidString: "11111111-0000-0000-0000-000000000002")!),
+                 stableUUID: BuiltInEngineIds.toyota2jz),
+    BuiltInEntry(name: "Ferrari 412 T2 (F1)", displacement: "3.0L", cylinders: 12,
+                 relativePath: "engines/atg-video-2/12_ferrari_412_t2.mr",
+                 stableUUID: BuiltInEngineIds.ferrari412T2),
     BuiltInEntry(name: "Ferrari F136 V8", displacement: "4.5L", cylinders: 8,
                  relativePath: "engines/atg-video-2/08_ferrari_f136_v8.mr",
-                 stableUUID: UUID(uuidString: "11111111-0000-0000-0000-000000000003")!),
+                 stableUUID: BuiltInEngineIds.ferrariF136),
     BuiltInEntry(name: "Lexus LFA V10", displacement: "4.8L", cylinders: 10,
                  relativePath: "engines/atg-video-2/10_lfa_v10.mr",
-                 stableUUID: UUID(uuidString: "11111111-0000-0000-0000-000000000004")!),
+                 stableUUID: BuiltInEngineIds.lexusLFA),
+    BuiltInEntry(name: "GM LS V8", displacement: "5.7L", cylinders: 8,
+                 relativePath: "engines/atg-video-2/07_gm_ls.mr",
+                 stableUUID: BuiltInEngineIds.gmLsV8),
+    BuiltInEntry(name: "Chevy 454 Big Block", displacement: "7.4L", cylinders: 8,
+                 relativePath: "engines/chevrolet/chev_truck_454.mr",
+                 stableUUID: BuiltInEngineIds.chevy454),
+    BuiltInEntry(name: "Rolls-Royce Merlin V12", displacement: "27.0L", cylinders: 12,
+                 relativePath: "engines/atg-video-2/11_merlin_v12.mr",
+                 stableUUID: BuiltInEngineIds.merlinV12),
 ]
 
 // MARK: - Persistence layout
@@ -89,10 +122,25 @@ final class EngineLibrary: ObservableObject {
     @Published private(set) var entries: [EngineEntry] = []
     @Published var selectedEngineId: UUID?
 
+    /// IDs that don't require a Pro entitlement to load. Anything not in
+    /// this set runs through the paywall on selection.
+    static let freeEngineIds: Set<UUID> = [
+        BuiltInEngineIds.geoMetroG10
+    ]
+
     private init() {
         ensureUserEnginesDirectory()
         reloadEntries()
         selectedEngineId = entries.first?.id   // default selection = first built-in
+    }
+
+    /// Whether selecting `entryId` should require a Pro entitlement. Free
+    /// engines and the engine that's already selected pass through; every
+    /// other engine (built-in or user-saved) is gated.
+    func isPaywalled(_ entryId: UUID) -> Bool {
+        if Self.freeEngineIds.contains(entryId) { return false }
+        if selectedEngineId == entryId { return false }
+        return true
     }
 
     // MARK: Public API

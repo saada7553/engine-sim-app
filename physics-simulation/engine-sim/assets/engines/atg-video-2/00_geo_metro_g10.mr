@@ -1,0 +1,331 @@
+// Geo Metro / Suzuki G10 — 1.0L SOHC inline-3, ~55 hp.
+// Free-tier engine for the simulator. Numbers approximate the 1989-2001
+// Geo Metro: small bore + stroke, mild SOHC cam, tiny intake, light
+// flywheel, narrow 5-speed gearbox, 1800 lb car. Runs, idles, revs to
+// ~6500 — just very slow, which is the point.
+
+import "engine_sim.mr"
+
+units units()
+constants constants()
+impulse_response_library ir_lib()
+
+label cycle(2 * 360 * units.deg)
+
+private node wires {
+    output wire1: ignition_wire();
+    output wire2: ignition_wire();
+    output wire3: ignition_wire();
+}
+
+private node metro_g10_head {
+    input intake_camshaft;
+    input exhaust_camshaft;
+    input flip_display: false;
+    alias output __out: head;
+
+    // Small port, modest flow — Metro head doesn't breathe much.
+    function intake_flow(50 * units.thou)
+    intake_flow
+        .add_flow_sample(0,    0)
+        .add_flow_sample(50,   38)
+        .add_flow_sample(100,  74)
+        .add_flow_sample(150,  108)
+        .add_flow_sample(200,  140)
+        .add_flow_sample(250,  166)
+        .add_flow_sample(300,  186)
+        .add_flow_sample(350,  198)
+        .add_flow_sample(400,  204)
+        .add_flow_sample(450,  206)
+
+    function exhaust_flow(50 * units.thou)
+    exhaust_flow
+        .add_flow_sample(0,    0)
+        .add_flow_sample(50,   24)
+        .add_flow_sample(100,  48)
+        .add_flow_sample(150,  76)
+        .add_flow_sample(200,  108)
+        .add_flow_sample(250,  136)
+        .add_flow_sample(300,  158)
+        .add_flow_sample(350,  170)
+        .add_flow_sample(400,  178)
+        .add_flow_sample(450,  180)
+
+    generic_cylinder_head head(
+        chamber_volume: 39 * units.cc,
+        intake_runner_volume: 80 * units.cc,
+        intake_runner_cross_section_area: 1.2 * units.inch * 1.2 * units.inch,
+        exhaust_runner_volume: 35 * units.cc,
+        exhaust_runner_cross_section_area: 1.0 * units.inch * 1.0 * units.inch,
+        intake_port_flow: intake_flow,
+        exhaust_port_flow: exhaust_flow,
+        valvetrain: standard_valvetrain(
+            intake_camshaft: intake_camshaft,
+            exhaust_camshaft: exhaust_camshaft
+        ),
+        flip_display: flip_display
+    )
+}
+
+private node metro_g10_camshaft {
+    input lobe_profile;
+    input intake_lobe_profile: lobe_profile;
+    input exhaust_lobe_profile: lobe_profile;
+    input lobe_separation: 110 * units.deg;
+    input intake_lobe_center: lobe_separation;
+    input exhaust_lobe_center: lobe_separation;
+    input advance: 0 * units.deg;
+    input base_radius: 0.55 * units.inch;
+
+    output intake_cam_0: _intake_cam_0;
+    output exhaust_cam_0: _exhaust_cam_0;
+
+    camshaft_parameters params(advance: advance, base_radius: base_radius)
+    camshaft _intake_cam_0(params, lobe_profile: intake_lobe_profile)
+    camshaft _exhaust_cam_0(params, lobe_profile: exhaust_lobe_profile)
+
+    // 720°/3 cylinders = 240° between firings. Firing order 1-3-2 → cyl 1
+    // fires first (pos 0), cyl 3 second (pos 1), cyl 2 third (pos 2).
+    label rot(240 * units.deg)
+    label rot360(360 * units.deg)
+
+    _intake_cam_0
+        .add_lobe(rot360 + intake_lobe_center + 0 * rot) // cyl 1 — pos 0
+        .add_lobe(rot360 + intake_lobe_center + 2 * rot) // cyl 2 — pos 2
+        .add_lobe(rot360 + intake_lobe_center + 1 * rot) // cyl 3 — pos 1
+    _exhaust_cam_0
+        .add_lobe(rot360 - exhaust_lobe_center + 0 * rot)
+        .add_lobe(rot360 - exhaust_lobe_center + 2 * rot)
+        .add_lobe(rot360 - exhaust_lobe_center + 1 * rot)
+}
+
+public node geo_metro_g10 {
+    alias output __out: engine;
+
+    engine engine(
+        name: "Geo Metro G10",
+        starter_torque: 80 * units.lb_ft,
+        starter_speed: 350 * units.rpm,
+        redline: 6500 * units.rpm,
+        fuel: fuel(max_burning_efficiency: 0.90),
+        throttle_gamma: 1.7,
+        hf_gain: 0.01,
+        noise: 1.0,
+        jitter: 0.4,
+        simulation_frequency: 10000
+    )
+
+    wires wires()
+
+    label stroke(77 * units.mm)
+    label bore(73.96 * units.mm)
+    label rod_length(120 * units.mm)
+    label rod_mass(400 * units.g)
+    label compression_height(30 * units.mm)
+    label crank_mass(9 * units.kg)
+    label flywheel_mass(5 * units.kg)
+    label flywheel_radius(5 * units.inch)
+
+    label crank_moment(
+        disk_moment_of_inertia(mass: crank_mass, radius: stroke / 2)
+    )
+    label flywheel_moment(
+        disk_moment_of_inertia(mass: flywheel_mass, radius: flywheel_radius)
+    )
+    label other_moment(
+        disk_moment_of_inertia(mass: 4 * units.kg, radius: 5.0 * units.cm)
+    )
+
+    crankshaft c0(
+        throw: stroke / 2,
+        flywheel_mass: flywheel_mass,
+        mass: crank_mass,
+        friction_torque: 4.0 * units.lb_ft,
+        moment_of_inertia: crank_moment + flywheel_moment + other_moment,
+        position_x: 0.0,
+        position_y: 0.0,
+        tdc: constants.pi / 2
+    )
+
+    // Firing order 1-3-2, 240° between firings.
+    rod_journal rj0(angle:   0.0 * units.deg) // cyl 1 — pos 0
+    rod_journal rj1(angle: 480.0 * units.deg) // cyl 2 — pos 2 (= 120° mod 360)
+    rod_journal rj2(angle: 240.0 * units.deg) // cyl 3 — pos 1
+
+    c0
+        .add_rod_journal(rj0)
+        .add_rod_journal(rj1)
+        .add_rod_journal(rj2)
+
+    piston_parameters piston_params(
+        mass: 200 * units.g,
+        blowby: 0,
+        compression_height: compression_height,
+        wrist_pin_position: 0 * units.mm,
+        displacement: 0.0
+    )
+
+    connecting_rod_parameters cr_params(
+        mass: rod_mass,
+        moment_of_inertia: rod_moment_of_inertia(
+            mass: rod_mass,
+            length: rod_length
+        ),
+        center_of_mass: 0.0,
+        length: rod_length
+    )
+
+    intake intake(
+        plenum_volume: 0.5 * units.L,
+        plenum_cross_section_area: 6 * units.cm2,
+        intake_flow_rate: k_carb(150.0),
+        runner_flow_rate: k_carb(70.0),
+        runner_length: 8.0 * units.inch,
+        idle_flow_rate: k_carb(0.0),
+        idle_throttle_plate_position: 0.997,
+        velocity_decay: 1.0
+    )
+
+    exhaust_system_parameters es_params(
+        outlet_flow_rate: k_carb(300.0),
+        primary_tube_length: 18.0 * units.inch,
+        primary_flow_rate: k_carb(140.0),
+        velocity_decay: 1.0,
+        collector_cross_section_area: circle_area(0.9 * units.inch)
+    )
+
+    exhaust_system exhaust0(
+        es_params,
+        length: 70 * units.inch,
+        audio_volume: 0.18,
+        impulse_response: ir_lib.minimal_muffling_02
+    )
+
+    cylinder_bank_parameters bank_params(
+        bore: bore,
+        deck_height: stroke / 2 + rod_length + compression_height
+    )
+
+    cylinder_bank b0(bank_params, angle: 0.0 * units.deg)
+
+    b0
+        .add_cylinder(
+            piston: piston(piston_params, blowby: k_28inH2O(0.1)),
+            connecting_rod: connecting_rod(cr_params),
+            rod_journal: rj0,
+            intake: intake,
+            exhaust_system: exhaust0,
+            ignition_wire: wires.wire1,
+            primary_length: 4.0 * units.inch,
+            sound_attenuation: 1.0
+        )
+        .add_cylinder(
+            piston: piston(piston_params, blowby: k_28inH2O(0.1)),
+            connecting_rod: connecting_rod(cr_params),
+            rod_journal: rj1,
+            intake: intake,
+            exhaust_system: exhaust0,
+            ignition_wire: wires.wire2,
+            primary_length: 3.0 * units.inch,
+            sound_attenuation: 1.0
+        )
+        .add_cylinder(
+            piston: piston(piston_params, blowby: k_28inH2O(0.1)),
+            connecting_rod: connecting_rod(cr_params),
+            rod_journal: rj2,
+            intake: intake,
+            exhaust_system: exhaust0,
+            ignition_wire: wires.wire3,
+            primary_length: 2.0 * units.inch,
+            sound_attenuation: 1.0
+        )
+
+    engine
+        .add_cylinder_bank(b0)
+
+    engine.add_crankshaft(c0)
+
+    harmonic_cam_lobe intake_lobe(
+        duration_at_50_thou: 200 * units.deg,
+        gamma: 1.1,
+        lift: 7.5 * units.mm,
+        steps: 100
+    )
+
+    harmonic_cam_lobe exhaust_lobe(
+        duration_at_50_thou: 200 * units.deg,
+        gamma: 1.1,
+        lift: 7.2 * units.mm,
+        steps: 100
+    )
+
+    metro_g10_camshaft camshaft(
+        lobe_profile: "N/A",
+        intake_lobe_profile: intake_lobe,
+        exhaust_lobe_profile: exhaust_lobe,
+        intake_lobe_center: 110 * units.deg,
+        exhaust_lobe_center: 110 * units.deg,
+        base_radius: 0.55 * units.inch
+    )
+
+    b0.set_cylinder_head(
+        metro_g10_head(
+            intake_camshaft: camshaft.intake_cam_0,
+            exhaust_camshaft: camshaft.exhaust_cam_0
+        )
+    )
+
+    function timing_curve(1000 * units.rpm)
+    timing_curve
+        .add_sample(0    * units.rpm, 10 * units.deg)
+        .add_sample(1000 * units.rpm, 14 * units.deg)
+        .add_sample(2000 * units.rpm, 22 * units.deg)
+        .add_sample(3000 * units.rpm, 28 * units.deg)
+        .add_sample(4000 * units.rpm, 30 * units.deg)
+        .add_sample(5000 * units.rpm, 30 * units.deg)
+        .add_sample(6000 * units.rpm, 28 * units.deg)
+
+    ignition_module ignition_module(
+        timing_curve: timing_curve,
+        rev_limit: 6700 * units.rpm,
+        limiter_duration: 0.15
+    )
+    ignition_module
+        .connect_wire(wires.wire1, (0.0 / 3.0) * cycle)
+        .connect_wire(wires.wire3, (1.0 / 3.0) * cycle)
+        .connect_wire(wires.wire2, (2.0 / 3.0) * cycle)
+
+    engine.add_ignition_module(ignition_module)
+}
+
+label car_mass(1800 * units.lb)
+
+private node metro_vehicle {
+    alias output __out:
+        vehicle(
+            mass: car_mass,
+            drag_coefficient: 0.31,
+            cross_sectional_area: (60 * units.inch) * (54 * units.inch),
+            diff_ratio: 3.789,
+            tire_radius: 11 * units.inch,
+            rolling_resistance: 0.018 * car_mass * 9.81
+        );
+}
+
+private node metro_transmission {
+    alias output __out:
+        transmission(
+            max_clutch_torque: 120 * units.lb_ft
+        )
+            .add_gear(3.78)   // 1st — short, gets it moving
+            .add_gear(2.11)
+            .add_gear(1.40)
+            .add_gear(1.06)
+            .add_gear(0.81);  // 5th — fuel-economy overdrive
+}
+
+public node main {
+    set_engine(geo_metro_g10())
+    set_vehicle(metro_vehicle())
+    set_transmission(metro_transmission())
+}

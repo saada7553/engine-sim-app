@@ -220,3 +220,33 @@ public node audi_i5_2_2L {
         )
     )
 }
+
+private node audi_i5_vehicle {
+    alias output __out:
+        vehicle(
+            mass: 2800 * units.lb,
+            drag_coefficient: 0.34,
+            cross_sectional_area: (67 * units.inch) * (55 * units.inch),
+            diff_ratio: 3.89,
+            tire_radius: 12 * units.inch,
+            rolling_resistance: 480 * units.N
+        );
+}
+
+private node audi_i5_transmission {
+    alias output __out:
+        transmission(
+            max_clutch_torque: 350 * units.lb_ft
+        )
+        .add_gear(3.50)
+        .add_gear(1.94)
+        .add_gear(1.32)
+        .add_gear(1.03)
+        .add_gear(0.84);
+}
+
+public node main {
+    set_engine(audi_i5_2_2L())
+    set_vehicle(audi_i5_vehicle())
+    set_transmission(audi_i5_transmission())
+}

@@ -342,3 +342,33 @@ public node M52B28 {
             rev_limit: 8000 * units.rpm
         ))
 }
+
+private node m52b28_vehicle {
+    alias output __out:
+        vehicle(
+            mass: 3196 * units.lb,
+            drag_coefficient: 0.34,
+            cross_sectional_area: (68 * units.inch) * (55 * units.inch),
+            diff_ratio: 2.93,
+            tire_radius: 12.6 * units.inch,
+            rolling_resistance: 500 * units.N
+        );
+}
+
+private node m52b28_transmission {
+    alias output __out:
+        transmission(
+            max_clutch_torque: 500 * units.lb_ft
+        )
+        .add_gear(4.21)
+        .add_gear(2.49)
+        .add_gear(1.66)
+        .add_gear(1.24)
+        .add_gear(1.00);
+}
+
+public node main {
+    set_engine(M52B28())
+    set_vehicle(m52b28_vehicle())
+    set_transmission(m52b28_transmission())
+}

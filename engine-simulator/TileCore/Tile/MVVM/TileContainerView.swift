@@ -33,6 +33,7 @@ struct TileContainerView: View {
     var tileView: some View {
         TileView(
             tile: tile,
+            engineVm: tile.engineVm,
             isFocused: focusedTile.id == tile.id,
             browserMode: browserMode,
             isHovered: hoveredTile?.id == tile.id,
