@@ -325,17 +325,12 @@
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UIRequiresFullScreen = YES;
 				INFOPLIST_KEY_UIStatusBarHidden = YES;
-				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
-				"INFOPLIST_KEY_UISupportedInterfaceOrientations~ipad" = "UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationLandscapeLeft;
+				"INFOPLIST_KEY_UISupportedInterfaceOrientations~ipad" = UIInterfaceOrientationLandscapeLeft;
 				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
-				);
-				"LIBRARY_SEARCH_PATHS[sdk=macosx*]" = (
-					"$(inherited)",
-					"$(PROJECT_DIR)/physics-simulation/engine-sim/build-debug/lib",
-					/opt/homebrew/lib,
 				);
 				"LIBRARY_SEARCH_PATHS[sdk=iphoneos*]" = (
 					"$(inherited)",
@@ -345,10 +340,23 @@
 					"$(inherited)",
 					"$(PROJECT_DIR)/physics-simulation/engine-sim/build-ios-sim-debug/lib",
 				);
+				"LIBRARY_SEARCH_PATHS[sdk=macosx*]" = (
+					"$(inherited)",
+					"$(PROJECT_DIR)/physics-simulation/engine-sim/build-debug/lib",
+					/opt/homebrew/lib,
+				);
 				MARKETING_VERSION = 1.0;
 				OTHER_LDFLAGS = "-lengine-sim-all";
-				"OTHER_LDFLAGS[sdk=iphoneos*]" = "-lengine-sim-all -framework AVFoundation";
-				"OTHER_LDFLAGS[sdk=iphonesimulator*]" = "-lengine-sim-all -framework AVFoundation";
+				"OTHER_LDFLAGS[sdk=iphoneos*]" = (
+					"-lengine-sim-all",
+					"-framework",
+					AVFoundation,
+				);
+				"OTHER_LDFLAGS[sdk=iphonesimulator*]" = (
+					"-lengine-sim-all",
+					"-framework",
+					AVFoundation,
+				);
 				PRODUCT_BUNDLE_IDENTIFIER = "com.simulation.engine-simulator";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = YES;
@@ -387,17 +395,12 @@
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UIRequiresFullScreen = YES;
 				INFOPLIST_KEY_UIStatusBarHidden = YES;
-				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
-				"INFOPLIST_KEY_UISupportedInterfaceOrientations~ipad" = "UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationLandscapeLeft;
+				"INFOPLIST_KEY_UISupportedInterfaceOrientations~ipad" = UIInterfaceOrientationLandscapeLeft;
 				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
-				);
-				"LIBRARY_SEARCH_PATHS[sdk=macosx*]" = (
-					"$(inherited)",
-					"$(PROJECT_DIR)/physics-simulation/engine-sim/build/lib",
-					/opt/homebrew/lib,
 				);
 				"LIBRARY_SEARCH_PATHS[sdk=iphoneos*]" = (
 					"$(inherited)",
@@ -407,10 +410,23 @@
 					"$(inherited)",
 					"$(PROJECT_DIR)/physics-simulation/engine-sim/build-ios-sim/lib",
 				);
+				"LIBRARY_SEARCH_PATHS[sdk=macosx*]" = (
+					"$(inherited)",
+					"$(PROJECT_DIR)/physics-simulation/engine-sim/build/lib",
+					/opt/homebrew/lib,
+				);
 				MARKETING_VERSION = 1.0;
 				OTHER_LDFLAGS = "-lengine-sim-all";
-				"OTHER_LDFLAGS[sdk=iphoneos*]" = "-lengine-sim-all -framework AVFoundation";
-				"OTHER_LDFLAGS[sdk=iphonesimulator*]" = "-lengine-sim-all -framework AVFoundation";
+				"OTHER_LDFLAGS[sdk=iphoneos*]" = (
+					"-lengine-sim-all",
+					"-framework",
+					AVFoundation,
+				);
+				"OTHER_LDFLAGS[sdk=iphonesimulator*]" = (
+					"-lengine-sim-all",
+					"-framework",
+					AVFoundation,
+				);
 				PRODUCT_BUNDLE_IDENTIFIER = "com.simulation.engine-simulator";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = YES;

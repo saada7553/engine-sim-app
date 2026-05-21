@@ -44,7 +44,14 @@ private let rollingMatchToleranceMph: Double = 2.0
 private let referenceWidth: CGFloat = 420
 private let referenceHeight: CGFloat = 300
 private let minScale: CGFloat = 0.4
+// iOS caps at 1.0 because the iOS base font sizes are already calibrated
+// for a 1.0 scale + the global 0.7 scaleEffect. Letting scale grow past
+// 1.0 pushed the timer's six stacked rows past the tile's bottom edge.
+#if os(macOS)
 private let maxScale: CGFloat = 1.4
+#else
+private let maxScale: CGFloat = 1.0
+#endif
 
 private let baseOuterPadding: CGFloat = 20
 private let baseVStackSpacing: CGFloat = 18
@@ -59,15 +66,20 @@ private let baseDisplayVerticalPadding: CGFloat = 18
 #if os(macOS)
 private let baseDisplayFontSize: CGFloat = 88
 #else
-private let baseDisplayFontSize: CGFloat = 130
+// Was 130 — at maxScale 1.4 + the global 0.7 scale that's ~127pt visual
+// for just the clock face, which pushed the buttons/speed rows below the
+// tile's bottom edge. 92 + the new maxScale=1.0 ceiling lands at ~64pt
+// visual: readable from across a desk, fits the tile.
+private let baseDisplayFontSize: CGFloat = 92
 #endif
 private let baseButtonHeight: CGFloat = 44
 private let baseChipHeight: CGFloat = 34
 private let baseChipCornerRadius: CGFloat = 6
 private let baseButtonHorizontalPadding: CGFloat = 14
 private let baseChipHorizontalPadding: CGFloat = 12
-// Both platforms get bumped; iOS gets an extra factor to undo the global
-// 0.7 scaleEffect.
+// iOS bases sized for maxScale=1.0 + global 0.7 → text reads at ~10–18pt
+// visual depending on element. Was tuned for maxScale=1.4 which was too
+// aggressive and bumped content past the tile bottom.
 #if os(macOS)
 private let baseHeaderFontSize: CGFloat = 14
 private let baseStatusIconFontSize: CGFloat = 18
@@ -77,13 +89,13 @@ private let baseSpeedValueFontSize: CGFloat = 22
 private let baseButtonFontSize: CGFloat = 18
 private let baseChipFontSize: CGFloat = 17
 #else
-private let baseHeaderFontSize: CGFloat = 22
-private let baseStatusIconFontSize: CGFloat = 28
-private let baseStatusTextFontSize: CGFloat = 30
-private let baseSpeedLabelFontSize: CGFloat = 22
-private let baseSpeedValueFontSize: CGFloat = 34
-private let baseButtonFontSize: CGFloat = 28
-private let baseChipFontSize: CGFloat = 26
+private let baseHeaderFontSize: CGFloat = 17
+private let baseStatusIconFontSize: CGFloat = 22
+private let baseStatusTextFontSize: CGFloat = 23
+private let baseSpeedLabelFontSize: CGFloat = 17
+private let baseSpeedValueFontSize: CGFloat = 26
+private let baseButtonFontSize: CGFloat = 22
+private let baseChipFontSize: CGFloat = 20
 #endif
 private let textShrinkFloor: CGFloat = 0.5
 private let displayShrinkFloor: CGFloat = 0.3
@@ -118,7 +130,9 @@ struct ZeroToSixtyView: View {
                 timeDisplay(scale: scale)
                 statusLine(scale: scale)
                 buttonRow(scale: scale)
-                speedRow(scale: scale)
+                // Speed readout row removed — speedometer tile + the
+                // launch target chip already cover that info, and the
+                // extra row was eating into the timer's tile height.
             }
             .padding(baseOuterPadding * scale)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)

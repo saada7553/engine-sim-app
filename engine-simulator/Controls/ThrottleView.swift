@@ -287,12 +287,10 @@ private struct ClutchCrossSection: View {
                     height: h * clutchPressurePlateHeightFraction
                 )
 
-                // ENGAGED / SLIPPING / DISENGAGED label only matters on
-                // macOS where the precision slider gives a continuous state
-                // — on iOS the clutch is binary-toggled from the top bar.
-                #if os(macOS)
-                StateLabel(disengageAmount: disengageAmount)
-                #endif
+                // ENGAGED / SLIPPING / DISENGAGED label removed on both
+                // platforms — the visible plate gap + the CLUTCH dash
+                // indicator already convey state, the floating label was
+                // noise.
             }
             .animation(.spring(response: 0.22, dampingFraction: 0.78), value: clutchPressure)
         }

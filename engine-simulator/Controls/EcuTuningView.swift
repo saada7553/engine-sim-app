@@ -256,6 +256,9 @@ private struct EcuTuningEditor: View {
                 .shadow(color: .black.opacity(0.7), radius: 1)
                 .lineLimit(1)
                 .minimumScaleFactor(0.6)
+                // Mono digits keep each cell's text from re-centering as
+                // values change while the user paints.
+                .monospacedDigit()
         }
     }
 
@@ -314,11 +317,15 @@ private struct EcuTuningEditor: View {
                 Text(cellLabel(coord))
                     .modifier(RetroFont(size: 9))
                     .foregroundColor(.white.opacity(0.7))
+                    .monospacedDigit()
+                    .frame(width: 140, alignment: .leading)
                 Text(formatValue(value))
                     .modifier(RetroFont(size: 16))
                     .foregroundColor(.white)
+                    .monospacedDigit()
+                    .frame(width: 140, alignment: .leading)
             }
-            .frame(minWidth: 140, alignment: .leading)
+            .frame(width: 140, alignment: .leading)
 
             HStack(spacing: 3) {
                 EditButton(label: "− \(formatStep(stepBumpScale))") {
@@ -364,23 +371,32 @@ private struct EcuTuningEditor: View {
                 Text(cellLabel(displayCell))
                     .modifier(RetroFont(size: 8))
                     .foregroundColor(.white.opacity(0.55))
+                    .monospacedDigit()
+                    .frame(width: 90, alignment: .leading)
                 Text(formatValue(ecu.value(in: activeMap, at: displayCell)))
                     .modifier(RetroFont(size: 12))
                     .foregroundColor(.white)
+                    .monospacedDigit()
+                    .frame(width: 90, alignment: .leading)
             }
-            .frame(minWidth: 90, alignment: .leading)
+            .frame(width: 90, alignment: .leading)
 
-            ForEach(IosPaintMode.allOptions, id: \.self) { mode in
-                IosPaintPill(
-                    label: mode.label(step: mapStep()),
-                    active: paintMode == mode,
-                    accent: mode.accent
-                ) {
-                    paintMode = (paintMode == mode) ? nil : mode
+            // Centered paint-mode pills — only ± at the bigger step now
+            // (4 buttons was too many; the small step is rarely the
+            // useful one when you can also drag-paint freely).
+            Spacer()
+            HStack(spacing: 8) {
+                ForEach(iosPaintOptions, id: \.self) { mode in
+                    IosPaintPill(
+                        label: mode.label(step: mapStep()),
+                        active: paintMode == mode,
+                        accent: mode.accent
+                    ) {
+                        paintMode = (paintMode == mode) ? nil : mode
+                    }
                 }
             }
-
-            Spacer(minLength: 4)
+            Spacer()
 
             SmallActionButton(label: "SMOOTH") { ecu.smooth(activeMap) }
             SmallActionButton(label: "RESET") { ecu.reset(activeMap) }
@@ -389,6 +405,10 @@ private struct EcuTuningEditor: View {
         .padding(.vertical, 5)
         .background(RoundedRectangle(cornerRadius: 4).fill(Color.white.opacity(0.04)))
     }
+
+    /// Just the big-step ± modes. We expose only these on iOS — the small
+    /// step is rarely what you want when you can drag across many cells.
+    private var iosPaintOptions: [IosPaintMode] { [.decBig, .incBig] }
 
     /// Compact stack of live engine telemetry on iOS — narrower than the
     /// macOS row so it sits on a single line at iPad widths.
@@ -689,6 +709,11 @@ private struct EditButton: View {
 private struct Readout: View {
     let label: String
     let value: String
+    /// Fixed width pinned to the worst-case value so the row doesn't shift
+    /// when digits arrive (e.g. RPM going from "0" → "8500"). Each readout
+    /// reserves enough room for its label *and* its widest expected value.
+    var valueWidth: CGFloat = 56
+
     var body: some View {
         VStack(alignment: .leading, spacing: 1) {
             Text(label)
@@ -697,6 +722,11 @@ private struct Readout: View {
             Text(value)
                 .modifier(RetroFont(size: 11))
                 .foregroundColor(.white)
+                // Mono digits + a fixed leading-aligned frame: digits
+                // never reflow even as the value grows.
+                .monospacedDigit()
+                .frame(width: valueWidth, alignment: .leading)
         }
+        .frame(width: valueWidth, alignment: .leading)
     }
 }

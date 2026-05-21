@@ -24,6 +24,12 @@ private let iosSidebarWidth: CGFloat = 260
 /// tune the whole iOS app at once.
 private let iosGlobalScale: CGFloat = 0.7
 
+/// Small inset on the iPhone leading edge (notch-free side after the
+/// landscape-left orientation lock). The safe area there is ignored so the
+/// sidebar / app chrome can run almost to the corner, but a sliver of
+/// padding keeps content out of the rounded-corner cut-off.
+private let iosLeadingInset: CGFloat = 14
+
 @main
 struct TileSurfApp: App {
     @StateObject private var rootViewModel: RootViewModel
@@ -98,11 +104,12 @@ struct TileSurfApp: App {
         #if os(macOS)
         rootScene
         #else
-        // iPad has no notch — ignoring safe area here gives the builder
-        // and tile area the full screen, which is what the user expects on
-        // a flat slab. iPhone landscape DOES have a notch cutting into one
-        // long edge, so we leave the safe area in place there to keep the
-        // sidebar's leading column clear of the cutout.
+        // Orientation is locked to landscape-left so the iPhone notch is
+        // always on the RIGHT edge. We ignore the safe area on the left,
+        // top, and bottom (status bar is hidden, home indicator is a thin
+        // bar that doesn't visually clash) but keep the RIGHT safe area
+        // so content never hides behind the notch. A small leading inset
+        // keeps the sidebar out of the rounded-corner cut-off.
         let isPad = UIDevice.current.userInterfaceIdiom == .pad
         GeometryReader { geo in
             rootScene
@@ -112,7 +119,12 @@ struct TileSurfApp: App {
                 )
                 .scaleEffect(iosGlobalScale, anchor: .topLeading)
         }
-        .ignoresSafeArea(.container, edges: isPad ? .all : [])
+        .padding(.leading, isPad ? 0 : iosLeadingInset)
+        // Respect the BOTTOM safe area on iPhone so the home indicator
+        // doesn't sit on top of dashboard content (this was clipping the
+        // 0-60 timer's Run / Reset buttons when the sidebar collapsed and
+        // the timer column reflowed).
+        .ignoresSafeArea(.container, edges: isPad ? .all : [.leading, .top])
         #endif
     }
 

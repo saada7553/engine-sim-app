@@ -124,6 +124,9 @@ struct SideBarView: View {
 struct SidebarHeader: View {
     var body: some View {
         VStack(spacing: 0) {
+            // Centered branding — no trailing Spacer so the engine glyph
+            // and "engine-sim" text sit together in the middle of the
+            // sidebar header instead of hugging the leading edge.
             HStack(spacing: 10) {
                 Image(systemName: "engine.combustion.fill")
                     .font(.system(size: 16))
@@ -131,8 +134,8 @@ struct SidebarHeader: View {
                 Text("engine-sim")
                     .font(.system(size: 15, weight: .semibold))
                     .foregroundColor(.white)
-                Spacer()
             }
+            .frame(maxWidth: .infinity, alignment: .center)
             .padding(.horizontal, 16)
             .padding(.vertical, 14)
 

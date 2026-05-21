@@ -260,12 +260,15 @@ enum BuiltInLayouts {
             BuiltInBuilder.leaf(.shiftLight,
                                 size: CGSize(width: 1600, height: 140)),
             BuiltInBuilder.split(.horizontal, [
-                // Left: H-shifter on top, 0-60 timer underneath.
+                // Left: 0-60 timer on top, H-shifter below. Timer first
+                // because it was being clipped at the bottom by the home
+                // indicator + bottom safe area when placed in the bottom
+                // half; moving it above sidesteps that entirely.
                 BuiltInBuilder.split(.vertical, [
-                    BuiltInBuilder.leaf(.engineControls,
-                                        size: CGSize(width: 360, height: 560)),
                     BuiltInBuilder.leaf(.zeroToSixtyTimer,
-                                        size: CGSize(width: 360, height: 300)),
+                                        size: CGSize(width: 360, height: 420)),
+                    BuiltInBuilder.leaf(.engineControls,
+                                        size: CGSize(width: 360, height: 440)),
                 ], size: CGSize(width: 360, height: 860)),
                 // Middle: 3D engine on top, clutch + intake drawings under.
                 BuiltInBuilder.split(.vertical, [

@@ -99,28 +99,12 @@ struct CustomTopBar: View {
             StarterButton(running: vm.isStarterOn) {
                 vm.toggleStarter()
             }
-        }
-    }
 
-    // MARK: Right — warning-light cluster
-
-    private var rightCluster: some View {
-        HStack(spacing: 8) {
-            // IGN and CRANK already have dedicated buttons in the left
-            // cluster on iOS (ArmedIgnitionSwitch + StarterButton); the
-            // duplicate indicator tiles are redundant there, so they only
-            // render on macOS where the keyboard drives those toggles.
-            #if os(macOS)
-            DashWarningTile(label: "IGN",    active: vm.isIgnitionOn,  accent: .red)    { IgnitionIcon() }
-            DashWarningTile(label: "CRANK",  active: vm.isStarterOn,   accent: .green)  { StarterIcon() }
-            DashWarningTile(label: "CLUTCH", active: vm.clutchPressed, accent: .blue)   { ClutchIcon() }
-            DashWarningTile(label: "DYNO",   active: vm.dynoEnabled,   accent: .orange) { DynoIcon() }
-            // HOLD only on macOS — on iOS the throttle slider auto-holds
-            // its position so the indicator is redundant.
-            DashWarningTile(label: "HOLD",   active: vm.throttleHeld,  accent: .yellow) { HoldIcon() }
-            #else
-            // CLUTCH and DYNO are tappable on iOS — pressing the indicator
-            // toggles the underlying state (K and D on macOS).
+            #if !os(macOS)
+            // iOS: tappable CLUTCH + DYNO sit next to the ignition + starter
+            // so all the on/off controls live in one cluster on the left.
+            // The right side stays reserved for the throttle slider + shift
+            // buttons (right-thumb territory).
             DashWarningTile(label: "CLUTCH",
                             active: vm.clutchPressed,
                             accent: .blue,
@@ -129,6 +113,28 @@ struct CustomTopBar: View {
                             active: vm.dynoEnabled,
                             accent: .orange,
                             onTap: { vm.toggleDyno() }) { DynoIcon() }
+            #endif
+        }
+    }
+
+    // MARK: Right — warning-light cluster
+
+    private var rightCluster: some View {
+        HStack(spacing: 8) {
+            // macOS keeps CLUTCH / DYNO / HOLD as passive indicators on
+            // the right side (the keyboard drives the toggles). On iOS
+            // CLUTCH and DYNO moved into the left cluster as tappable
+            // tiles next to the ignition + starter, and HOLD is gone
+            // (the throttle slider auto-holds its position), so iOS has
+            // nothing left to show here.
+            #if os(macOS)
+            DashWarningTile(label: "IGN",    active: vm.isIgnitionOn,  accent: .red)    { IgnitionIcon() }
+            DashWarningTile(label: "CRANK",  active: vm.isStarterOn,   accent: .green)  { StarterIcon() }
+            DashWarningTile(label: "CLUTCH", active: vm.clutchPressed, accent: .blue)   { ClutchIcon() }
+            DashWarningTile(label: "DYNO",   active: vm.dynoEnabled,   accent: .orange) { DynoIcon() }
+            DashWarningTile(label: "HOLD",   active: vm.throttleHeld,  accent: .yellow) { HoldIcon() }
+            #else
+            EmptyView()
             #endif
         }
     }
@@ -279,47 +285,43 @@ private struct WorkspaceToolButton: View {
 // Chrome bezel labelled OFF / RUN with a paddle that travels between the
 // two positions. A small LED at the base lights red when ignition is on.
 
+// Shared "dash red" used by every red-accented control in the top bar
+// (ignition switch lit RUN, starter button face, LED dots). One source of
+// truth so the ignition and starter never drift to slightly different reds.
+private let dashRed = Color(red: 1.00, green: 0.18, blue: 0.18)
+private let dashRedDeep = Color(red: 0.45, green: 0.05, blue: 0.05)
+private let dashRedDim = Color(red: 0.78, green: 0.10, blue: 0.10)
+private let dashRedDimDeep = Color(red: 0.20, green: 0.02, blue: 0.02)
+
+// Hand-built dashboard rocker switch: stacked RUN / OFF readouts with the
+// active label lit in accent red, separated by a thin "detent" rule, with
+// a small LED dot at the bottom. Drawn entirely from SwiftUI primitives —
+// no SF Symbol — so the typography and proportions match the rest of the
+// hand-built dash chrome.
 private struct ArmedIgnitionSwitch: View {
     let isOn: Bool
     let toggle: () -> Void
 
     var body: some View {
         VStack(spacing: 4) {
+            // Label only on macOS — the iOS rocker face already reads
+            // RUN / OFF / ARMED, so the redundant "IGNITION" header above
+            // it is just visual clutter on a smaller screen.
+            #if os(macOS)
             Text("IGNITION")
                 .modifier(RetroFont(size: 8))
                 .foregroundColor(.gray)
+            #endif
 
             Button(action: toggle) {
                 ZStack {
                     bezel
-
-                    // OFF / RUN side labels.
-                    VStack(spacing: 0) {
-                        Text("RUN").modifier(RetroFont(size: 6))
-                            .foregroundColor(isOn ? .red.opacity(0.95) : .white.opacity(0.35))
-                            .frame(maxHeight: .infinity)
-                        Text("OFF").modifier(RetroFont(size: 6))
-                            .foregroundColor(!isOn ? .white.opacity(0.85) : .white.opacity(0.25))
-                            .frame(maxHeight: .infinity)
-                    }
-                    .padding(.vertical, 2)
-                    .frame(width: 22)
-                    .offset(x: -18)
-
-                    paddle
-                        .offset(y: isOn ? -10 : 10)
-
-                    // Armed LED at the bottom of the bezel.
-                    Circle()
-                        .fill(isOn ? Color.red : Color.red.opacity(0.18))
-                        .frame(width: 4, height: 4)
-                        .shadow(color: isOn ? .red.opacity(0.9) : .clear, radius: 3)
-                        .offset(x: 14, y: 22)
+                    rockerFace
                 }
-                .frame(width: 64, height: 54)
+                .frame(width: 52, height: 54)
             }
             .buttonStyle(.plain)
-            .animation(.spring(response: 0.32, dampingFraction: 0.55), value: isOn)
+            .animation(.easeInOut(duration: 0.18), value: isOn)
         }
     }
 
@@ -333,36 +335,48 @@ private struct ArmedIgnitionSwitch: View {
                                            startPoint: .topLeading, endPoint: .bottomTrailing),
                             lineWidth: 1)
             )
-            .overlay(
-                // Inset recess where the paddle travels.
-                RoundedRectangle(cornerRadius: 4)
-                    .fill(Color.black.opacity(0.55))
-                    .frame(width: 18, height: 38)
-            )
             .shadow(color: .black.opacity(0.55), radius: 3, x: 0, y: 2)
     }
 
-    private var paddle: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: 3)
-                .fill(LinearGradient(colors: [Color(white: 0.55), Color(white: 0.22)],
-                                     startPoint: .top, endPoint: .bottom))
-                .frame(width: 14, height: 22)
-                .overlay(
+    private var rockerFace: some View {
+        VStack(spacing: 0) {
+            // RUN row — fills the top half; tinted red + glowing when armed.
+            ZStack {
+                if isOn {
                     RoundedRectangle(cornerRadius: 3)
-                        .stroke(LinearGradient(colors: [Color.white.opacity(0.55), Color.clear],
-                                               startPoint: .topLeading, endPoint: .bottomTrailing),
-                                lineWidth: 0.8)
-                )
-                .shadow(color: .black.opacity(0.7), radius: 1.5,
-                        x: 0, y: isOn ? -1 : 1)
+                        .fill(dashRed.opacity(0.18))
+                        .padding(.horizontal, 5)
+                        .blur(radius: 1)
+                }
+                Text("RUN")
+                    .modifier(RetroFont(size: 10, weight: .bold))
+                    .foregroundColor(isOn ? dashRed : .white.opacity(0.35))
+                    .tracking(1.0)
+                    .shadow(color: isOn ? dashRed.opacity(0.55) : .clear, radius: 2)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-            // Pivot dimple at the centre of the paddle.
+            // Detent rule between the two positions.
+            Rectangle()
+                .fill(Color.white.opacity(0.18))
+                .frame(height: 0.5)
+                .padding(.horizontal, 6)
+
+            // OFF row — fills the bottom half; lit white when off.
+            Text("OFF")
+                .modifier(RetroFont(size: 9, weight: .bold))
+                .foregroundColor(!isOn ? .white.opacity(0.85) : .white.opacity(0.25))
+                .tracking(1.0)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+            // LED dot only — no ARMED / SAFE text label.
             Circle()
-                .fill(isOn ? Color.red : Color.gray.opacity(0.5))
-                .frame(width: 3.5, height: 3.5)
-                .shadow(color: isOn ? .red.opacity(0.9) : .clear, radius: 2)
+                .fill(isOn ? dashRed : dashRed.opacity(0.15))
+                .frame(width: 4, height: 4)
+                .shadow(color: isOn ? dashRed.opacity(0.9) : .clear, radius: 2.5)
+                .padding(.bottom, 4)
         }
+        .padding(.vertical, 3)
     }
 }
 
@@ -378,34 +392,41 @@ private struct StarterButton: View {
     let action: () -> Void
 
     @State private var pressing = false
-    @State private var pulse = false
 
     var body: some View {
         VStack(spacing: 4) {
+            // Label only on macOS — the CRANK text on the button face
+            // already identifies it on iOS.
+            #if os(macOS)
             Text("STARTER")
                 .modifier(RetroFont(size: 8))
                 .foregroundColor(.gray)
+            #endif
 
             Button(action: action) {
                 ZStack {
                     bezel
 
-                    // Inset shadow ring.
+                    // Inset shadow ring (subtle, not a dark moat).
                     Circle()
-                        .fill(Color.black.opacity(0.5))
+                        .fill(Color.black.opacity(0.35))
                         .frame(width: 44, height: 44)
 
-                    // Illuminated face.
+                    // Illuminated face — calmer palette + thin rim ring
+                    // instead of the heavy halo blur.
                     Circle()
                         .fill(faceGradient)
                         .frame(width: 42, height: 42)
                         .overlay(
-                            // Fine concentric machining ring.
                             Circle()
                                 .stroke(Color.white.opacity(0.08), lineWidth: 0.5)
                                 .padding(4)
                         )
-                        .overlay(haloRing)
+                        .overlay(
+                            Circle()
+                                .stroke(dashRed.opacity(running ? 0.55 : 0.30),
+                                        lineWidth: 1)
+                        )
 
                     Text("CRANK")
                         .font(.system(size: 9, weight: .black))
@@ -413,8 +434,12 @@ private struct StarterButton: View {
                         .shadow(color: .black.opacity(0.6), radius: 1, x: 0, y: 1)
                 }
                 .frame(width: 56, height: 56)
-                .shadow(color: Color.red.opacity(running ? 0.6 : 0.30),
-                        radius: running ? 10 : 4, x: 0, y: pressing ? 0 : 3)
+                // Soft cast shadow only — no animated halo pulse. The
+                // CRANK dash light + running starter audio already
+                // communicate cranking state; the big red glow was
+                // visually dominating the whole top bar.
+                .shadow(color: dashRed.opacity(running ? 0.30 : 0.0),
+                        radius: running ? 3 : 0, x: 0, y: pressing ? 0 : 2)
                 .scaleEffect(pressing ? 0.94 : 1.0)
             }
             .buttonStyle(.plain)
@@ -422,50 +447,38 @@ private struct StarterButton: View {
                 pressing = p
             }, perform: {})
             .animation(.interactiveSpring(), value: pressing)
-            .onAppear {
-                // Pulsing glow while cranking.
-                withAnimation(.easeInOut(duration: 0.7).repeatForever(autoreverses: true)) {
-                    pulse.toggle()
-                }
-            }
         }
     }
 
     private var bezel: some View {
+        // Same dark fill + bevel stroke as the ArmedIgnitionSwitch bezel so
+        // the two left-cluster controls read as a matched pair instead of
+        // two different visual treatments competing for attention.
         Circle()
-            .fill(LinearGradient(colors: [Color(white: 0.42), Color(white: 0.14)],
-                                 startPoint: .topLeading, endPoint: .bottomTrailing))
+            .fill(LinearGradient(colors: [Color(white: 0.22), Color(white: 0.08)],
+                                 startPoint: .top, endPoint: .bottom))
             .frame(width: 52, height: 52)
             .overlay(
                 Circle().stroke(
-                    LinearGradient(colors: [Color.white.opacity(0.55), Color.black.opacity(0.6)],
+                    LinearGradient(colors: [Color.white.opacity(0.45), Color.black.opacity(0.7)],
                                    startPoint: .topLeading, endPoint: .bottomTrailing),
                     lineWidth: 1
                 )
             )
+            .shadow(color: .black.opacity(0.55), radius: 3, x: 0, y: 2)
     }
 
     private var faceGradient: RadialGradient {
-        // Always lit — dimmer at rest, brighter when cranking.
-        let warmCore: Color
-        let darkRim: Color
-        if running {
-            warmCore = Color(red: 1.00, green: 0.18, blue: 0.18)
-            darkRim = Color(red: 0.45, green: 0.05, blue: 0.05)
-        } else {
-            warmCore = Color(red: 0.78, green: 0.10, blue: 0.10)
-            darkRim = Color(red: 0.20, green: 0.02, blue: 0.02)
-        }
+        // Always lit — dimmer at rest, brighter when cranking. Uses the
+        // shared dashRed palette so the starter and the ignition switch
+        // glow in the exact same red.
+        let warmCore = running ? dashRed : dashRedDim
+        let darkRim  = running ? dashRedDeep : dashRedDimDeep
         return RadialGradient(colors: [warmCore, darkRim],
                               center: .center, startRadius: 0, endRadius: 22)
     }
 
-    @ViewBuilder private var haloRing: some View {
-        Circle()
-            .stroke(Color.red.opacity(running ? (pulse ? 0.95 : 0.55) : 0.55),
-                    lineWidth: running ? 2.2 : 1.4)
-            .blur(radius: running ? 3 : 1.5)
-    }
+    // Halo ring + pulse state retired — calm rim ring inline now.
 }
 
 // MARK: - Dashboard warning tile
