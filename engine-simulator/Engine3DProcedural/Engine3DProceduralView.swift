@@ -18,13 +18,32 @@ import UIKit
 typealias _SCNViewRepresentable = UIViewRepresentable
 #endif
 
-// Camera framing: distance is a multiple of the engine diagonal so it always
-// fits, regardless of size. Direction is a normalized vector pointing from the
-// engine center toward the camera, giving a top-front-side 3/4 view.
+// Camera framing scheme — keeps EVERY engine visually centered the same way
+// regardless of size or layout:
+//
+//   1. Compute the engine's bounding-sphere radius from its block dimensions.
+//      (sqrt of half-length² + half-width² + half-height²)
+//   2. Find the engine's *visual* center in world coords. The assembly's
+//      outer rotation maps local +Z (bore axis) → world +Y, and the engine
+//      sits ABOVE the crank, so `params.blockCenterZ` is the world-Y the
+//      camera should aim at — not world origin (which is the crank center,
+//      below the engine for short blocks like the Geo Metro).
+//   3. Place the camera at a fixed 3/4 unit-vector direction from that
+//      visual center, at a distance scaled so the bounding sphere just fits
+//      the camera's FOV (with a modest buffer).
+//
+// Result: small inline-3 and tall V12 alike sit at the same fraction of the
+// frame, with the same view angle. Previously the camera always looked at
+// the crank, so short engines appeared in the upper half of the frame with
+// empty space below.
 private let cameraDistanceFactor: Double = 1.15
 private let cameraDirX: Float = 0.9   // side
 private let cameraDirY: Float = 0.7   // top
 private let cameraDirZ: Float = 1.0   // front
+/// Vertical FOV (radians) used by the framing math. Matches SCNCamera's
+/// default of 60°; only used for the distance-fit calculation here — the
+/// camera node itself doesn't override its fieldOfView.
+private let cameraFOV: Float = 60 * .pi / 180
 private let maxDtSeconds: Double = 1.0 / 30.0
 
 struct Engine3DProceduralView: _SCNViewRepresentable {
@@ -120,16 +139,42 @@ struct Engine3DProceduralView: _SCNViewRepresentable {
     }
 
     fileprivate static func placeCameraStatic(_ cameraNode: SCNNode, params p: EngineGeometryParams) {
-        let lengthSq = p.blockLength * p.blockLength
-        let widthSq = p.blockWidth * p.blockWidth
-        let heightSq = p.blockHeight * p.blockHeight
-        let diag = sqrt(lengthSq + widthSq + heightSq)
-        let distance = Float(diag * cameraDistanceFactor)
-        let dirLenSq = cameraDirX * cameraDirX + cameraDirY * cameraDirY + cameraDirZ * cameraDirZ
-        let dirLen = sqrt(dirLenSq)
-        let scale = distance / dirLen
-        cameraNode.position = SCNVector3(cameraDirX * scale, cameraDirY * scale, cameraDirZ * scale)
-        cameraNode.look(at: SCNVector3(0, 0, 0))
+        // 1) Bounding-sphere radius — fits the engine in any view direction.
+        let halfL = Float(p.blockLength * 0.5)
+        let halfW = Float(p.blockWidth  * 0.5)
+        let halfH = Float(p.blockHeight * 0.5)
+        let boundingRadius = sqrt(halfL * halfL + halfW * halfW + halfH * halfH)
+
+        // 2) Engine's visual center in world coords. The assembly rotates
+        //    local +Z → world +Y, so `blockCenterZ` (local Z) becomes the
+        //    world Y position the camera should aim at. X / Z (depth) are
+        //    centered at world origin because the crank sits on the world
+        //    Y axis.
+        let engineCenter = SCNVector3(0, Float(p.blockCenterZ), 0)
+
+        // 3) Distance so the bounding sphere just fits the FOV, with a
+        //    modest buffer (cameraDistanceFactor). This is mathematically
+        //    identical to the old `diag × 1.15` formula since
+        //    diag = 2 × boundingRadius and sin(60°/2) = 0.5 → distance =
+        //    boundingRadius / 0.5 × 1.15 = 2.3 × boundingRadius = diag × 1.15.
+        let distance = boundingRadius / sin(cameraFOV / 2.0)
+                     * Float(cameraDistanceFactor)
+
+        // 4) Camera position: same 3/4 unit-vector direction as before, but
+        //    offset from the engine's visual center (NOT world origin), so
+        //    short engines no longer hover at the top of the frame.
+        let dirLen = sqrt(cameraDirX * cameraDirX
+                        + cameraDirY * cameraDirY
+                        + cameraDirZ * cameraDirZ)
+        let ux = cameraDirX / dirLen
+        let uy = cameraDirY / dirLen
+        let uz = cameraDirZ / dirLen
+        cameraNode.position = SCNVector3(
+            engineCenter.x + ux * distance,
+            engineCenter.y + uy * distance,
+            engineCenter.z + uz * distance
+        )
+        cameraNode.look(at: engineCenter)
     }
 
     fileprivate func placeCamera(_ cameraNode: SCNNode, params p: EngineGeometryParams) {
