@@ -57,6 +57,7 @@ enum TileType: String, Codable, CaseIterable, Identifiable {
     // Controls
     case engineControls = "Engine Controls"
     case ecuTuning = "ECU Tuning"
+    case engineHealth = "Engine Health"
     /// iOS-only: the clutch + intake cross-section drawings, split out of
     /// engineControls so the Track layout can place the shifter and the
     /// drawings in different cells.

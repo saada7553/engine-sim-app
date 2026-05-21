@@ -49,6 +49,12 @@ static inline double kRadToDeg(double rad) { return rad * (180.0 / M_PI); }
 @implementation ScopeData
 @end
 
+@implementation CylinderHealthState
+@end
+
+@implementation EngineWideHealthState
+@end
+
 @implementation EngineState
 @end
 
@@ -368,6 +374,47 @@ static const double kCylinderPressurePeakDecay = 0.985;
                 }
                 state.ignitionMap = mapPoints;
 
+                // --- Thermal + damage state ---
+                state.coolantTempC = _sim->getCoolantTempC();
+                state.oilTempC = _sim->getOilTempC();
+                state.oilPressurePsi = _sim->getOilPressurePsi();
+                state.coolantPumpOn = _sim->isCoolantPumpEnabled() ? YES : NO;
+                state.oilPumpOn = _sim->isOilPumpEnabled() ? YES : NO;
+                state.topEndHealth = _sim->getTopEndHealth();
+                state.midHealth = _sim->getMidHealth();
+                state.bottomEndHealth = _sim->getBottomEndHealth();
+                state.rodKnocking = NO;
+
+                ThermalSystem *thermal = engine->getThermalSystem();
+                const int cylCount = engine->getCylinderCount();
+                NSMutableArray *cylinderHealths =
+                    [NSMutableArray arrayWithCapacity:cylCount];
+                for (int ci = 0; ci < cylCount; ++ci) {
+                    auto comp = thermal->getCylinderComponents(ci);
+                    CylinderHealthState *ch = [[CylinderHealthState alloc] init];
+                    ch.headGasket = comp.headGasket;
+                    ch.pistonRings = comp.pistonRings;
+                    ch.piston = comp.piston;
+                    ch.rod = comp.rod;
+                    ch.rodBearing = comp.rodBearing;
+                    ch.intakeValve = comp.intakeValve;
+                    ch.exhaustValve = comp.exhaustValve;
+                    ch.wallTempC = thermal->getCylinderWallTempC(ci);
+                    ch.seized = thermal->isCylinderSeized(ci) ? YES : NO;
+                    [cylinderHealths addObject:ch];
+                }
+                state.cylinderHealths = cylinderHealths;
+
+                auto wide = thermal->getEngineWideComponents();
+                EngineWideHealthState *engineWide = [[EngineWideHealthState alloc] init];
+                engineWide.cylinderHead = wide.cylinderHead;
+                engineWide.camshaft = wide.camshaft;
+                engineWide.crankshaft = wide.crankshaft;
+                engineWide.mainBearing = wide.mainBearing;
+                engineWide.waterPump = wide.waterPump;
+                engineWide.oilPump = wide.oilPump;
+                state.engineWideHealth = engineWide;
+
                 // Update C++ Oscilloscopes
                 _oscilloscopeCluster->sample();
                 
@@ -572,6 +619,17 @@ static const double kCylinderPressurePeakDecay = 0.985;
 - (void)resetFuelConsumption { if (_engine) _engine->resetFuelConsumption(); }
 - (double)getTimestep { return _sim ? 1.0 / _sim->getTimestep() : 0.0; }
 - (double)getTotalExhaustFlow { return _sim ? _sim->getTotalExhaustFlow() : 0.0; }
+
+// --- Thermal + damage controls ---
+- (void)setCoolantPumpEnabled:(BOOL)enabled {
+    if (_sim) _sim->setCoolantPumpEnabled(enabled ? true : false);
+}
+- (void)setOilPumpEnabled:(BOOL)enabled {
+    if (_sim) _sim->setOilPumpEnabled(enabled ? true : false);
+}
+- (void)repairEngine {
+    if (_sim) _sim->repairThermalAndDamage();
+}
 
 - (void)shutdown {
     if (_running) {

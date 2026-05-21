@@ -15,6 +15,30 @@
 @property (nonatomic, assign) double y;
 @end
 
+/// Per-cylinder component health (0=destroyed, 1=pristine) plus wall temp.
+/// Mirrors ThermalSystem::CylinderComponents in C++.
+@interface CylinderHealthState : NSObject
+@property (nonatomic, assign) double headGasket;
+@property (nonatomic, assign) double pistonRings;
+@property (nonatomic, assign) double piston;
+@property (nonatomic, assign) double rod;
+@property (nonatomic, assign) double rodBearing;
+@property (nonatomic, assign) double intakeValve;
+@property (nonatomic, assign) double exhaustValve;
+@property (nonatomic, assign) double wallTempC;
+@property (nonatomic, assign) BOOL seized;
+@end
+
+/// Engine-wide component health. Mirrors ThermalSystem::EngineWideComponents.
+@interface EngineWideHealthState : NSObject
+@property (nonatomic, assign) double cylinderHead;
+@property (nonatomic, assign) double camshaft;
+@property (nonatomic, assign) double crankshaft;
+@property (nonatomic, assign) double mainBearing;
+@property (nonatomic, assign) double waterPump;
+@property (nonatomic, assign) double oilPump;
+@end
+
 @interface EngineState : NSObject
 @property (nonatomic, assign) double rpm;
 @property (nonatomic, assign) int gear;
@@ -40,6 +64,19 @@
 @property (nonatomic, assign) double ignitionOffset;    // degrees
 @property (nonatomic, assign) double fuelTrim;          // multiplier (1.0 = base)
 @property (nonatomic, strong) NSArray<ScopePoint *> *ignitionMap; // Live 2D map data
+
+// Thermal + damage state
+@property (nonatomic, assign) double coolantTempC;
+@property (nonatomic, assign) double oilTempC;
+@property (nonatomic, assign) double oilPressurePsi;
+@property (nonatomic, assign) BOOL coolantPumpOn;
+@property (nonatomic, assign) BOOL oilPumpOn;
+@property (nonatomic, assign) double topEndHealth;
+@property (nonatomic, assign) double midHealth;
+@property (nonatomic, assign) double bottomEndHealth;
+@property (nonatomic, strong) NSArray<CylinderHealthState *> *cylinderHealths;
+@property (nonatomic, strong) EngineWideHealthState *engineWideHealth;
+@property (nonatomic, assign) BOOL rodKnocking;
 
 @end
 
@@ -127,9 +164,14 @@ typedef NS_ENUM(NSInteger, EngineScopeType) {
 /// gives the ECU map a single source of truth to populate itself from.
 - (double)getBaseTimingAdvanceForRpm:(double)rpm;
 
+// Thermal + damage controls
+- (void)setCoolantPumpEnabled:(BOOL)enabled;
+- (void)setOilPumpEnabled:(BOOL)enabled;
+- (void)repairEngine;
+
 // Other
 - (void)resetTravelledDistance;
-- (void)resetFuelConsumption; 
+- (void)resetFuelConsumption;
 
 @end
 

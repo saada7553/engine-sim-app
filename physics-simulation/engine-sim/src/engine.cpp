@@ -87,7 +87,10 @@ void Engine::initialize(const Parameters &params) {
 
     for (int i = 0; i < m_cylinderCount; ++i) {
         m_combustionChambers[i].setEngine(this);
+        m_combustionChambers[i].setIndex(i);
     }
+
+    m_thermalSystem.initialize(m_cylinderCount, this);
 }
 
 void Engine::destroy() {

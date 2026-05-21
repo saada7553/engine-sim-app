@@ -37,6 +37,14 @@ class IgnitionModule : public Part {
         bool getIgnitionEvent(int index) const;
         void resetIgnitionEvents();
 
+        /// Per-cylinder firing angle in the 4-stroke cycle, in radians [0, 4π).
+        /// Combined with the output crankshaft's current cycle angle this
+        /// gives the position of each cylinder in its own cycle — needed for
+        /// rotation-driven damage audio (rod knock at TDC compression, etc.).
+        double getFiringAngle(int cylinderIndex) const {
+            return m_plugs[cylinderIndex].angle;
+        }
+
         double getTimingAdvance();
         double getTimingAdvanceForRpm(double rpm);
 

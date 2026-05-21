@@ -213,6 +213,18 @@ void CombustionChamber::ignite() {
             (mixingFactor * rand_s + (1 - mixingFactor));
         m_flameEvent.efficiency =
             efficiencyAttenuation * maxBurningEfficiency;
+        // Damage scaling: how much of the fuel actually burns this cycle.
+        // A damaged cylinder has erratic combustion — some firings near full,
+        // others 30% — which produces the audible cycle-to-cycle rough-running
+        // texture for free, no audio mixing required. (Knock has its own
+        // resonant audio path in PistonEngineSimulator::writeToSynthesizer
+        // and isn't injected as chamber energy here.)
+        if (m_engine != nullptr) {
+            ThermalSystem *thermal = m_engine->getThermalSystem();
+            if (thermal != nullptr) {
+                m_flameEvent.efficiency *= thermal->sampleCombustionEfficiency(m_index);
+            }
+        }
         m_flameEvent.flameSpeed = m_fuel->flameSpeed(
             turbulence,
             afr,
@@ -233,8 +245,21 @@ void CombustionChamber::update(double dt) {
 }
 
 void CombustionChamber::flow(double dt) {
-    if (m_system.temperature() > m_peakTemperature) {
-        m_peakTemperature = m_system.temperature();
+    // Use the chamber's own engine-wide index (set by Engine::initialize),
+    // NOT m_piston->getCylinderIndex() — the latter can be non-unique on
+    // V engines, causing only one bank's walls to receive accumulated heat.
+    const int cylIdx = m_index;
+    ThermalSystem *thermal = (m_engine != nullptr)
+        ? m_engine->getThermalSystem()
+        : nullptr;
+
+    const double gasTempK = m_system.temperature();
+    if (gasTempK > m_peakTemperature) {
+        m_peakTemperature = gasTempK;
+    }
+    if (thermal != nullptr) {
+        thermal->recordPeakTemp(cylIdx, gasTempK);
+        thermal->recordPeakPressure(cylIdx, m_system.pressure());
     }
 
     const double volume = getVolume();
@@ -243,10 +268,30 @@ void CombustionChamber::flow(double dt) {
         cylinderHeight * constants::pi * m_head->getCylinderBank()->getBore()
         + m_cylinderCrossSectionSurfaceArea * 2;
 
-    const double dT = units::celcius(90.0) - m_system.temperature();
+    // Per-cylinder wall temperature drives the heat exchange. Falls back to
+    // the legacy hardcoded 90°C sink when no thermal system is attached (e.g.,
+    // during pre-init or in standalone unit tests).
+    constexpr double kHeatTransferCoeff = 100.0;  // W/(m²·K)
+    const double wallK = (thermal != nullptr)
+        ? thermal->getCylinderWallTempK(cylIdx)
+        : units::celcius(90.0);
+    const double dT = wallK - gasTempK;
+    const double Q = dT * cylinderSurfaceArea * kHeatTransferCoeff * dt;
 
-    m_system.changeEnergy(dT * cylinderSurfaceArea * 100 * dt);
-    m_system.flow(m_piston->getBlowbyK(), dt, m_crankcasePressure, units::celcius(25.0));
+    m_system.changeEnergy(Q);
+    // Energy conservation: whatever the gas gained, the wall lost (-Q). When
+    // the gas is hotter than the wall, dT<0 → Q<0 → wall absorbs -Q>0.
+    if (thermal != nullptr) {
+        thermal->accumulateWallHeat(cylIdx, -Q);
+    }
+    // Scale blowby by damage. A blown gasket / shot rings lets gas bypass
+    // the piston into the crankcase — compression drops, peak pressure drops,
+    // power drops, and the exhaust note for that cylinder goes weaker.
+    const double blowbyMul = (thermal != nullptr)
+        ? thermal->getBlowbyMultiplier(cylIdx)
+        : 1.0;
+    m_system.flow(m_piston->getBlowbyK() * blowbyMul, dt,
+                  m_crankcasePressure, units::celcius(25.0));
 
     Intake *intake = m_head->getIntake(m_piston->getCylinderIndex());
     ExhaustSystem *exhaust = m_head->getExhaustSystem(m_piston->getCylinderIndex());
@@ -411,7 +456,19 @@ void CombustionChamber::apply(atg_scs::SystemState *system) {
         v_x * bank->getDx() + v_y * bank->getDy();
 
     const double pressureDifferential = m_system.pressure() - m_crankcasePressure;
-    const double force = -area * pressureDifferential;
+    // Seized cylinders produce zero force on the piston. Damaged-but-not-
+    // seized cylinders already see reduced pressure (via reduced combustion
+    // efficiency + increased blowby in flow()); we deliberately do NOT add
+    // a second multiplier here — that would double-count the power loss and
+    // also detach the audio (which tracks pressure) from the felt force.
+    double seizureMul = 1.0;
+    if (m_engine != nullptr) {
+        const ThermalSystem *thermal = m_engine->getThermalSystem();
+        if (thermal != nullptr) {
+            seizureMul = thermal->getSeizureForceMultiplier(m_index);
+        }
+    }
+    const double force = -area * pressureDifferential * seizureMul;
 
     if (std::isnan(force) || std::isinf(force)) {
         assert(false);

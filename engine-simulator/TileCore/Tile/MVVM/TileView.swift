@@ -124,6 +124,8 @@ struct TileView: View {
             // EcuTuningView observes vm.ecu via its inner editor whose .id is
             // keyed to ObjectIdentifier(vm.ecu), so swaps are handled inside.
             return AnyView(EcuTuningView(vm: tile.engineVm).id(engineResetId))
+        case .engineHealth:
+            return AnyView(EngineHealthView(vm: tile.engineVm).id(engineResetId))
 
         // Driver tools
         case .shiftLight:

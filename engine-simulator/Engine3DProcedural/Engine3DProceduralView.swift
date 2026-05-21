@@ -82,11 +82,15 @@ struct Engine3DProceduralView: _SCNViewRepresentable {
     func makeNSView(context: Context) -> SCNView { makeSCNView(context: context) }
     func updateNSView(_ nsView: SCNView, context: Context) {
         context.coordinator.currentRPM = vm.rpm
+        context.coordinator.currentCylinderHealths = vm.cylinderHealths
+        context.coordinator.currentEngineWideHealth = vm.engineWideHealth
     }
 #else
     func makeUIView(context: Context) -> SCNView { makeSCNView(context: context) }
     func updateUIView(_ uiView: SCNView, context: Context) {
         context.coordinator.currentRPM = vm.rpm
+        context.coordinator.currentCylinderHealths = vm.cylinderHealths
+        context.coordinator.currentEngineWideHealth = vm.engineWideHealth
     }
 #endif
 
@@ -191,6 +195,21 @@ struct Engine3DProceduralView: _SCNViewRepresentable {
 
     final class Coordinator: NSObject, SCNSceneRendererDelegate {
         var currentRPM: Double = 0.0
+        // Pushed by updateNSView each tick — used by the render loop to
+        // recolour parts based on their damage state. Default to pristine
+        // (health = 1.0) so we don't render an engine with all-red parts in
+        // the brief moment before the first poll lands.
+        var currentCylinderHealths: [CylinderHealthState] = []
+        var currentEngineWideHealth: EngineWideHealthState = {
+            let s = EngineWideHealthState()
+            s.cylinderHead = 1.0
+            s.camshaft     = 1.0
+            s.crankshaft   = 1.0
+            s.mainBearing  = 1.0
+            s.waterPump    = 1.0
+            s.oilPump      = 1.0
+            return s
+        }()
         private var accumulatedAngle: Double = 0.0
         private var lastUpdateTime: TimeInterval = 0.0
 
@@ -304,6 +323,11 @@ struct Engine3DProceduralView: _SCNViewRepresentable {
 
             if let parts = parts {
                 ProceduralEngineAssembly.animate(parts: parts, crankAngle: accumulatedAngle)
+                ProceduralEngineAssembly.applyDamageTints(
+                    parts: parts,
+                    cylinderHealths: currentCylinderHealths,
+                    engineWide: currentEngineWideHealth
+                )
             }
         }
     }

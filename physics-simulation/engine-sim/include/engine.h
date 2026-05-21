@@ -12,6 +12,7 @@
 #include "ignition_module.h"
 #include "intake.h"
 #include "combustion_chamber.h"
+#include "thermal_system.h"
 #include "units.h"
 #include "throttle.h"
 
@@ -97,6 +98,8 @@ class Engine : public Part {
         Piston *getPiston(int i) const { return &m_pistons[i]; }
         ConnectingRod *getConnectingRod(int i) const { return &m_connectingRods[i]; }
         IgnitionModule *getIgnitionModule() { return &m_ignitionModule; }
+        ThermalSystem *getThermalSystem() { return &m_thermalSystem; }
+        const ThermalSystem *getThermalSystem() const { return &m_thermalSystem; }
         void setIgnitionOffset(double offset) { m_ignitionModule.m_ignitionOffset = offset; }
         double getIgnitionOffset() const { return m_ignitionModule.m_ignitionOffset; }
         void setFuelTrim(double trim) { m_fuelTrim = trim; }
@@ -148,6 +151,7 @@ class Engine : public Part {
         int m_intakeCount;
 
         IgnitionModule m_ignitionModule;
+        ThermalSystem m_thermalSystem;
         Fuel m_fuel;
 
         Throttle *m_throttle;

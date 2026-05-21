@@ -50,6 +50,12 @@ class CombustionChamber : public atg_scs::ForceGenerator {
         void initialize(const Parameters &params);
         void destroy();
         void setEngine(Engine *engine) { m_engine = engine; }
+        // Engine-wide chamber index. Set by Engine::initialize so each
+        // chamber knows its own slot — needed for ThermalSystem lookups
+        // since m_piston->getCylinderIndex() isn't always unique across
+        // banks on V engines depending on how the .mr script wires them.
+        void setIndex(int idx) { m_index = idx; }
+        int getIndex() const { return m_index; }
         virtual void apply(atg_scs::SystemState *system);
 
         CylinderHead *getCylinderHead() const { return m_head; }
@@ -118,6 +124,7 @@ class CombustionChamber : public atg_scs::ForceGenerator {
         CylinderHead *m_head;
         Engine *m_engine;
         Fuel *m_fuel;
+        int m_index = -1;
 };
 
 #endif /* ATG_ENGINE_SIM_COMBUSTION_CHAMBER_H */

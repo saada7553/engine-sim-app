@@ -81,6 +81,7 @@ add_library(engine-sim STATIC
     src/standard_valvetrain.cpp
     src/starter_motor.cpp
     src/synthesizer.cpp
+    src/thermal_system.cpp
     src/throttle.cpp
     src/transmission.cpp
     src/utilities.cpp
@@ -129,6 +130,7 @@ add_library(engine-sim STATIC
     include/standard_valvetrain.h
     include/starter_motor.h
     include/synthesizer.h
+    include/thermal_system.h
     include/throttle.h
     include/transmission.h
     include/units.h

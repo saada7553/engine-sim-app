@@ -28,6 +28,8 @@ final class ProceduralEngineParts {
     var pistons: [SCNNode] = []          // index = cylinderNumber - 1
     var rods: [SCNNode] = []
     var wristPins: [SCNNode] = []
+    /// Cylinder head per bank. Used for engine-wide head damage tinting.
+    var heads: [SCNNode] = []
 
     /// One intake + one exhaust cam per bank. Index = bankIndex.
     var intakeCams: [SCNNode] = []
@@ -106,6 +108,7 @@ enum ProceduralEngineAssembly {
             let bankSign: Float = (bankIndex == 0) ? -1.0 : 1.0
             head.position.y = SCNFloat(bankSign * Float(params.bankAxialShift))
             pivot.addChildNode(head)
+            parts.heads.append(head)
 
             // Per-cylinder pistons / rods / wristpins / valves.
             for placement in cylinders {
@@ -294,6 +297,90 @@ enum ProceduralEngineAssembly {
                                             yPos + ySign * Float(valveYHalf),
                                             exhaustZ)
             }
+        }
+    }
+
+    // MARK: - Damage visualization
+    //
+    // Per-frame: walk over each tracked part and set its material emission
+    // colour to a red tint whose intensity is the part's damage (0..1).
+    // The stock material diffuse is preserved; emission ADDS red on top,
+    // giving a "warming up / glowing hot" appearance that scales smoothly
+    // with severity.
+    static func applyDamageTints(
+        parts: ProceduralEngineParts,
+        cylinderHealths: [CylinderHealthState],
+        engineWide: EngineWideHealthState
+    ) {
+        // Per-cylinder parts.
+        let n = min(cylinderHealths.count, parts.pistons.count)
+        for i in 0..<n {
+            let c = cylinderHealths[i]
+            tintNodeTree(parts.pistons[i],   damage: 1.0 - c.piston)
+            if i < parts.rods.count {
+                tintNodeTree(parts.rods[i],  damage: 1.0 - c.rod)
+            }
+            if i < parts.wristPins.count {
+                // Pin shares fate with the piston for visual cohesion.
+                tintNodeTree(parts.wristPins[i], damage: 1.0 - c.piston)
+            }
+            // Valves: tint per intake/exhaust health.
+            if i < parts.valveSetsByCylinder.count,
+               let vs = parts.valveSetsByCylinder[i] {
+                let intakeDmg  = 1.0 - c.intakeValve
+                let exhaustDmg = 1.0 - c.exhaustValve
+                for v in vs.intakeValves  { tintNodeTree(v, damage: intakeDmg) }
+                for v in vs.exhaustValves { tintNodeTree(v, damage: exhaustDmg) }
+            }
+        }
+
+        // Engine-wide parts.
+        let crankDmg = 1.0 - engineWide.crankshaft
+        if let crank = parts.crankshaft {
+            tintNodeTree(crank, damage: crankDmg)
+        }
+        let camDmg = 1.0 - engineWide.camshaft
+        for cam in parts.intakeCams  { tintNodeTree(cam, damage: camDmg) }
+        for cam in parts.exhaustCams { tintNodeTree(cam, damage: camDmg) }
+        let headDmg = 1.0 - engineWide.cylinderHead
+        for head in parts.heads      { tintNodeTree(head, damage: headDmg) }
+    }
+
+    /// Apply red-emission tint to every material in the node subtree. A small
+    /// deadzone keeps near-pristine parts visually unchanged.
+    private static func tintNodeTree(_ root: SCNNode, damage: Double) {
+        let d = max(0.0, min(1.0, damage))
+        // Deadzone: parts under 8% damage stay visually clean. Prevents
+        // every part looking faintly pink during normal driving.
+        let intensity: CGFloat
+        if d < 0.08 {
+            intensity = 0
+        } else {
+            let t = (d - 0.08) / 0.92      // 0..1 above deadzone
+            // Bright red, capped at 0.85 so it doesn't fully blow out the
+            // material's underlying color/shading.
+            intensity = CGFloat(0.85 * t)
+        }
+        let color: PlatformColor
+        if intensity <= 0 {
+            color = PlatformColor.black
+        } else {
+            color = PlatformColor(red: intensity,
+                                  green: 0,
+                                  blue: 0,
+                                  alpha: 1.0)
+        }
+        applyEmission(to: root, color: color)
+    }
+
+    private static func applyEmission(to root: SCNNode, color: PlatformColor) {
+        if let materials = root.geometry?.materials {
+            for material in materials {
+                material.emission.contents = color
+            }
+        }
+        for child in root.childNodes {
+            applyEmission(to: child, color: color)
         }
     }
 }

@@ -80,6 +80,19 @@ class EngineViewModel: ObservableObject {
     @Published var ignitionOffset: Double = 0.0
     @Published var fuelTrim: Double = 1.0
     @Published var ignitionMap: [ScopePoint] = []
+
+    // Thermal + damage state
+    @Published var coolantTempC: Double = 90.0
+    @Published var oilTempC: Double = 80.0
+    @Published var oilPressurePsi: Double = 0.0
+    @Published var coolantPumpOn: Bool = true
+    @Published var oilPumpOn: Bool = true
+    @Published var topEndHealth: Double = 1.0
+    @Published var midHealth: Double = 1.0
+    @Published var bottomEndHealth: Double = 1.0
+    @Published var cylinderHealths: [CylinderHealthState] = []
+    @Published var engineWideHealth: EngineWideHealthState = EngineWideHealthState()
+    @Published var rodKnocking: Bool = false
     
     // Inputs
     @Published var throttlePosition: Double = 0.0 {
@@ -187,6 +200,21 @@ class EngineViewModel: ObservableObject {
                 self.ignitionOffset = state.ignitionOffset
                 self.fuelTrim = state.fuelTrim
                 self.ignitionMap = state.ignitionMap
+
+                // Thermal + damage
+                self.coolantTempC = state.coolantTempC
+                self.oilTempC = state.oilTempC
+                self.oilPressurePsi = state.oilPressurePsi
+                self.coolantPumpOn = state.coolantPumpOn
+                self.oilPumpOn = state.oilPumpOn
+                self.topEndHealth = state.topEndHealth
+                self.midHealth = state.midHealth
+                self.bottomEndHealth = state.bottomEndHealth
+                self.cylinderHealths = state.cylinderHealths ?? []
+                if let wide = state.engineWideHealth {
+                    self.engineWideHealth = wide
+                }
+                self.rodKnocking = state.rodKnocking
 
                 // Pass engine wrapper to oscilloscope manager for sampling
                 self.oscilloscopeManager.sample(from: engine)
@@ -422,5 +450,20 @@ class EngineViewModel: ObservableObject {
     func resetStats() {
         engine?.resetTravelledDistance()
         engine?.resetFuelConsumption()
+    }
+
+    // --- Thermal + damage controls ---
+    func toggleCoolantPump() {
+        let next = !coolantPumpOn
+        engine?.setCoolantPumpEnabled(next)
+        coolantPumpOn = next
+    }
+    func toggleOilPump() {
+        let next = !oilPumpOn
+        engine?.setOilPumpEnabled(next)
+        oilPumpOn = next
+    }
+    func repairEngine() {
+        engine?.repairEngine()
     }
 }

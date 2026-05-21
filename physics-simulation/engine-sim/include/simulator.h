@@ -77,6 +77,50 @@ public:
 
     double filteredEngineSpeed() const { return m_filteredEngineSpeed; }
 
+    // -------- Thermal / damage façade --------
+    // Convenience methods that forward to Engine::getThermalSystem(). Provided
+    // here so clients can drive the feature without reaching into Engine, and
+    // so the API surface mirrors the rest of Simulator's getters.
+    void setCoolantPumpEnabled(bool enabled) {
+        if (m_engine) m_engine->getThermalSystem()->setCoolantPumpEnabled(enabled);
+    }
+    void setOilPumpEnabled(bool enabled) {
+        if (m_engine) m_engine->getThermalSystem()->setOilPumpEnabled(enabled);
+    }
+    bool isCoolantPumpEnabled() const {
+        return m_engine ? m_engine->getThermalSystem()->isCoolantPumpEnabled() : true;
+    }
+    bool isOilPumpEnabled() const {
+        return m_engine ? m_engine->getThermalSystem()->isOilPumpEnabled() : true;
+    }
+    double getCoolantTempC() const {
+        return m_engine ? m_engine->getThermalSystem()->getCoolantTempC() : 0.0;
+    }
+    double getOilTempC() const {
+        return m_engine ? m_engine->getThermalSystem()->getOilTempC() : 0.0;
+    }
+    double getOilPressurePsi() const {
+        return m_engine ? m_engine->getThermalSystem()->getOilPressurePsi() : 0.0;
+    }
+    double getCylinderWallTempC(int i) const {
+        return m_engine ? m_engine->getThermalSystem()->getCylinderWallTempC(i) : 0.0;
+    }
+    double getTopEndHealth() const {
+        return m_engine ? m_engine->getThermalSystem()->getTopEndHealth() : 1.0;
+    }
+    double getMidHealth() const {
+        return m_engine ? m_engine->getThermalSystem()->getMidHealth() : 1.0;
+    }
+    double getBottomEndHealth() const {
+        return m_engine ? m_engine->getThermalSystem()->getBottomEndHealth() : 1.0;
+    }
+    bool isCylinderSeized(int i) const {
+        return m_engine ? m_engine->getThermalSystem()->isCylinderSeized(i) : false;
+    }
+    void repairThermalAndDamage() {
+        if (m_engine) m_engine->getThermalSystem()->repairAll();
+    }
+
     Dynamometer m_dyno;
     StarterMotor m_starterMotor;
 
