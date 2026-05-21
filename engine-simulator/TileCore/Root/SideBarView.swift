@@ -43,8 +43,8 @@ struct SideBarView: View {
 
             ScrollView {
                 VStack(spacing: 18) {
-                    enginesSection
                     layoutsSection
+                    enginesSection
                 }
                 .padding(.vertical, 14)
             }

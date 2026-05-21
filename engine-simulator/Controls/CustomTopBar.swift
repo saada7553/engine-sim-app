@@ -293,36 +293,35 @@ private let dashRedDeep = Color(red: 0.45, green: 0.05, blue: 0.05)
 private let dashRedDim = Color(red: 0.78, green: 0.10, blue: 0.10)
 private let dashRedDimDeep = Color(red: 0.20, green: 0.02, blue: 0.02)
 
-// Hand-built dashboard rocker switch: stacked RUN / OFF readouts with the
-// active label lit in accent red, separated by a thin "detent" rule, with
-// a small LED dot at the bottom. Drawn entirely from SwiftUI primitives —
-// no SF Symbol — so the typography and proportions match the rest of the
-// hand-built dash chrome.
-private struct ArmedIgnitionSwitch: View {
+// Hand-built dashboard rocker switch: stacked top / bottom readouts with the
+// active label lit in an accent colour, separated by a thin "detent" rule,
+// with a small LED dot at the bottom. Drawn entirely from SwiftUI primitives
+// — no SF Symbol — so the typography and proportions match the rest of the
+// hand-built dash chrome. Reused by the ignition switch and the Engine Health
+// pump toggles. Font sizes derive from `height` so it scales cleanly between
+// the full-size top-bar instance and the smaller health-tile instances.
+struct DashRockerSwitch: View {
+    let topLabel: String
+    let bottomLabel: String
     let isOn: Bool
+    var accent: Color = dashRed
+    var width: CGFloat = 52
+    var height: CGFloat = 54
     let toggle: () -> Void
 
-    var body: some View {
-        VStack(spacing: 4) {
-            // Label only on macOS — the iOS rocker face already reads
-            // RUN / OFF / ARMED, so the redundant "IGNITION" header above
-            // it is just visual clutter on a smaller screen.
-            #if os(macOS)
-            Text("IGNITION")
-                .modifier(RetroFont(size: 8))
-                .foregroundColor(.gray)
-            #endif
+    private var topFontSize: CGFloat { height * 0.19 }
+    private var bottomFontSize: CGFloat { height * 0.17 }
 
-            Button(action: toggle) {
-                ZStack {
-                    bezel
-                    rockerFace
-                }
-                .frame(width: 52, height: 54)
+    var body: some View {
+        Button(action: toggle) {
+            ZStack {
+                bezel
+                rockerFace
             }
-            .buttonStyle(.plain)
-            .animation(.easeInOut(duration: 0.18), value: isOn)
+            .frame(width: width, height: height)
         }
+        .buttonStyle(.plain)
+        .animation(.easeInOut(duration: 0.18), value: isOn)
     }
 
     private var bezel: some View {
@@ -340,19 +339,19 @@ private struct ArmedIgnitionSwitch: View {
 
     private var rockerFace: some View {
         VStack(spacing: 0) {
-            // RUN row — fills the top half; tinted red + glowing when armed.
+            // Top row — tinted accent + glowing when on.
             ZStack {
                 if isOn {
                     RoundedRectangle(cornerRadius: 3)
-                        .fill(dashRed.opacity(0.18))
+                        .fill(accent.opacity(0.18))
                         .padding(.horizontal, 5)
                         .blur(radius: 1)
                 }
-                Text("RUN")
-                    .modifier(RetroFont(size: 10, weight: .bold))
-                    .foregroundColor(isOn ? dashRed : .white.opacity(0.35))
+                Text(topLabel)
+                    .modifier(RetroFont(size: topFontSize, weight: .bold))
+                    .foregroundColor(isOn ? accent : .white.opacity(0.35))
                     .tracking(1.0)
-                    .shadow(color: isOn ? dashRed.opacity(0.55) : .clear, radius: 2)
+                    .shadow(color: isOn ? accent.opacity(0.55) : .clear, radius: 2)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
 
@@ -362,21 +361,45 @@ private struct ArmedIgnitionSwitch: View {
                 .frame(height: 0.5)
                 .padding(.horizontal, 6)
 
-            // OFF row — fills the bottom half; lit white when off.
-            Text("OFF")
-                .modifier(RetroFont(size: 9, weight: .bold))
+            // Bottom row — lit white when off.
+            Text(bottomLabel)
+                .modifier(RetroFont(size: bottomFontSize, weight: .bold))
                 .foregroundColor(!isOn ? .white.opacity(0.85) : .white.opacity(0.25))
                 .tracking(1.0)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-            // LED dot only — no ARMED / SAFE text label.
+            // LED dot.
             Circle()
-                .fill(isOn ? dashRed : dashRed.opacity(0.15))
+                .fill(isOn ? accent : accent.opacity(0.15))
                 .frame(width: 4, height: 4)
-                .shadow(color: isOn ? dashRed.opacity(0.9) : .clear, radius: 2.5)
+                .shadow(color: isOn ? accent.opacity(0.9) : .clear, radius: 2.5)
                 .padding(.bottom, 4)
         }
         .padding(.vertical, 3)
+    }
+}
+
+private struct ArmedIgnitionSwitch: View {
+    let isOn: Bool
+    let toggle: () -> Void
+
+    var body: some View {
+        VStack(spacing: 4) {
+            // Label only on macOS — the iOS rocker face already reads
+            // RUN / OFF, so the redundant "IGNITION" header above it is
+            // just visual clutter on a smaller screen.
+            #if os(macOS)
+            Text("IGNITION")
+                .modifier(RetroFont(size: 8))
+                .foregroundColor(.gray)
+            #endif
+
+            DashRockerSwitch(topLabel: "RUN",
+                             bottomLabel: "OFF",
+                             isOn: isOn,
+                             accent: dashRed,
+                             toggle: toggle)
+        }
     }
 }
 

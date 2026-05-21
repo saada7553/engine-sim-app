@@ -350,6 +350,148 @@ enum GaugePresets {
         )
     }
 
+    // MARK: - Coolant Temperature
+
+    /// Coolant temperature gauge configuration.
+    /// Bands mirror the EngineHealthView constants: warn at 105°C, critical
+    /// at 115°C. Range is 0-140°C — slightly past critical so the needle
+    /// has somewhere to go when an overheat event is in progress.
+    static func coolantTemp() -> GaugeConfiguration {
+        let shortenAngle = GaugeConfiguration.shortenAngle
+        return GaugeConfiguration(
+            title: "COOLANT",
+            unit: "°C",
+            precision: 0,
+            spaceBeforeUnit: false,
+            minValue: 0,
+            maxValue: 140,
+            gamma: 1.0,
+            ticks: GaugeTickConfig(
+                minorStep: 5,
+                majorStep: 20,
+                minorTickWidth: 1,
+                majorTickWidth: 2,
+                minorTickLength: 4,
+                majorTickLength: 8,
+                maxMinorTick: 140
+            ),
+            needle: GaugeNeedleConfig(
+                innerRadiusRatio: -0.1,
+                outerRadiusRatio: 0.7,
+                width: 3.0,
+                ks: 1000.0,
+                kd: 50.0,
+                maxVelocity: 2.0
+            ),
+            bands: [
+                GaugeBand(color: green, start: 60, end: 105,
+                          width: 3, radialOffset: 6,
+                          shortenStart: shortenAngle, shortenEnd: shortenAngle),
+                GaugeBand(color: orange, start: 105, end: 115,
+                          width: 3, radialOffset: 6,
+                          shortenStart: shortenAngle, shortenEnd: shortenAngle),
+                GaugeBand(color: red, start: 115, end: 140,
+                          width: 3, radialOffset: 6,
+                          shortenStart: shortenAngle, shortenEnd: -shortenAngle)
+            ],
+            needleColor: .white,
+            tickColor: .white
+        )
+    }
+
+    // MARK: - Oil Temperature
+
+    /// Engine oil temperature. Warn at 105°C, critical at 120°C.
+    static func oilTemp() -> GaugeConfiguration {
+        let shortenAngle = GaugeConfiguration.shortenAngle
+        return GaugeConfiguration(
+            title: "OIL TEMP",
+            unit: "°C",
+            precision: 0,
+            spaceBeforeUnit: false,
+            minValue: 0,
+            maxValue: 150,
+            gamma: 1.0,
+            ticks: GaugeTickConfig(
+                minorStep: 5,
+                majorStep: 25,
+                minorTickWidth: 1,
+                majorTickWidth: 2,
+                minorTickLength: 4,
+                majorTickLength: 8,
+                maxMinorTick: 150
+            ),
+            needle: GaugeNeedleConfig(
+                innerRadiusRatio: -0.1,
+                outerRadiusRatio: 0.7,
+                width: 3.0,
+                ks: 1000.0,
+                kd: 50.0,
+                maxVelocity: 2.0
+            ),
+            bands: [
+                GaugeBand(color: green, start: 60, end: 105,
+                          width: 3, radialOffset: 6,
+                          shortenStart: shortenAngle, shortenEnd: shortenAngle),
+                GaugeBand(color: orange, start: 105, end: 120,
+                          width: 3, radialOffset: 6,
+                          shortenStart: shortenAngle, shortenEnd: shortenAngle),
+                GaugeBand(color: red, start: 120, end: 150,
+                          width: 3, radialOffset: 6,
+                          shortenStart: shortenAngle, shortenEnd: -shortenAngle)
+            ],
+            needleColor: .white,
+            tickColor: .white
+        )
+    }
+
+    // MARK: - Oil Pressure
+
+    /// Engine oil pressure. INVERTED severity: low is bad. Critical below
+    /// 15 psi, warn below 25 psi, green above.
+    static func oilPressure() -> GaugeConfiguration {
+        let shortenAngle = GaugeConfiguration.shortenAngle
+        return GaugeConfiguration(
+            title: "OIL PRESS",
+            unit: "psi",
+            precision: 0,
+            spaceBeforeUnit: false,
+            minValue: 0,
+            maxValue: 80,
+            gamma: 1.0,
+            ticks: GaugeTickConfig(
+                minorStep: 5,
+                majorStep: 20,
+                minorTickWidth: 1,
+                majorTickWidth: 2,
+                minorTickLength: 4,
+                majorTickLength: 8,
+                maxMinorTick: 80
+            ),
+            needle: GaugeNeedleConfig(
+                innerRadiusRatio: -0.1,
+                outerRadiusRatio: 0.7,
+                width: 3.0,
+                ks: 1000.0,
+                kd: 50.0,
+                maxVelocity: 2.0
+            ),
+            bands: [
+                GaugeBand(color: red, start: 0, end: 15,
+                          width: 3, radialOffset: 6,
+                          shortenStart: -shortenAngle, shortenEnd: shortenAngle),
+                GaugeBand(color: orange, start: 15, end: 25,
+                          width: 3, radialOffset: 6,
+                          shortenStart: shortenAngle, shortenEnd: shortenAngle),
+                GaugeBand(color: green, start: 25, end: 80,
+                          width: 3, radialOffset: 6,
+                          shortenStart: shortenAngle, shortenEnd: -shortenAngle)
+            ],
+            needleColor: .white,
+            tickColor: .white
+        )
+    }
+
     // MARK: - Cylinder Pressure
 
     /// Cylinder pressure gauge configuration

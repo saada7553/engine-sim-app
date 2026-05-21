@@ -28,8 +28,10 @@ private enum BuiltInLayoutId {
     static let tuner     = UUID(uuidString: "0F1E1100-0000-0000-0000-000000000003")!
     static let track     = UUID(uuidString: "0F1E1100-0000-0000-0000-000000000004")!
     // 0F1E1100-...-000000000005 was the retired "Diagnostics" layout; its
-    // scopes were folded into Tuner. Any persisted activeLayoutId pointing
-    // at it will fail the lookup and fall back to Default on next launch.
+    // scopes were folded into Tuner. The new ID below is intentionally
+    // different so persisted state pointing at the old layout still falls
+    // back to Default instead of silently mapping into the new one.
+    static let diagnostic = UUID(uuidString: "0F1E1100-0000-0000-0000-000000000006")!
 }
 
 // MARK: - Construction helpers
@@ -66,6 +68,7 @@ enum BuiltInLayouts {
         cockpit,
         tuner,
         track,
+        diagnostic,
     ]
 
     /// Loads on app launch. Engine 3D dominates with a slim right column
@@ -288,5 +291,27 @@ enum BuiltInLayouts {
         ])
         #endif
     }
+
+    /// Diagnostic bench. Left column = the 3D engine view as the
+    /// visual reference for what's failing. Right column splits into
+    /// Engine Health (gauges + damage schematic) on top and the OBD-II
+    /// scanner readout below — so the user sees the engine, the
+    /// component-level damage state, and the live trouble codes all in
+    /// one view while abusing a build.
+    static let diagnostic: TileLayout = TileLayout(
+        id: BuiltInLayoutId.diagnostic,
+        name: "Diagnostic",
+        rootData: BuiltInBuilder.split(.horizontal, [
+            BuiltInBuilder.leaf(.engine3DProcedural,
+                                size: CGSize(width: 880, height: 1000)),
+            BuiltInBuilder.split(.vertical, [
+                BuiltInBuilder.leaf(.engineHealth,
+                                    size: CGSize(width: 720, height: 600)),
+                BuiltInBuilder.leaf(.obd2,
+                                    size: CGSize(width: 720, height: 400)),
+            ], size: CGSize(width: 720, height: 1000)),
+        ]),
+        isBuiltIn: true
+    )
 
 }

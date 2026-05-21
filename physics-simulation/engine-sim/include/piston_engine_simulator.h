@@ -136,14 +136,41 @@ class PistonEngineSimulator : public Simulator {
         int    *m_valveBurstSamples = nullptr;
         double *m_valveBurstAmp     = nullptr;
 
-        // --- Bearing whine (continuous tonal) ---
-        // Sine wave at a harmonic of crank rotation, scaled by main bearing
-        // damage. Audible as a worn-out engine's high-frequency moan.
-        double m_whinePhase = 0.0;
+        // --- Bearing growl (continuous filtered noise) ---
+        // Worn bearings make a low rumbling growl, not a whistle. Generated
+        // by feeding white noise through two cascaded one-pole low-pass
+        // filters tuned to ~180 Hz. Modulated by main-bearing damage + RPM.
+        double m_growlLP1 = 0.0;
+        double m_growlLP2 = 0.0;
 
-        // --- Block hum (continuous low-frequency resonance) ---
-        // A 70-Hz resonator continuously excited by every mechanical event.
-        // Provides the deep "this engine is hurting" rumble underneath.
+        // --- Catastrophic event state ---
+        // When a moneyshift catastrophe fires, the audio mix stages MANY
+        // sub-bursts over ~340ms modeling the sequence of impacts as parts
+        // break free. The per-failure-type weights bias which resonator
+        // gets hit — a valve-drop event sounds different from a rod-eject.
+        int m_catastrophicEventTimer = 0;
+        double m_catastropheSizeFactor = 1.0;
+        double m_catastropheRodWeight    = 1.0;
+        double m_catastrophePistonWeight = 1.0;
+        double m_catastropheValveWeight  = 1.0;
+        // Sub-impacts wait this many samples after the event start so the
+        // initial BOOM is heard distinctly before the breaking clatter.
+        int m_boomDelayRemaining = 0;
+        // Deep BOOM resonator — runtime-configured (random freq/Q each event)
+        // for an interesting, varied initial detonation. ~40-70 Hz.
+        double m_boomY1 = 0.0;
+        double m_boomY2 = 0.0;
+        double m_boomA1 = 0.0;
+        double m_boomA2 = 0.0;
+        // Impact-noise state. m_grindLP1 = current noise amplitude (decays
+        // exponentially per impact). m_grindLP2 / m_grindLP3 = two-pole LPF
+        // state that band-limits the noise to ~1.4 kHz (removes the brittle
+        // high-frequency hiss that sounded like TV static).
+        double m_grindLP1 = 0.0;
+        double m_grindLP2 = 0.0;
+        double m_grindLP3 = 0.0;
+
+        // --- Block hum (deprecated, kept to avoid header churn) ---
         double m_blockHumY1 = 0.0;
         double m_blockHumY2 = 0.0;
         double m_blockHumA1 = 0.0;

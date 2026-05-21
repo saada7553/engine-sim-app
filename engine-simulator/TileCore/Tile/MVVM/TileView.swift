@@ -126,6 +126,8 @@ struct TileView: View {
             return AnyView(EcuTuningView(vm: tile.engineVm).id(engineResetId))
         case .engineHealth:
             return AnyView(EngineHealthView(vm: tile.engineVm).id(engineResetId))
+        case .obd2:
+            return AnyView(OBD2View(vm: tile.engineVm).id(engineResetId))
 
         // Driver tools
         case .shiftLight:
