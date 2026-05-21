@@ -25,6 +25,14 @@ struct EngineControlsView: View {
                 let usableHeight = max(geo.size.height - 1 * spacing, 0)
 
                 VStack(spacing: spacing) {
+                    // On iOS the RetroPanel title bar is a heavy chrome that
+                    // duplicates labels already present on the inner views.
+                    // Strip it down to bare panels so the gauges/drawings
+                    // get the room. iOS also drops the throttle/clutch
+                    // drawings entirely — those live in their own
+                    // `clutchIntake` tile so the Track layout can place
+                    // them under the 3D viewer instead of stacked here.
+                    #if os(macOS)
                     RetroPanel("TRANSMISSION") {
                         GearShiftView(vm: vm)
                     }
@@ -34,6 +42,10 @@ struct EngineControlsView: View {
                         ThrottleView(vm: vm)
                     }
                     .frame(height: usableHeight * throttlePanelWeight / totalWeight)
+                    #else
+                    GearShiftView(vm: vm)
+                        .frame(maxHeight: .infinity)
+                    #endif
                 }
             }
         }

@@ -26,6 +26,12 @@ private let paywallContentSpacing: CGFloat = 18
 private let paywallPadding: CGFloat = 24
 
 private let heroHeight: CGFloat = 260
+/// Width of the text column on iOS. The left column (hero) takes the rest.
+/// On an iPad 11" landscape virtual canvas (~1680pt) this leaves the bulk
+/// of the width to the hero. Lower than 520 so the carousel reads as the
+/// centerpiece; copy still has room to breathe at this width without
+/// excessive wrapping.
+private let iosTextColumnWidth: CGFloat = 400
 private let heroCorner: CGFloat = 10
 private let heroBackground = Color.black.opacity(0.55)
 private let heroBorder = Color.white.opacity(0.08)
@@ -61,6 +67,21 @@ struct PaywallSheet: View {
     @State private var hoverCTA = false
 
     var body: some View {
+        Group {
+            #if os(macOS)
+            macOSBody
+            #else
+            iosBody
+            #endif
+        }
+        .transition(.opacity)
+        .onAppear { carousel.start() }
+        .onDisappear { carousel.stop() }
+    }
+
+    /// macOS: centered card floating over a dimmed scrim — works because the
+    /// app window can be huge and `.sheet` already inset-fits the card.
+    private var macOSBody: some View {
         ZStack {
             paywallScrim
                 .ignoresSafeArea()
@@ -87,10 +108,120 @@ struct PaywallSheet: View {
             )
             .shadow(color: Color.black.opacity(0.6), radius: 26, y: 12)
         }
-        .transition(.opacity)
-        .onAppear { carousel.start() }
-        .onDisappear { carousel.stop() }
     }
+
+    /// iOS: 2-column layout sized for iPad landscape. Left half is the live
+    /// 3D engine carousel; right half holds every text element + the buy
+    /// button in a single column. No vertical scrolling needed — everything
+    /// fits on a single landscape screen, and the carousel reads as the
+    /// "showroom" left of the spec sheet.
+    #if !os(macOS)
+    private var iosBody: some View {
+        ZStack {
+            paywallCardFill.ignoresSafeArea()
+
+            HStack(spacing: 0) {
+                iosHeroColumn
+                iosTextColumn
+            }
+        }
+        // Run edge-to-edge top + bottom (under the status bar / home
+        // indicator), but RESPECT the leading and trailing safe areas so
+        // the iPhone landscape notch doesn't crop into the carousel hero.
+        .ignoresSafeArea(.container, edges: [.top, .bottom])
+    }
+
+    /// Left column on iOS: carousel chevrons + engine name strip sits as
+    /// its own row at the top, pushing the 3D view down. Avoids the
+    /// transparent-overlay problem where the SceneKit engine bled through
+    /// the annotation's gradient.
+    private var iosHeroColumn: some View {
+        VStack(spacing: 0) {
+            heroAnnotation
+            ZStack {
+                heroBackdrop
+                PaywallEngineHero(carousel: carousel)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    /// Right column on iOS: header (brand + close), main copy, build-your-
+    /// own callout, price row, CTA, status, footer. ScrollView wraps the
+    /// middle so very small scenes (iPhone landscape) still let users reach
+    /// everything; on iPad the natural heights fit without scrolling.
+    private var iosTextColumn: some View {
+        VStack(spacing: 0) {
+            iosTextHeader
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    copyBlock
+                    priceRow
+                    statusLine
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 24)
+                .padding(.top, 16)
+                .padding(.bottom, 12)
+            }
+            iosBottomBar
+        }
+        .frame(width: iosTextColumnWidth)
+        .background(paywallCardFill)
+    }
+
+    /// Brand strip + close button at the top of the right column.
+    private var iosTextHeader: some View {
+        HStack(spacing: 10) {
+            Text("ENGINE SIMULATOR")
+                .modifier(RetroFont(size: 9, weight: .bold))
+                .tracking(2)
+                .foregroundColor(bodyText)
+            Text("PRO")
+                .modifier(RetroFont(size: 9, weight: .bold))
+                .tracking(2)
+                .foregroundColor(.orange)
+                .padding(.horizontal, 5)
+                .padding(.vertical, 2)
+                .background(
+                    RoundedRectangle(cornerRadius: 3)
+                        .stroke(Color.orange.opacity(0.6), lineWidth: 1)
+                )
+            Spacer()
+            Button(action: dismiss) {
+                Image(systemName: "xmark")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundColor(.white.opacity(0.85))
+                    .frame(width: 32, height: 32)
+                    .background(Circle().fill(Color.white.opacity(0.08)))
+                    .overlay(Circle().stroke(Color.white.opacity(0.25), lineWidth: 1))
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, 18)
+        .padding(.top, 16)
+        .padding(.bottom, 10)
+    }
+
+    /// Sticky bottom slab: CTA + footer links. Sits above the home indicator
+    /// inset so nothing important hides behind it.
+    private var iosBottomBar: some View {
+        VStack(spacing: 12) {
+            primaryCTA
+            footerLinks
+        }
+        .padding(.horizontal, 24)
+        .padding(.top, 12)
+        .padding(.bottom, 18)
+        .background(
+            Rectangle()
+                .fill(paywallCardFill)
+                .shadow(color: Color.black.opacity(0.4), radius: 10, y: -4)
+        )
+    }
+
+    #endif
 
     // MARK: Header
 
@@ -180,7 +311,19 @@ struct PaywallSheet: View {
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 10)
+            // macOS gets the dark strip behind the carousel name; on iOS
+            // the hero is edge-to-edge so that strip reads as a random
+            // black bar across the screen. Fade it to clear at the edges
+            // instead so the text just sits on the scene with a soft
+            // gradient.
+            #if os(macOS)
             .background(heroAnnotationBg)
+            #else
+            // Strip is a standalone row above the hero now — solid card
+            // fill instead of a gradient so it reads as its own bar, not
+            // as a fade overlaid on the SceneKit view.
+            .background(paywallCardFill)
+            #endif
 
             CarouselProgressBar(count: carousel.count,
                                 currentIndex: carousel.currentIndex)
@@ -622,14 +765,23 @@ private struct PaywallEngineHero: _SCNViewRepresentable {
         }
 
         /// Sit the camera back far enough that any built-in (Geo through LFA V10)
-        /// fits the hero rect, looking slightly down on the engine.
+        /// fits the hero rect, looking *very slightly* down on the engine.
+        ///
+        /// Numbers tuned for the new VStack hero (annotation row above, smaller
+        /// SCNView area below):
+        /// • distance bumped from 1.4× → 2.0× the block diagonal so the tallest
+        ///   engines (LFA V10, F1 V12) don't crowd the top of the now-shorter
+        ///   viewport.
+        /// • vertical offset reduced from 0.25× → 0.08× block height so the
+        ///   tilt-down stops pushing the cylinder heads past the frame's
+        ///   top edge.
         private func frameCamera(for p: EngineGeometryParams, in scene: SCNScene) {
             guard let cam = scene.rootNode.childNode(withName: "paywallCamera", recursively: false) else { return }
             let diag = sqrt(p.blockLength * p.blockLength
                           + p.blockWidth * p.blockWidth
                           + p.blockHeight * p.blockHeight)
-            let distance = Float(diag * 1.4)
-            cam.position = SCNVector3(0, Float(p.blockHeight) * 0.25, distance)
+            let distance = Float(diag * 2.0)
+            cam.position = SCNVector3(0, Float(p.blockHeight) * 0.08, distance)
             cam.look(at: SCNVector3(0, 0, 0))
         }
 

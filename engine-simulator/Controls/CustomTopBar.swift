@@ -31,11 +31,32 @@ struct CustomTopBar: View {
 
             rightCluster
                 .padding(.trailing, 18)
+
+            #if !os(macOS)
+            // iOS: the throttle slider + up/down shift buttons sit at the
+            // far right so the user can reach them with their right thumb
+            // while holding the iPad in landscape.
+            iosQuickControls
+                .padding(.trailing, 18)
+            #endif
         }
         .frame(height: 86)
         .background(topBarBackground)
         .border(Color.white.opacity(0.12), width: 1, edges: [.bottom])
     }
+
+    #if !os(macOS)
+    // MARK: iOS quick controls — gear readout + throttle slider + shift buttons.
+    private var iosQuickControls: some View {
+        HStack(spacing: 14) {
+            TopBarGearReadout(gear: vm.gear, gearCount: vm.gearCount)
+            TopBarThrottleSlider(value: $vm.throttlePosition)
+                .frame(width: 200)
+            TopBarShiftButton(direction: .up,   action: vm.shiftUp)
+            TopBarShiftButton(direction: .down, action: vm.shiftDown)
+        }
+    }
+    #endif
 
     // MARK: Left — controls
     //
@@ -47,7 +68,8 @@ struct CustomTopBar: View {
 
     private var leftCluster: some View {
         HStack(spacing: 22) {
-            #if os(macOS)
+            // Sidebar toggle now lives on both platforms — iOS needs a
+            // way to reclaim the screen real estate the sidebar takes up.
             Button(action: { SidebarManager.shared.toggleSidebar() }) {
                 Image(systemName: "sidebar.left")
                     .font(.system(size: 17, weight: .light))
@@ -62,6 +84,7 @@ struct CustomTopBar: View {
             .buttonStyle(.plain)
             .help("Toggle Sidebar")
 
+            #if os(macOS)
             WorkspaceToolCluster(
                 browserMode: browserMode,
                 isLayoutDirty: isLayoutDirty,
@@ -83,27 +106,37 @@ struct CustomTopBar: View {
 
     private var rightCluster: some View {
         HStack(spacing: 8) {
-            DashWarningTile(label: "IGN",   active: vm.isIgnitionOn,    accent: .red)    { IgnitionIcon() }
-            DashWarningTile(label: "CRANK", active: vm.isStarterOn,     accent: .green)  { StarterIcon() }
-            DashWarningTile(label: "CLUTCH", active: vm.clutchPressed,  accent: .blue)   { ClutchIcon() }
-            DashWarningTile(label: "DYNO",  active: vm.dynoEnabled,     accent: .orange) { DynoIcon() }
-            DashWarningTile(label: "HOLD",  active: vm.throttleHeld,    accent: .yellow) { HoldIcon() }
+            // IGN and CRANK already have dedicated buttons in the left
+            // cluster on iOS (ArmedIgnitionSwitch + StarterButton); the
+            // duplicate indicator tiles are redundant there, so they only
+            // render on macOS where the keyboard drives those toggles.
+            #if os(macOS)
+            DashWarningTile(label: "IGN",    active: vm.isIgnitionOn,  accent: .red)    { IgnitionIcon() }
+            DashWarningTile(label: "CRANK",  active: vm.isStarterOn,   accent: .green)  { StarterIcon() }
+            DashWarningTile(label: "CLUTCH", active: vm.clutchPressed, accent: .blue)   { ClutchIcon() }
+            DashWarningTile(label: "DYNO",   active: vm.dynoEnabled,   accent: .orange) { DynoIcon() }
+            // HOLD only on macOS — on iOS the throttle slider auto-holds
+            // its position so the indicator is redundant.
+            DashWarningTile(label: "HOLD",   active: vm.throttleHeld,  accent: .yellow) { HoldIcon() }
+            #else
+            // CLUTCH and DYNO are tappable on iOS — pressing the indicator
+            // toggles the underlying state (K and D on macOS).
+            DashWarningTile(label: "CLUTCH",
+                            active: vm.clutchPressed,
+                            accent: .blue,
+                            onTap: { vm.toggleClutch() }) { ClutchIcon() }
+            DashWarningTile(label: "DYNO",
+                            active: vm.dynoEnabled,
+                            accent: .orange,
+                            onTap: { vm.toggleDyno() }) { DynoIcon() }
+            #endif
         }
     }
 
     private var topBarBackground: some View {
-        ZStack {
-            Color.appBackground
-            LinearGradient(colors: [Color.white.opacity(0.04), Color.clear],
-                           startPoint: .top, endPoint: .bottom)
-            // Faint scan lines for instrument-panel texture.
-            VStack(spacing: 2) {
-                ForEach(0..<3, id: \.self) { _ in
-                    Color.white.opacity(0.015).frame(height: 1)
-                    Spacer().frame(height: 28)
-                }
-            }
-        }
+        // Flat fill — the gradient overlay competed with the dash chrome and
+        // the user asked for it gone on both platforms.
+        Color.appBackground
     }
 }
 
@@ -442,24 +475,46 @@ private struct DashWarningTile<Icon: Shape>: View {
     let active: Bool
     let accent: Color
     let icon: Icon
+    /// Non-nil makes the tile a button. Used on iOS for CLUTCH and DYNO
+    /// where tapping the indicator toggles the underlying state.
+    let onTap: (() -> Void)?
 
-    init(label: String, active: Bool, accent: Color, @ViewBuilder icon: () -> Icon) {
+    init(label: String,
+         active: Bool,
+         accent: Color,
+         onTap: (() -> Void)? = nil,
+         @ViewBuilder icon: () -> Icon) {
         self.label = label
         self.active = active
         self.accent = accent
+        self.onTap = onTap
         self.icon = icon()
     }
 
     var body: some View {
+        Group {
+            if let onTap = onTap {
+                Button(action: onTap) { tileContent }
+                    .buttonStyle(.plain)
+            } else {
+                tileContent
+            }
+        }
+        .contentShape(Rectangle())
+    }
+
+    private var tileContent: some View {
         VStack(spacing: 3) {
             ZStack {
-                // Bezel.
+                // Bezel. Tappable tiles get a slightly more lifted bezel +
+                // accent stroke so they read as buttons, not status lights.
                 RoundedRectangle(cornerRadius: 5)
-                    .fill(LinearGradient(colors: [Color(white: 0.16), Color(white: 0.06)],
-                                         startPoint: .top, endPoint: .bottom))
+                    .fill(LinearGradient(
+                        colors: bezelColors,
+                        startPoint: .top, endPoint: .bottom))
                     .overlay(
                         RoundedRectangle(cornerRadius: 5)
-                            .stroke(Color.white.opacity(0.12), lineWidth: 0.8)
+                            .stroke(bezelStrokeColor, lineWidth: isClickable ? 1.2 : 0.8)
                     )
                     .shadow(color: .black.opacity(0.5), radius: 1.5, x: 0, y: 1)
 
@@ -495,4 +550,169 @@ private struct DashWarningTile<Icon: Shape>: View {
     private var iconColor: Color {
         active ? accent : accent.opacity(0.25)
     }
+
+    private var isClickable: Bool { onTap != nil }
+
+    private var bezelColors: [Color] {
+        if isClickable {
+            // Lift slightly + warmer top so the tile reads as a pushable
+            // button rather than a passive indicator.
+            return [Color(white: 0.22), Color(white: 0.08)]
+        }
+        return [Color(white: 0.16), Color(white: 0.06)]
+    }
+
+    private var bezelStrokeColor: Color {
+        if isClickable {
+            return active ? accent.opacity(0.85) : accent.opacity(0.45)
+        }
+        return Color.white.opacity(0.12)
+    }
 }
+
+// MARK: - iOS quick controls
+//
+// Pulled into the top bar on iOS so users always have throttle + shifting
+// reachable without a hardware keyboard. Styling stays in the same family
+// as the rest of the dash chrome.
+
+#if !os(macOS)
+
+private let topBarSliderHeight: CGFloat = 28
+private let topBarSliderHandleWidth: CGFloat = 18
+private let topBarSliderTrackColor = Color.white.opacity(0.07)
+private let topBarSliderTrackBorder = Color.white.opacity(0.18)
+private let topBarSliderFillColor = Color.orange.opacity(0.4)
+private let topBarSliderHandleFill = Color(white: 0.20)
+private let topBarSliderHandleBorder = Color.white.opacity(0.45)
+private let topBarSliderLabelColor = Color.white.opacity(0.55)
+private let topBarSliderValueColor = Color.orange
+
+private struct TopBarThrottleSlider: View {
+    @Binding var value: Double
+
+    var body: some View {
+        VStack(spacing: 3) {
+            HStack {
+                Text("THROTTLE")
+                    .modifier(RetroFont(size: 8, weight: .bold))
+                    .tracking(1.2)
+                    .foregroundColor(topBarSliderLabelColor)
+                Spacer()
+                Text(String(format: "%.0f%%", value * 100))
+                    .modifier(RetroFont(size: 9, weight: .bold))
+                    .foregroundColor(topBarSliderValueColor)
+            }
+
+            GeometryReader { geo in
+                let trackWidth = geo.size.width - topBarSliderHandleWidth
+                let x = trackWidth * CGFloat(value)
+
+                ZStack(alignment: .leading) {
+                    Rectangle().fill(topBarSliderTrackColor)
+                    Rectangle()
+                        .fill(topBarSliderFillColor)
+                        .frame(width: x + topBarSliderHandleWidth / 2)
+                    Rectangle()
+                        .fill(topBarSliderHandleFill)
+                        .frame(width: topBarSliderHandleWidth)
+                        .overlay(Rectangle().stroke(topBarSliderHandleBorder, lineWidth: 1))
+                        .offset(x: x)
+                }
+                .overlay(Rectangle().stroke(topBarSliderTrackBorder, lineWidth: 1))
+                .gesture(DragGesture(minimumDistance: 0).onChanged { drag in
+                    let pct = (drag.location.x - topBarSliderHandleWidth / 2) / trackWidth
+                    value = min(max(0, Double(pct)), 1)
+                })
+            }
+            .frame(height: topBarSliderHeight)
+        }
+    }
+}
+
+private let topBarGearReadoutWidth: CGFloat = 56
+
+private struct TopBarGearReadout: View {
+    let gear: Int
+    let gearCount: Int
+
+    var body: some View {
+        VStack(spacing: 2) {
+            Text("GEAR")
+                .modifier(RetroFont(size: 8, weight: .bold))
+                .tracking(1.2)
+                .foregroundColor(.white.opacity(0.55))
+            Text(gear == -1 ? "N" : "\(gear + 1)")
+                .modifier(RetroFont(size: 22, weight: .black))
+                .foregroundColor(gear == -1 ? .green : .orange)
+                .shadow(color: (gear == -1 ? Color.green : Color.orange).opacity(0.5), radius: 3)
+            Text("\(gearCount)-SPD")
+                .modifier(RetroFont(size: 7, weight: .bold))
+                .tracking(0.8)
+                .foregroundColor(.white.opacity(0.35))
+        }
+        .frame(width: topBarGearReadoutWidth)
+    }
+}
+
+private enum TopBarShiftDirection {
+    case up, down
+
+    var symbol: String {
+        switch self {
+        case .up:   return "arrow.up"
+        case .down: return "arrow.down"
+        }
+    }
+
+    var label: String {
+        switch self {
+        case .up:   return "SHIFT UP"
+        case .down: return "SHIFT DN"
+        }
+    }
+}
+
+private let topBarShiftButtonSize: CGFloat = 44
+private let topBarShiftButtonFill = Color.white.opacity(0.05)
+private let topBarShiftButtonBorder = Color.white.opacity(0.25)
+private let topBarShiftButtonAccent = Color.orange
+
+private struct TopBarShiftButton: View {
+    let direction: TopBarShiftDirection
+    let action: () -> Void
+
+    @State private var pressed = false
+
+    var body: some View {
+        Button(action: action) {
+            VStack(spacing: 2) {
+                Image(systemName: direction.symbol)
+                    .font(.system(size: 16, weight: .bold))
+                    .foregroundColor(pressed ? topBarShiftButtonAccent : .white.opacity(0.75))
+                Text(direction.label)
+                    .modifier(RetroFont(size: 6, weight: .bold))
+                    .tracking(0.8)
+                    .foregroundColor(pressed ? topBarShiftButtonAccent : .white.opacity(0.45))
+            }
+            .frame(width: topBarShiftButtonSize, height: topBarShiftButtonSize)
+            .background(
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(topBarShiftButtonFill)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 6)
+                    .stroke(pressed ? topBarShiftButtonAccent : topBarShiftButtonBorder,
+                            lineWidth: pressed ? 1.5 : 1)
+            )
+        }
+        .buttonStyle(.plain)
+        .simultaneousGesture(
+            DragGesture(minimumDistance: 0)
+                .onChanged { _ in pressed = true }
+                .onEnded { _ in pressed = false }
+        )
+    }
+}
+
+#endif

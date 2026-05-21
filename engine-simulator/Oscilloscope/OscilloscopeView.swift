@@ -331,26 +331,43 @@ struct OscilloscopeView: View {
     }
 
     private func drawLegend() -> some View {
-        VStack {
+        // Legend sizes are smaller on iOS so they don't dominate a
+        // shrunk-down oscilloscope tile.
+        #if os(macOS)
+        let legendFontSize: CGFloat = 10
+        let chipSize: CGFloat = 8
+        let itemSpacing: CGFloat = 12
+        let pad: CGFloat = 4
+        let outerPad: CGFloat = 6
+        #else
+        let legendFontSize: CGFloat = 7
+        let chipSize: CGFloat = 5
+        let itemSpacing: CGFloat = 7
+        let pad: CGFloat = 3
+        let outerPad: CGFloat = 4
+        #endif
+
+        return VStack {
             HStack {
                 Spacer()
-                HStack(spacing: 12) {
+                HStack(spacing: itemSpacing) {
                     ForEach(configs.indices, id: \.self) { i in
-                        HStack(spacing: 4) {
-                            Circle().fill(configs[i].color).frame(width: 8, height: 8)
+                        HStack(spacing: 3) {
+                            Circle().fill(configs[i].color)
+                                .frame(width: chipSize, height: chipSize)
                             Text(configs[i].type.displayName)
                         }
                     }
                 }
-                .font(.system(size: 10, weight: .medium, design: .monospaced))
+                .font(.system(size: legendFontSize, weight: .medium, design: .monospaced))
                 .foregroundColor(.white)
-                .padding(4)
+                .padding(pad)
                 .background(Color.black.opacity(0.6))
                 .cornerRadius(4)
             }
             Spacer()
         }
-        .padding(6)
+        .padding(outerPad)
     }
 
     private func drawCornerLabel() -> some View {
@@ -407,6 +424,7 @@ struct DynoOscilloscopeView: View {
                 showPeaks: !engineVm.dynoEnabled
             )
             if !engineVm.dynoEnabled && hasNoData {
+                #if os(macOS)
                 Text("ENABLE DYNO (D) TO RUN")
                     .modifier(RetroFont(size: 11))
                     .foregroundColor(.gray)
@@ -414,6 +432,15 @@ struct DynoOscilloscopeView: View {
                     .padding(.vertical, 8)
                     .background(Color.black.opacity(0.55))
                     .cornerRadius(6)
+                #else
+                Text("TAP DYNO IN TOP BAR TO RUN")
+                    .modifier(RetroFont(size: 11))
+                    .foregroundColor(.gray)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .background(Color.black.opacity(0.55))
+                    .cornerRadius(6)
+                #endif
             }
         }
     }

@@ -56,19 +56,35 @@ private let baseSpeedRowHorizontalPadding: CGFloat = 4
 
 private let baseDisplayCornerRadius: CGFloat = 8
 private let baseDisplayVerticalPadding: CGFloat = 18
-private let baseDisplayFontSize: CGFloat = 64
+#if os(macOS)
+private let baseDisplayFontSize: CGFloat = 88
+#else
+private let baseDisplayFontSize: CGFloat = 130
+#endif
 private let baseButtonHeight: CGFloat = 44
 private let baseChipHeight: CGFloat = 34
 private let baseChipCornerRadius: CGFloat = 6
 private let baseButtonHorizontalPadding: CGFloat = 14
 private let baseChipHorizontalPadding: CGFloat = 12
-private let baseHeaderFontSize: CGFloat = 10
-private let baseStatusIconFontSize: CGFloat = 13
-private let baseStatusTextFontSize: CGFloat = 14
-private let baseSpeedLabelFontSize: CGFloat = 10
-private let baseSpeedValueFontSize: CGFloat = 15
-private let baseButtonFontSize: CGFloat = 13
-private let baseChipFontSize: CGFloat = 12
+// Both platforms get bumped; iOS gets an extra factor to undo the global
+// 0.7 scaleEffect.
+#if os(macOS)
+private let baseHeaderFontSize: CGFloat = 14
+private let baseStatusIconFontSize: CGFloat = 18
+private let baseStatusTextFontSize: CGFloat = 19
+private let baseSpeedLabelFontSize: CGFloat = 13
+private let baseSpeedValueFontSize: CGFloat = 22
+private let baseButtonFontSize: CGFloat = 18
+private let baseChipFontSize: CGFloat = 17
+#else
+private let baseHeaderFontSize: CGFloat = 22
+private let baseStatusIconFontSize: CGFloat = 28
+private let baseStatusTextFontSize: CGFloat = 30
+private let baseSpeedLabelFontSize: CGFloat = 22
+private let baseSpeedValueFontSize: CGFloat = 34
+private let baseButtonFontSize: CGFloat = 28
+private let baseChipFontSize: CGFloat = 26
+#endif
 private let textShrinkFloor: CGFloat = 0.5
 private let displayShrinkFloor: CGFloat = 0.3
 

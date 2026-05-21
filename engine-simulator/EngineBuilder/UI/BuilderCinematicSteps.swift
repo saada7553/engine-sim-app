@@ -80,7 +80,14 @@ struct IdentityStep: View {
             EnginePlaceholderArt(spec: state.spec)
                 .frame(width: 280, height: 280)
         }
-        .onAppear { focused = true }
+        .onAppear {
+            // Only autofocus on macOS — iOS would summon the on-screen
+            // keyboard the moment the builder opens, which the user
+            // hasn't asked for yet.
+            #if os(macOS)
+            focused = true
+            #endif
+        }
     }
 }
 
@@ -292,13 +299,24 @@ struct BottomEndStep: View {
             }
             .frame(maxWidth: 480)
 
-            VStack(spacing: 24) {
+            VStack(spacing: 10) {
                 BuilderSectionHeading(title: "Cylinder")
+                // Frame height tracks the diagram's natural content size
+                // so the StatBox row below sits flush under the crank
+                // circle instead of floating at the bottom of a fixed
+                // 540pt slab.
+                let diagramHeight = CylinderLayout.naturalHeight(
+                    viewWidth: 380,
+                    boreMm: state.spec.boreMm,
+                    strokeMm: state.spec.strokeMm,
+                    rodLengthMm: state.spec.rodLengthMm,
+                    compressionHeightMm: state.spec.compressionHeightMm
+                )
                 CylinderSection(boreMm: state.spec.boreMm,
                                  strokeMm: state.spec.strokeMm,
                                  rodLengthMm: state.spec.rodLengthMm,
                                  compressionHeightMm: state.spec.compressionHeightMm)
-                    .frame(width: 380, height: 540)
+                    .frame(width: 380, height: diagramHeight)
                 HStack {
                     StatBox(label: "B / S", value: String(format: "%.2f", state.spec.boreMm / state.spec.strokeMm))
                     StatBox(label: "R / S", value: String(format: "%.2f", state.spec.rodLengthMm / state.spec.strokeMm))
@@ -457,6 +475,38 @@ private struct CylinderSection: View {
 
 /// Pure-data layout for the cylinder cross-section. Keeps the view body simple.
 private struct CylinderLayout {
+    /// Hard cap on the diagram scale (px per mm). Without it, the
+    /// width-driven scale at viewWidth=380 ends up ~2.44 px/mm, which
+    /// renders a frame ~660pt tall at default slider values — too tall
+    /// for the step layout. 1.5 keeps the diagram in the ~400–560pt
+    /// range across the full slider sweep.
+    static let maxRenderScale: CGFloat = 1.5
+
+    /// Natural rendered height (pt) for a CylinderSection at the given
+    /// view width and current slider values. Mirrors the scale math in
+    /// `init` so a frame sized to this value contains exactly the drawn
+    /// content with the configured top/bottom margins.
+    static func naturalHeight(viewWidth: CGFloat,
+                              boreMm: Double, strokeMm: Double,
+                              rodLengthMm: Double,
+                              compressionHeightMm: Double) -> CGFloat {
+        let chamberClearance = boreMm * Double(CylinderDiagram.chamberClearanceRatioOfBore)
+        let headHeight = boreMm * Double(CylinderDiagram.headThicknessRatioOfBore)
+        let pistonHeight = compressionHeightMm + chamberClearance * 0.5
+        let crankRadius = strokeMm / 2
+        let maxTotalWidthMm = CylinderDiagram.maxBoreMm + CylinderDiagram.canvasWidthSlackMm
+        let scaleX = viewWidth * CylinderDiagram.viewportFillFraction / CGFloat(maxTotalWidthMm)
+        let scale = min(scaleX, maxRenderScale)
+        // Content layout mirrors init: head → bore → chamberClear →
+        // piston(0.7) → rod → 2× crankRadius (journal-to-center + center-
+        // to-bottom).
+        let contentMm = headHeight + chamberClearance + pistonHeight * 0.7
+                       + rodLengthMm + crankRadius * 2
+        let topMargin: CGFloat = 8
+        let bottomMargin: CGFloat = 12
+        return topMargin + CGFloat(contentMm) * scale + bottomMargin
+    }
+
     let centerX: CGFloat
 
     // Vertical anchors (top-down in view coords).
@@ -514,24 +564,25 @@ private struct CylinderLayout {
             + CylinderDiagram.canvasBottomMarginMm
         let maxTotalWidthMm = CylinderDiagram.maxBoreMm + CylinderDiagram.canvasWidthSlackMm
 
-        let scaleY = viewSize.height * CylinderDiagram.viewportFillFraction / maxTotalHeightMm
         let scaleX = viewSize.width  * CylinderDiagram.viewportFillFraction / maxTotalWidthMm
-        let scale = CGFloat(min(scaleX, scaleY))
+        // Scale only by width (capped). Height is whatever the natural
+        // content needs — the parent in BottomEndStep sizes the frame to
+        // match via `CylinderLayout.naturalHeight(...)`, which uses the
+        // same formula so the StatBoxes sit flush under the crank circle
+        // instead of floating at the bottom of a too-tall frame.
+        let scale = CGFloat(min(scaleX, Double(CylinderLayout.maxRenderScale)))
 
-        // *** Stable crank anchor ***
-        // Crank center is locked vertically — placed so that the full crank
-        // circle (one radius below it) plus a small margin fits inside the
-        // canvas. The head / bore then follow the piston upward from here, so
-        // there's no oversized empty cylinder above TDC at small slider values.
-        let crankAnchorYMm = maxHeadHeight
-            + maxChamberClearance
-            + maxPistonHeight
-            + CylinderDiagram.maxStrokeMm
-            + CylinderDiagram.maxRodLengthMm
-            + maxCrankRadius
-        let topMargin = (viewSize.height - CGFloat(maxTotalHeightMm) * scale) / 2
-
-        func y(_ mm: Double) -> CGFloat { topMargin + CGFloat(mm) * scale }
+        // *** Stable head anchor ***
+        // Anchor the cylinder HEAD to the top of the canvas with a small
+        // breathing margin. Previously the crank was anchored at the
+        // max-values position which pushed the head far down inside the
+        // canvas at typical (sub-max) slider values — that's where the
+        // "huge gap above the cylinder" came from. With the head fixed at
+        // the top, the crank now slides into position based on the current
+        // rod / stroke values, and any empty space ends up at the BOTTOM
+        // of the canvas (below the crank circle) where it doesn't compete
+        // with the section heading above.
+        let topMargin: CGFloat = 8
 
         let bore   = CGFloat(boreMm)             * scale
         let stroke = CGFloat(strokeMm)           * scale
@@ -542,30 +593,37 @@ private struct CylinderLayout {
 
         self.centerX = viewSize.width / 2
 
-        // Crank center is locked to the canvas (does not move with rod / stroke).
-        self.crankCenterY = y(crankAnchorYMm)
-        // Crank journal at TDC sits one crank-radius ABOVE the locked crank center.
-        self.crankJournalAtTDCY = self.crankCenterY - CGFloat(crankRadiusMm) * scale
-        // Wrist pin is one rod-length above the crank journal at TDC.
-        self.wristPinY = self.crankJournalAtTDCY - rod
-        // Piston body extends from wrist pin upward to its crown.
-        let pistonTopAtTDC = self.wristPinY - pistonH * 0.7
+        // Head top sits at the fixed top margin.
+        let headTopY = topMargin
+        self.headCenterY = headTopY + headH / 2
+        self.headHeight = headH
+        self.headWidth = bore + 16
+
+        // Bore begins at the bottom edge of the head; chamber clearance
+        // separates piston-crown-at-TDC from the bore top.
+        self.boreTopY = headTopY + headH
+        let pistonTopAtTDC = self.boreTopY + chamberClear
         self.wristPinOffsetY = pistonH * 0.7
+        self.wristPinY = pistonTopAtTDC + pistonH * 0.7
         self.tdcPistonCenterY = pistonTopAtTDC + pistonH / 2
         self.bdcPistonCenterY = self.tdcPistonCenterY + stroke
 
-        // Bore wraps the piston travel with only chamber clearance above TDC
-        // and a small overhang below BDC. The head sits directly on top of
-        // the bore — no oversized gap between deck and piston crown.
-        self.boreTopY = pistonTopAtTDC - chamberClear
+        // Crank journal sits one rod-length below the wrist pin at TDC;
+        // crank center is one crank-radius below the journal (current
+        // values — not max — so the diagram tightens up when sliders are
+        // low instead of leaving dead space at the top).
+        self.crankJournalAtTDCY = self.wristPinY + rod
+        self.crankCenterY = self.crankJournalAtTDCY + CGFloat(crankRadiusMm) * scale
+
         self.boreBottomY = self.bdcPistonCenterY + pistonH / 2
             + CGFloat(CylinderDiagram.boreBottomOverhangMm) * scale
         self.boreLeftX = centerX - bore / 2
         self.boreRightX = centerX + bore / 2
 
-        self.headHeight = headH
-        self.headWidth = bore + 16
-        self.headCenterY = self.boreTopY - headH / 2
+        // crankAnchorYMm kept as an unused helper for future tooling.
+        _ = maxHeadHeight + maxChamberClearance + maxPistonHeight
+            + CylinderDiagram.maxStrokeMm + CylinderDiagram.maxRodLengthMm
+            + maxCrankRadius
 
         self.pistonWidth = max(4, bore - CGFloat(CylinderDiagram.pistonInsetFromBore))
         self.pistonHeight = pistonH

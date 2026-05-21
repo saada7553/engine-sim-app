@@ -7,12 +7,36 @@ import AppKit
 /// RevenueCat sandbox key. Swap to the production key on release.
 private let revenueCatAPIKey = "test_ZYpdwVJIKcNhwMICqAkYNPRCGur"
 
+/// Fixed sidebar width on iOS — mirrors the macOS NavigationSplitView
+/// ideal width so the layout looks identical across platforms.
+private let iosSidebarWidth: CGFloat = 260
+
+/// Global UI scale on iOS. Every macOS dimension is sized for a 1920+px
+/// desktop window; an 11" iPad is ~1180px wide in landscape, so without a
+/// scale the top bar, sidebar, builder cards, and tile chrome eat the
+/// screen. Rendering the content at its native (macOS) size and then
+/// scaleEffect-ing it down to fit gives every view proportionally less
+/// real estate, which is exactly what dense dashboards want. Touch areas
+/// scale with the view so interaction targets stay aligned.
+///
+/// 0.7 hits the sweet spot where text is still readable and dash tiles
+/// look like a Le Mans dash rather than an iPhone widget. Adjust here to
+/// tune the whole iOS app at once.
+private let iosGlobalScale: CGFloat = 0.7
+
 @main
 struct TileSurfApp: App {
     @StateObject private var rootViewModel: RootViewModel
     @StateObject private var engineViewModel: EngineViewModel
     @StateObject private var purchaseManager: PurchaseManager
     @State private var keyboardController: KeyboardController
+    // Pinned to .all so iOS doesn't hide the detail column behind the
+    // sidebar (the default on compact widths and iPad portrait). With the
+    // orientation lock to landscape the tile area always has room.
+    @State private var splitViewVisibility: NavigationSplitViewVisibility = .all
+    // Drives the iOS sidebar collapse/expand. The macOS sidebar is
+    // controlled via the responder chain, so this is iOS-only.
+    @ObservedObject private var sidebarManager = SidebarManager.shared
 
     init() {
         // Boot RevenueCat before any view binds to PurchaseManager — the
@@ -45,7 +69,7 @@ struct TileSurfApp: App {
     
     var body: some Scene {
         WindowGroup {
-            rootScene
+            scaledRoot
                 .environmentObject(purchaseManager)
                 .background(Color.appBackground)
                 #if os(macOS)
@@ -65,13 +89,60 @@ struct TileSurfApp: App {
         #endif
     }
 
+    /// On iOS, draw the entire rootScene at a `1/scale` virtual canvas and
+    /// then `scaleEffect` it down to the real screen size. SwiftUI lays out
+    /// at the virtual size (so the macOS-tuned numbers are honored exactly),
+    /// while the user sees a proportionally smaller, denser dashboard.
+    @ViewBuilder
+    private var scaledRoot: some View {
+        #if os(macOS)
+        rootScene
+        #else
+        // iPad has no notch — ignoring safe area here gives the builder
+        // and tile area the full screen, which is what the user expects on
+        // a flat slab. iPhone landscape DOES have a notch cutting into one
+        // long edge, so we leave the safe area in place there to keep the
+        // sidebar's leading column clear of the cutout.
+        let isPad = UIDevice.current.userInterfaceIdiom == .pad
+        GeometryReader { geo in
+            rootScene
+                .frame(
+                    width: geo.size.width / iosGlobalScale,
+                    height: geo.size.height / iosGlobalScale
+                )
+                .scaleEffect(iosGlobalScale, anchor: .topLeading)
+        }
+        .ignoresSafeArea(.container, edges: isPad ? .all : [])
+        #endif
+    }
+
     private var rootScene: some View {
-        NavigationSplitView {
+        #if os(macOS)
+        NavigationSplitView(columnVisibility: $splitViewVisibility) {
             SideBarView(rootViewModel: rootViewModel)
                 .navigationSplitViewColumnWidth(ideal: 260)
         } detail: {
             detailView
         }
+        .navigationSplitViewStyle(.balanced)
+        #else
+        // iOS: NavigationSplitView collapses the detail column behind the
+        // sidebar in any compact context (iPhone, iPad slide-over, smaller
+        // scene sizes). Since the app is landscape-only and the tile area
+        // needs to be visible at all times, sidestep the column-collapse
+        // logic with a plain HStack. SidebarManager.isSidebarHidden lets
+        // the user collapse the sidebar from the top-bar toggle.
+        HStack(spacing: 0) {
+            if !sidebarManager.isSidebarHidden {
+                SideBarView(rootViewModel: rootViewModel)
+                    .frame(width: iosSidebarWidth)
+                    .transition(.move(edge: .leading).combined(with: .opacity))
+            }
+            detailView
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        .animation(.easeInOut(duration: 0.22), value: sidebarManager.isSidebarHidden)
+        #endif
     }
 
     #if os(macOS)

@@ -114,11 +114,24 @@ struct UniversalGauge: View {
             GeometryReader { geometry in
                 let size = min(geometry.size.width, geometry.size.height)
                 let center = CGPoint(x: geometry.size.width / 2, y: geometry.size.height / 2)
-                let outerRadius = size / 2 - 20  // Padding for labels
+                // Inset scales with the gauge: a 400pt gauge gets ~14pt of
+                // padding for tick labels, smaller gauges proportionally
+                // less. Cap so very large gauges don't waste space either.
+                let labelInset = min(size * 0.035, 14)
+                let outerRadius = size / 2 - labelInset
 
-                // Determine if we should use compact mode (K abbreviation, fewer labels)
+                // Determine if we should use compact mode (K abbreviation, fewer labels).
+                // iOS thresholds are lower because the global 0.7 scaleEffect
+                // shrinks every gauge by 30% visually — we want minor ticks
+                // to keep drawing at smaller virtual sizes so they don't
+                // vanish as soon as a gauge gets a modest tile.
+                #if os(macOS)
                 let isCompact = size < 180
                 let isVeryCompact = size < 120
+                #else
+                let isCompact = size < 110
+                let isVeryCompact = size < 70
+                #endif
 
                 ZStack {
                     // Background
@@ -248,7 +261,17 @@ struct UniversalGauge: View {
                 let angle = config.angle(for: normalizedPos)
 
                 let tickLength = isMajor ? config.ticks.majorTickLength : config.ticks.minorTickLength
+                // Boost tick widths on iOS so they don't visually vanish
+                // after the global 0.7 scaleEffect. Minor ticks get a
+                // slightly larger boost than majors because they're
+                // already thinner and harder to see.
+                #if os(macOS)
                 let tickWidth = isMajor ? config.ticks.majorTickWidth : config.ticks.minorTickWidth
+                #else
+                let tickWidth = (isMajor
+                                 ? config.ticks.majorTickWidth * 1.4
+                                 : config.ticks.minorTickWidth * 1.6)
+                #endif
 
                 let innerRadius = tickStart - tickLength
                 let outerPoint = CGPoint(

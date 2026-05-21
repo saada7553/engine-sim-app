@@ -114,6 +114,12 @@ struct TileView: View {
         // Controls
         case .engineControls:
             return AnyView(EngineControlsView(vm: tile.engineVm))
+        case .clutchIntake:
+            return AnyView(ThrottleView(vm: tile.engineVm))
+        case .clutchPanel:
+            return AnyView(ClutchPanelView(vm: tile.engineVm))
+        case .intakePanel:
+            return AnyView(IntakePanelView(vm: tile.engineVm))
         case .ecuTuning:
             // EcuTuningView observes vm.ecu via its inner editor whose .id is
             // keyed to ObjectIdentifier(vm.ecu), so swaps are handled inside.

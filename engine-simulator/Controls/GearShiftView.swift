@@ -17,9 +17,16 @@ private let gateAspectMin: CGFloat = 0.55
 private let gateAspectMax: CGFloat = 1.55
 // Hard cap on the gate's drawn size — a real shifter is a few inches wide,
 // not the whole tile. Past this size we letterbox empty space instead of
-// scaling up further.
+// scaling up further. On iOS the global app scale (≈0.7) shrinks every
+// macOS-tuned dimension, so the cap has to be bigger here for the gate to
+// remain large enough to grab and drag with a fingertip.
+#if os(macOS)
 private let gateMaxWidth: CGFloat = 320
 private let gateMaxHeight: CGFloat = 320
+#else
+private let gateMaxWidth: CGFloat = 560
+private let gateMaxHeight: CGFloat = 560
+#endif
 private let gatePadFraction: CGFloat = 0.18
 private let travelFraction: CGFloat = 0.34
 private let columnSpacingMin: CGFloat = 24
@@ -63,15 +70,25 @@ struct GearShiftView: View {
     var body: some View {
         let count = clampedGearCount(vm.gearCount)
         VStack(spacing: 10) {
+            // GearHeader is duplicated chrome on iOS — the gear number lives
+            // on the top bar there, and the RetroPanel above already has a
+            // title. macOS keeps it inline.
+            #if os(macOS)
             GearHeader(gear: vm.gear, gearCount: count)
+            #endif
             AspectLockedGate(
                 gear: vm.gear,
                 gearCount: count,
                 onShift: vm.setGear
             )
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+            // The small up/down ShiftRow lives on the top bar on iOS so the
+            // gate can use the full tile height. macOS keeps it inline as a
+            // keyboard-shortcut fallback.
+            #if os(macOS)
             ShiftRow(gear: vm.gear, gearCount: count, onShift: vm.setGear)
                 .frame(height: shiftButtonHeight)
+            #endif
         }
         .padding(8)
     }

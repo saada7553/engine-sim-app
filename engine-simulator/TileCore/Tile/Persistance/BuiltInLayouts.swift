@@ -95,7 +95,19 @@ enum BuiltInLayouts {
     static let cockpit: TileLayout = TileLayout(
         id: BuiltInLayoutId.cockpit,
         name: "Cockpit",
-        rootData: BuiltInBuilder.split(.horizontal, [
+        rootData: cockpitRoot,
+        isBuiltIn: true
+    )
+
+    /// macOS Cockpit: the original 3D-over-controls + 8-gauge grid.
+    /// iOS Cockpit: 3D engine takes the bulk of the left column (it's the
+    /// star of the cockpit), shifter is shorter underneath. On the right
+    /// the two intake/AFR gauges are replaced by the clutch + intake
+    /// cross-section drawings so the user can see what their right thumb
+    /// is doing on the throttle slider.
+    private static var cockpitRoot: TileData {
+        #if os(macOS)
+        return BuiltInBuilder.split(.horizontal, [
             BuiltInBuilder.split(.vertical, [
                 BuiltInBuilder.leaf(.engine3DProcedural,
                                     size: CGSize(width: 680, height: 400)),
@@ -116,9 +128,32 @@ enum BuiltInLayouts {
                     BuiltInBuilder.leaf(.flowOscilloscope,          size: CGSize(width: 460, height: 250)),
                 ], size: CGSize(width: 460, height: 1000)),
             ], size: CGSize(width: 920, height: 1000)),
-        ]),
-        isBuiltIn: true
-    )
+        ])
+        #else
+        return BuiltInBuilder.split(.horizontal, [
+            BuiltInBuilder.split(.vertical, [
+                BuiltInBuilder.leaf(.engine3DProcedural,
+                                    size: CGSize(width: 680, height: 580)),
+                BuiltInBuilder.leaf(.engineControls,
+                                    size: CGSize(width: 680, height: 420)),
+            ], size: CGSize(width: 680, height: 1000)),
+            BuiltInBuilder.split(.horizontal, [
+                BuiltInBuilder.split(.vertical, [
+                    BuiltInBuilder.leaf(.rpmGauge,                  size: CGSize(width: 460, height: 250)),
+                    BuiltInBuilder.leaf(.manifoldPressureGauge,     size: CGSize(width: 460, height: 250)),
+                    BuiltInBuilder.leaf(.clutchPanel,               size: CGSize(width: 460, height: 250)),
+                    BuiltInBuilder.leaf(.dynoOscilloscope,          size: CGSize(width: 460, height: 250)),
+                ], size: CGSize(width: 460, height: 1000)),
+                BuiltInBuilder.split(.vertical, [
+                    BuiltInBuilder.leaf(.speedometerGauge,          size: CGSize(width: 460, height: 250)),
+                    BuiltInBuilder.leaf(.volumetricEfficiencyGauge, size: CGSize(width: 460, height: 250)),
+                    BuiltInBuilder.leaf(.intakePanel,               size: CGSize(width: 460, height: 250)),
+                    BuiltInBuilder.leaf(.flowOscilloscope,          size: CGSize(width: 460, height: 250)),
+                ], size: CGSize(width: 460, height: 1000)),
+            ], size: CGSize(width: 920, height: 1000)),
+        ])
+        #endif
+    }
 
     /// The single tuning workbench. Left column = ECU Tuning + Engine 3D
     /// reference. Right column = three stacked rows of paired panels that
@@ -138,12 +173,7 @@ enum BuiltInLayouts {
         id: BuiltInLayoutId.tuner,
         name: "Tuner",
         rootData: BuiltInBuilder.split(.horizontal, [
-            BuiltInBuilder.split(.vertical, [
-                BuiltInBuilder.leaf(.ecuTuning,
-                                    size: CGSize(width: 720, height: 720)),
-                BuiltInBuilder.leaf(.engine3DProcedural,
-                                    size: CGSize(width: 720, height: 280)),
-            ], size: CGSize(width: 720, height: 1000)),
+            tunerLeftColumn,
             BuiltInBuilder.split(.vertical, [
                 BuiltInBuilder.split(.horizontal, [
                     BuiltInBuilder.leaf(.dynoOscilloscope,
@@ -168,6 +198,26 @@ enum BuiltInLayouts {
         isBuiltIn: true
     )
 
+    /// Left column of the Tuner layout. macOS includes a small live 3D
+    /// preview under the ECU map; iOS drops it so the ECU map gets the
+    /// full column height (3D in a corner tile is too cramped on iPad).
+    private static var tunerLeftColumn: TileData {
+        #if os(macOS)
+        BuiltInBuilder.split(.vertical, [
+            BuiltInBuilder.leaf(.ecuTuning,
+                                size: CGSize(width: 720, height: 720)),
+            BuiltInBuilder.leaf(.engine3DProcedural,
+                                size: CGSize(width: 720, height: 280)),
+        ], size: CGSize(width: 720, height: 1000))
+        #else
+        // Wider on iOS so the heatmap + paint pills fit without clipping;
+        // the scope grid on the right keeps its weight via the matching
+        // 880 split, but the proportional sizing now favors the ECU side.
+        BuiltInBuilder.leaf(.ecuTuning,
+                            size: CGSize(width: 1100, height: 1000))
+        #endif
+    }
+
     /// Driver's seat. Shift light spans the top. Engine Controls take a
     /// narrow portrait column on the left (where it actually fits — the
     /// previous bottom-row placement squashed it horizontally). Engine 3D
@@ -176,7 +226,18 @@ enum BuiltInLayouts {
     static let track: TileLayout = TileLayout(
         id: BuiltInLayoutId.track,
         name: "Track",
-        rootData: BuiltInBuilder.split(.vertical, [
+        rootData: trackRoot,
+        isBuiltIn: true
+    )
+
+    /// macOS keeps the engineControls (shifter + throttle/clutch combined)
+    /// in the left column; iOS splits them so the throttle/clutch drawings
+    /// can live under the 3D engine instead of crowding the shifter, and
+    /// the 0-60 timer can sit directly under the shifter where the user
+    /// actually looks for it on a track run.
+    private static var trackRoot: TileData {
+        #if os(macOS)
+        return BuiltInBuilder.split(.vertical, [
             BuiltInBuilder.leaf(.shiftLight,
                                 size: CGSize(width: 1600, height: 140)),
             BuiltInBuilder.split(.horizontal, [
@@ -193,8 +254,36 @@ enum BuiltInLayouts {
                                         size: CGSize(width: 420, height: 300)),
                 ], size: CGSize(width: 420, height: 860)),
             ], size: CGSize(width: 1600, height: 860)),
-        ]),
-        isBuiltIn: true
-    )
+        ])
+        #else
+        return BuiltInBuilder.split(.vertical, [
+            BuiltInBuilder.leaf(.shiftLight,
+                                size: CGSize(width: 1600, height: 140)),
+            BuiltInBuilder.split(.horizontal, [
+                // Left: H-shifter on top, 0-60 timer underneath.
+                BuiltInBuilder.split(.vertical, [
+                    BuiltInBuilder.leaf(.engineControls,
+                                        size: CGSize(width: 360, height: 560)),
+                    BuiltInBuilder.leaf(.zeroToSixtyTimer,
+                                        size: CGSize(width: 360, height: 300)),
+                ], size: CGSize(width: 360, height: 860)),
+                // Middle: 3D engine on top, clutch + intake drawings under.
+                BuiltInBuilder.split(.vertical, [
+                    BuiltInBuilder.leaf(.engine3DProcedural,
+                                        size: CGSize(width: 820, height: 560)),
+                    BuiltInBuilder.leaf(.clutchIntake,
+                                        size: CGSize(width: 820, height: 300)),
+                ], size: CGSize(width: 820, height: 860)),
+                // Right: speedo + rpm gauges, no timer (it moved left).
+                BuiltInBuilder.split(.vertical, [
+                    BuiltInBuilder.leaf(.speedometerGauge,
+                                        size: CGSize(width: 420, height: 430)),
+                    BuiltInBuilder.leaf(.rpmGauge,
+                                        size: CGSize(width: 420, height: 430)),
+                ], size: CGSize(width: 420, height: 860)),
+            ], size: CGSize(width: 1600, height: 860)),
+        ])
+        #endif
+    }
 
 }

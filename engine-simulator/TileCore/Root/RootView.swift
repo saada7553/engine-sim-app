@@ -11,6 +11,11 @@ import SwiftUI
 struct RootView: View {
     @ObservedObject public var vm: RootViewModel
     @EnvironmentObject private var purchaseManager: PurchaseManager
+    #if !os(macOS)
+    /// Remembered to restore on builder dismiss, so a user who was running
+    /// with the sidebar collapsed doesn't get it re-expanded after a build.
+    @State private var iosSidebarHiddenBeforeBuild = false
+    #endif
 
     var body: some View {
         ZStack {
@@ -29,6 +34,14 @@ struct RootView: View {
                 Group {
                     if vm.isBuildingEngine {
                         EngineBuilderView(onClose: { vm.finishEngineBuild() })
+                            #if !os(macOS)
+                            // The builder needs the full screen width on
+                            // iOS. Auto-fold the sidebar on entry, restore
+                            // its prior state on exit.
+                            .onAppear { iosSidebarHiddenBeforeBuild = SidebarManager.shared.isSidebarHidden
+                                        SidebarManager.shared.isSidebarHidden = true }
+                            .onDisappear { SidebarManager.shared.isSidebarHidden = iosSidebarHiddenBeforeBuild }
+                            #endif
                     } else {
                         TileContainerView(
                             tile: vm.rootTile,
@@ -61,9 +74,19 @@ struct RootView: View {
         } message: {
             Text("Name this tile arrangement to keep it in your layouts list.")
         }
+        // iOS .sheet caps its size and clips the paywall hero. fullScreenCover
+        // owns the whole window so the same hand-built layout can breathe.
+        // macOS keeps the sheet — sheets there are floating panels that
+        // already sit nicely inside the app window.
+        #if os(macOS)
         .sheet(isPresented: $purchaseManager.isPresentingPaywall) {
             PaywallSheet(manager: purchaseManager)
         }
+        #else
+        .fullScreenCover(isPresented: $purchaseManager.isPresentingPaywall) {
+            PaywallSheet(manager: purchaseManager)
+        }
+        #endif
     }
 }
 

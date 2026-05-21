@@ -384,6 +384,10 @@ struct SidebarFooter: View {
                 }
                 .buttonStyle(.plain)
 
+                // The keyboard-shortcuts popover only makes sense on macOS
+                // where the keyboard drives the dashboard; on iOS the
+                // throttle / shift / dyno / clutch live on the top bar.
+                #if os(macOS)
                 Button(action: { showingControls.toggle() }) {
                     Image(systemName: "keyboard")
                         .font(.system(size: 13))
@@ -394,6 +398,7 @@ struct SidebarFooter: View {
                 .popover(isPresented: $showingControls, arrowEdge: .bottom) {
                     ControlsMenuView()
                 }
+                #endif
 
                 Spacer()
 

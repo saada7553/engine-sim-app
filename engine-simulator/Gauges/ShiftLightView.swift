@@ -29,10 +29,17 @@ private let flashPeriodSeconds: Double = 0.10      // strobing cadence above shi
 // Reference dimensions for the layout. All sizes below are scaled by
 // (actualHeight / referenceHeight), clamped to [minScale, maxScale], so the
 // tile collapses cleanly when the user drags it shorter than the 140-px
-// default it ships with in the Track layout.
+// default it ships with in the Track layout. iOS caps maxScale at 1.0
+// because the iOS base font sizes already account for the global 0.7
+// scaleEffect — letting scale grow past 1.0 made the readouts overflow
+// the tile height (clipping the bottom labels).
 private let referenceHeight: CGFloat = 140
 private let minScale: CGFloat = 0.35
+#if os(macOS)
 private let maxScale: CGFloat = 1.4
+#else
+private let maxScale: CGFloat = 1.0
+#endif
 
 private let baseLedSpacing: CGFloat = 6
 private let baseLedHeight: CGFloat = 22
@@ -43,10 +50,24 @@ private let basePanelPadding: CGFloat = 12
 private let baseVStackSpacing: CGFloat = 14
 private let baseReadoutSpacing: CGFloat = 18
 private let baseGlowRadius: CGFloat = 8
-private let baseHeaderFontSize: CGFloat = 10
-private let baseBadgeFontSize: CGFloat = 9
-private let baseReadoutLabelFontSize: CGFloat = 8
-private let baseReadoutValueFontSize: CGFloat = 22
+// Base font sizes are tuned for macOS, then the global 0.7 iOS scaleEffect
+// shrinks every rendered pixel by 30% on iOS. Originally these numbers
+// matched a much taller mac window so the readouts read at glance distance;
+// at modern tile sizes they end up tiny. Both platforms get a generous
+// bump, with iOS pushed further to absorb the global scale.
+#if os(macOS)
+private let baseHeaderFontSize: CGFloat = 14
+private let baseBadgeFontSize: CGFloat = 13
+private let baseReadoutLabelFontSize: CGFloat = 11
+private let baseReadoutValueFontSize: CGFloat = 32
+#else
+// iOS sizes are calibrated against a maxScale=1.0 ceiling + the global
+// 0.7 scaleEffect, so they end up readable without overflowing the tile.
+private let baseHeaderFontSize: CGFloat = 26
+private let baseBadgeFontSize: CGFloat = 24
+private let baseReadoutLabelFontSize: CGFloat = 22
+private let baseReadoutValueFontSize: CGFloat = 56
+#endif
 private let textShrinkFloor: CGFloat = 0.5
 
 private let panelStrokeColor = Color.white.opacity(0.12)
@@ -66,9 +87,8 @@ struct ShiftLightView: View {
         GeometryReader { geo in
             let scale = layoutScale(for: geo.size)
             VStack(spacing: baseVStackSpacing * scale) {
-                header(scale: scale)
+                unifiedHeader(scale: scale)
                 ledBar(scale: scale)
-                readouts(scale: scale)
             }
             .padding(basePadding * scale)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
@@ -81,27 +101,74 @@ struct ShiftLightView: View {
         return max(minScale, min(maxScale, raw))
     }
 
-    private func header(scale: CGFloat) -> some View {
-        HStack {
+    /// Single top bar holding the "SHIFT LIGHT" label, the RPM / OPTIMAL /
+    /// GEAR readouts, and the BUILD / SHIFT NOW status badge. Replaces the
+    /// separate header + readouts row so the component is just a bar over
+    /// the LED strip and doesn't risk clipping its bottom labels.
+    private func unifiedHeader(scale: CGFloat) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: baseReadoutSpacing * scale) {
             Text("SHIFT LIGHT")
                 .modifier(RetroFont(size: baseHeaderFontSize * scale))
                 .foregroundColor(.gray)
                 .lineLimit(1)
                 .minimumScaleFactor(textShrinkFloor)
-            Spacer()
+                .fixedSize()
+
+            Spacer(minLength: baseReadoutSpacing * scale)
+
+            inlineReadout(label: "RPM",
+                          value: "\(Int(vm.rpm))",
+                          color: .white,
+                          scale: scale)
+            inlineReadout(label: "OPTIMAL",
+                          value: "\(Int(shiftRpm))",
+                          color: .orange,
+                          scale: scale)
+            inlineReadout(label: "GEAR",
+                          value: vm.gear == -1 ? "N" : "\(vm.gear + 1)",
+                          color: vm.gear == -1 ? .green : .orange,
+                          scale: scale)
+
+            Spacer(minLength: baseReadoutSpacing * scale)
+
             statusBadge(scale: scale)
+        }
+    }
+
+    /// Compact inline readout for the top bar — label and value share a
+    /// baseline so the bar reads as a single typographic line.
+    private func inlineReadout(label: String, value: String, color: Color, scale: CGFloat) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 4) {
+            Text(label)
+                .modifier(RetroFont(size: baseReadoutLabelFontSize * scale, weight: .bold))
+                .foregroundColor(.white.opacity(0.45))
+                .tracking(1.0)
+                .lineLimit(1)
+                .minimumScaleFactor(textShrinkFloor)
+                .fixedSize()
+            Text(value)
+                .modifier(RetroFont(size: baseHeaderFontSize * scale, weight: .bold))
+                .foregroundColor(color)
+                .lineLimit(1)
+                .minimumScaleFactor(textShrinkFloor)
+                .fixedSize()
         }
     }
 
     private func statusBadge(scale: CGFloat) -> some View {
         let progress = currentProgress
         let (label, color) = statusFor(progress: progress)
+        // Pin the badge to a fixed width so the BUILD ↔ SHIFT NOW flicker
+        // at the rev limiter doesn't change the row's layout — without
+        // this the trailing Spacer absorbs the width delta and the inline
+        // RPM/OPTIMAL/GEAR readouts visibly jitter.
         return Text(label)
             .modifier(RetroFont(size: baseBadgeFontSize * scale, weight: .bold))
             .foregroundColor(color)
             .tracking(1.2)
             .lineLimit(1)
             .minimumScaleFactor(textShrinkFloor)
+            .frame(width: baseBadgeFontSize * scale * 8, alignment: .trailing)
     }
 
     private func statusFor(progress: Double) -> (String, Color) {
@@ -145,40 +212,6 @@ struct ShiftLightView: View {
             .frame(maxWidth: .infinity)
             .shadow(color: lit ? color.opacity(0.85) : .clear,
                     radius: baseGlowRadius * scale)
-    }
-
-    private func readouts(scale: CGFloat) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: baseReadoutSpacing * scale) {
-            readout(label: "RPM",
-                    value: "\(Int(vm.rpm))",
-                    color: .white,
-                    scale: scale)
-            readout(label: "OPTIMAL",
-                    value: "\(Int(shiftRpm))",
-                    color: .orange,
-                    scale: scale)
-            readout(label: "GEAR",
-                    value: vm.gear == -1 ? "N" : "\(vm.gear + 1)",
-                    color: vm.gear == -1 ? .green : .orange,
-                    scale: scale)
-            Spacer()
-        }
-    }
-
-    private func readout(label: String, value: String, color: Color, scale: CGFloat) -> some View {
-        VStack(alignment: .leading, spacing: 1) {
-            Text(label)
-                .modifier(RetroFont(size: baseReadoutLabelFontSize * scale, weight: .bold))
-                .foregroundColor(.white.opacity(0.45))
-                .tracking(1.2)
-                .lineLimit(1)
-                .minimumScaleFactor(textShrinkFloor)
-            Text(value)
-                .modifier(RetroFont(size: baseReadoutValueFontSize * scale))
-                .foregroundColor(color)
-                .lineLimit(1)
-                .minimumScaleFactor(textShrinkFloor)
-        }
     }
 
     // MARK: - Light logic

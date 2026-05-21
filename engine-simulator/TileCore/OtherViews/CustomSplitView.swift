@@ -140,10 +140,11 @@ class SplitViewCoordinator: NSObject, NSSplitViewDelegate {
 
 #else
 
-// iOS: a fixed-share H/VStack stand-in. No drag-to-resize, no persisted per-
-// child sizes — the built-in layouts simply divide the parent evenly between
-// children. The binding shape matches the macOS struct so TileContainerView
-// can keep calling the same initializer.
+// iOS: a non-resizable H/VStack with weighted children. The per-child
+// `data.size` set in BuiltInLayouts (e.g. 1600×140 for the shift light row,
+// 1600×860 for the inner row underneath) is used as a layout *weight* so the
+// shift light stays a thin strip instead of getting 50% of the screen. Drag
+// resize isn't supported here — the built-in layouts ship as-is on iOS.
 struct CustomSplitView: View {
     @Binding var direction: SplitDirection?
     @Binding var children: [TileViewModel]?
@@ -156,31 +157,47 @@ struct CustomSplitView: View {
 
     var body: some View {
         let kids = children ?? []
-        if direction == .horizontal {
-            HStack(spacing: 0) {
-                content(kids: kids)
-            }
-        } else {
-            VStack(spacing: 0) {
-                content(kids: kids)
+        GeometryReader { geo in
+            let weights = kids.map { weight(for: $0) }
+            let totalWeight = max(weights.reduce(0, +), 1)
+            let isHorizontal = direction == .horizontal
+
+            if isHorizontal {
+                HStack(spacing: 0) {
+                    ForEach(kids.indices, id: \.self) { i in
+                        tileContainer(kids[i])
+                            .frame(width: geo.size.width * weights[i] / totalWeight,
+                                   height: geo.size.height)
+                    }
+                }
+            } else {
+                VStack(spacing: 0) {
+                    ForEach(kids.indices, id: \.self) { i in
+                        tileContainer(kids[i])
+                            .frame(width: geo.size.width,
+                                   height: geo.size.height * weights[i] / totalWeight)
+                    }
+                }
             }
         }
     }
 
-    @ViewBuilder
-    private func content(kids: [TileViewModel]) -> some View {
-        ForEach(kids, id: \.id) { child in
-            TileContainerView(
-                tile: child,
-                focusedTile: $focusedTile,
-                browserMode: $browserMode,
-                hoveredTile: $hoveredTile,
-                hoverPosition: $hoverPosition,
-                deleteTile: deleteTile,
-                onLayoutChanged: onLayoutChanged
-            )
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-        }
+    private func weight(for child: TileViewModel) -> CGFloat {
+        guard let size = child.data.size else { return 1 }
+        let raw = direction == .horizontal ? size.width : size.height
+        return max(raw, 1)
+    }
+
+    private func tileContainer(_ child: TileViewModel) -> some View {
+        TileContainerView(
+            tile: child,
+            focusedTile: $focusedTile,
+            browserMode: $browserMode,
+            hoveredTile: $hoveredTile,
+            hoverPosition: $hoverPosition,
+            deleteTile: deleteTile,
+            onLayoutChanged: onLayoutChanged
+        )
     }
 }
 

@@ -69,10 +69,15 @@ struct ThrottleView: View {
                         rpm: vm.rpm
                     )
                 }
+                // Clutch is binary-toggled from the top bar on iOS; the
+                // precision slider only makes sense alongside the macOS
+                // keyboard-driven workflow.
+                #if os(macOS)
                 PrecisionClutchSlider(
                     pressure: vm.clutchPressure,
                     onChange: vm.setClutchPressure
                 )
+                #endif
             }
 
             Divider().background(Color.white.opacity(0.1))
@@ -84,7 +89,12 @@ struct ThrottleView: View {
                         runnerCount: clampedRunnerCount(vm.cylindersPerBank)
                     )
                 }
+                // The throttle slider lives on the top bar on iOS (since the
+                // keyboard isn't an input there). On macOS it stays inline
+                // next to the manifold cross-section.
+                #if os(macOS)
                 PrecisionThrottleSlider(value: $vm.throttlePosition)
+                #endif
             }
         }
         .background(Color.black.opacity(0.2))
@@ -97,17 +107,70 @@ struct ThrottleView: View {
 
     @ViewBuilder
     private func column<Content: View>(title: String, @ViewBuilder content: () -> Content) -> some View {
-        VStack(spacing: 8) {
+        VStack(spacing: 6) {
+            // macOS shows the title; iOS skips it entirely so the drawing
+            // gets the full column height.
+            #if os(macOS)
             HStack {
                 Text(title).modifier(RetroFont(size: 10)).foregroundColor(.gray)
                 Spacer()
             }
             .padding(.horizontal, 8)
+            #endif
 
             content()
         }
+        #if os(macOS)
         .padding(8)
+        #else
+        .padding(4)
+        #endif
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+// MARK: - Standalone single-panel views
+
+/// Just the clutch cross-section, framed for use as its own tile. Used by
+/// the iOS Cockpit layout where the clutch lives in its own cell instead
+/// of sharing space with the intake.
+struct ClutchPanelView: View {
+    @ObservedObject var vm: EngineViewModel
+
+    var body: some View {
+        AspectFitContainer(aspectRatio: clutchAspectRatio) {
+            ClutchCrossSection(clutchPressure: vm.clutchPressure, rpm: vm.rpm)
+        }
+        .padding(6)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color.black.opacity(0.2))
+        .border(Color.white.opacity(0.1), width: 1, edges: [.bottom])
+    }
+}
+
+/// Just the intake manifold cross-section. Paired with ClutchPanelView in
+/// the iOS Cockpit.
+struct IntakePanelView: View {
+    @ObservedObject var vm: EngineViewModel
+
+    private let minRunners: Int = 1
+    private let maxRunners: Int = 8
+
+    var body: some View {
+        AspectFitContainer(aspectRatio: intakeAspectRatio) {
+            IntakeCrossSection(
+                openPercentage: vm.throttlePosition,
+                runnerCount: clampedRunnerCount(vm.cylindersPerBank)
+            )
+        }
+        .padding(6)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color.black.opacity(0.2))
+        .border(Color.white.opacity(0.1), width: 1, edges: [.bottom])
+    }
+
+    private func clampedRunnerCount(_ raw: Int) -> Int {
+        min(max(raw, minRunners), maxRunners)
     }
 }
 
@@ -224,7 +287,12 @@ private struct ClutchCrossSection: View {
                     height: h * clutchPressurePlateHeightFraction
                 )
 
+                // ENGAGED / SLIPPING / DISENGAGED label only matters on
+                // macOS where the precision slider gives a continuous state
+                // — on iOS the clutch is binary-toggled from the top bar.
+                #if os(macOS)
                 StateLabel(disengageAmount: disengageAmount)
+                #endif
             }
             .animation(.spring(response: 0.22, dampingFraction: 0.78), value: clutchPressure)
         }

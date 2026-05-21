@@ -13,14 +13,19 @@
 
 import Foundation
 import SwiftUI
+import Combine
 
 #if os(macOS)
 import AppKit
 #endif
 
-public class SidebarManager {
+public class SidebarManager: ObservableObject {
     static let shared = SidebarManager()
     private init() {}
+
+    /// Observable sidebar visibility for iOS. macOS uses the responder
+    /// chain (NSSplitViewController.toggleSidebar) and ignores this value.
+    @Published public var isSidebarHidden: Bool = false
 
     public func toggleSidebar() {
         #if os(macOS)
@@ -31,6 +36,8 @@ public class SidebarManager {
                 #selector(NSSplitViewController.toggleSidebar(_:)),
                 with: nil
             )
+        #else
+        isSidebarHidden.toggle()
         #endif
     }
 }

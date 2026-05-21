@@ -14,7 +14,13 @@ import SwiftUI
 
 private let cellSpacing: CGFloat = 1
 private let cellCornerRadius: CGFloat = 2
+// iOS shrinks the Y-axis label channel and drops the rotated "MAP (kPa)"
+// title so the heatmap gets back the dead space on the left.
+#if os(macOS)
 private let labelChannelWidth: CGFloat = 44
+#else
+private let labelChannelWidth: CGFloat = 26
+#endif
 private let labelChannelHeight: CGFloat = 20
 private let stepBumpScale: Double = 5.0  // big-bump button multiplies the per-cell step
 
@@ -37,15 +43,35 @@ private struct EcuTuningEditor: View {
     @ObservedObject var ecu: EcuTuneModel
     @State private var activeMap: EcuMapKind = .ignition
     @State private var selectedCell: EcuCellCoord = EcuCellCoord(loadIndex: 0, rpmIndex: 0)
+    #if !os(macOS)
+    /// Active paint delta; nil = read-only. Tapping a paint pill sets this,
+    /// then dragging across the heatmap bumps each cell the finger crosses.
+    @State private var paintMode: IosPaintMode? = nil
+    /// Last cell painted in the current drag, so we don't bump the same
+    /// cell repeatedly while the finger sits over it.
+    @State private var lastPaintedCell: EcuCellCoord? = nil
+    #endif
 
     var body: some View {
         VStack(spacing: 8) {
             tabBar
             mapBody
+            #if os(macOS)
             controlRow
             liveReadouts
+            #else
+            // iOS replaces the click-+/- row with a paint-mode bar: pick a
+            // delta and drag across the heatmap to bump cells. liveReadouts
+            // stays but scales smaller so it fits without scrolling.
+            iosPaintBar
+            iosLiveReadouts
+            #endif
         }
+        #if os(macOS)
         .padding(10)
+        #else
+        .padding(6)
+        #endif
         .background(Color.appBackground)
         .onAppear { selectTopLeftCell() }
     }
@@ -77,8 +103,9 @@ private struct EcuTuningEditor: View {
 
     private var mapBody: some View {
         HStack(alignment: .top, spacing: 4) {
-            // Y axis title — rotated so it reads bottom-to-top alongside the
-            // numeric labels.
+            // Rotated Y-axis title eats ~14pt of width and isn't needed on
+            // iOS where every pt of heatmap counts.
+            #if os(macOS)
             Text("MAP  (kPa)")
                 .modifier(RetroFont(size: 9))
                 .foregroundColor(.white.opacity(0.45))
@@ -87,6 +114,7 @@ private struct EcuTuningEditor: View {
                 .fixedSize()
                 .frame(width: 14)
                 .padding(.top, labelChannelHeight)
+            #endif
 
             // Y axis numeric labels (load, high at top).
             VStack(spacing: cellSpacing) {
@@ -104,12 +132,16 @@ private struct EcuTuningEditor: View {
             VStack(spacing: 2) {
                 heatmapGrid
                 xAxisLabels
+                // x-axis title is helpful on macOS, redundant on iOS where
+                // the bin numbers right above clearly read as RPM.
+                #if os(macOS)
                 Text("ENGINE  SPEED  (rpm)")
                     .modifier(RetroFont(size: 9))
                     .foregroundColor(.white.opacity(0.45))
                     .tracking(1.0)
                     .frame(maxWidth: .infinity)
                     .padding(.top, 1)
+                #endif
             }
         }
     }
@@ -135,44 +167,96 @@ private struct EcuTuningEditor: View {
                 // Trace trail + live tracer.
                 tracerLayer(cellW: cellW, cellH: cellH)
             }
+            #if !os(macOS)
+            // Paint-mode drag: dragging across the heatmap with an active
+            // paint mode bumps every cell the finger crosses by that delta.
+            .contentShape(Rectangle())
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { value in
+                        guard let mode = paintMode else { return }
+                        guard let coord = cellAt(point: value.location,
+                                                  cellW: cellW,
+                                                  cellH: cellH) else { return }
+                        if coord == lastPaintedCell { return }
+                        lastPaintedCell = coord
+                        // Don't touch selectedCell — the iOS heatmap has
+                        // no yellow "selected" outline anymore. The paint
+                        // bar reads its current cell from `lastPaintedCell`
+                        // (see iosPaintBar's value lookup below).
+                        ecu.bumpCell(in: activeMap,
+                                     at: coord,
+                                     by: mode.delta(step: mapStep()))
+                    }
+                    .onEnded { _ in lastPaintedCell = nil }
+            )
+            #endif
         }
         .frame(minHeight: 180)
     }
 
+    #if !os(macOS)
+    /// Map a touch point inside the heatmap into a cell coordinate, or nil
+    /// if the touch fell outside any cell. The visual layout reverses load
+    /// bins (highest at top), so y → row needs the same flip.
+    private func cellAt(point: CGPoint, cellW: CGFloat, cellH: CGFloat) -> EcuCellCoord? {
+        let rpmCount = ecu.rpmBins.count
+        let loadCount = ecu.loadBins.count
+        guard rpmCount > 0, loadCount > 0, cellW > 0, cellH > 0 else { return nil }
+        let col = Int(point.x / (cellW + cellSpacing))
+        let rowVisual = Int(point.y / (cellH + cellSpacing))
+        guard col >= 0 && col < rpmCount,
+              rowVisual >= 0 && rowVisual < loadCount else { return nil }
+        let row = (loadCount - 1) - rowVisual
+        return EcuCellCoord(loadIndex: row, rpmIndex: col)
+    }
+    #endif
+
     private func cellView(rowIdx: Int, colIdx: Int) -> some View {
         let coord = EcuCellCoord(loadIndex: rowIdx, rpmIndex: colIdx)
         let value = ecu.value(in: activeMap, at: coord)
-        let isSelected = selectedCell == coord
         let isLive = (liveCell == coord)
+        // iOS doesn't render a yellow "selected cell" outline — selection
+        // would fight with the paint-mode drag (the per-cell Button consumed
+        // gestures, and dragging would leave a yellow trail across cells
+        // the user had no intention of "selecting"). On macOS keep the
+        // tap-to-select Button so the +/− controlRow knows which cell to
+        // edit.
+        #if os(macOS)
+        let isSelected = selectedCell == coord
         return Button {
             selectedCell = coord
         } label: {
-            ZStack {
-                RoundedRectangle(cornerRadius: cellCornerRadius)
-                    .fill(heatColor(for: value))
-                // Always-on green border on the cell the engine is currently
-                // operating in — edits to THIS cell take effect immediately.
-                if isLive {
-                    RoundedRectangle(cornerRadius: cellCornerRadius)
-                        .stroke(Color.green, lineWidth: 2)
-                        .shadow(color: .green.opacity(0.5), radius: 3)
-                }
-                // Selected (edit-target) cell. White when also live, yellow
-                // otherwise — so the user can see when they're tuning ahead
-                // of the engine's current operating point.
-                if isSelected {
-                    RoundedRectangle(cornerRadius: cellCornerRadius)
-                        .stroke(isLive ? Color.white : Color.yellow, lineWidth: 2)
-                }
-                Text(formatValue(value))
-                    .modifier(RetroFont(size: 10))
-                    .foregroundColor(.white.opacity(0.95))
-                    .shadow(color: .black.opacity(0.7), radius: 1)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.6)
-            }
+            cellFace(value: value, isLive: isLive, isSelected: isSelected)
         }
         .buttonStyle(.plain)
+        #else
+        return cellFace(value: value, isLive: isLive, isSelected: false)
+        #endif
+    }
+
+    private func cellFace(value: Double, isLive: Bool, isSelected: Bool) -> some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: cellCornerRadius)
+                .fill(heatColor(for: value))
+            // Always-on green border on the cell the engine is currently
+            // operating in — edits to THIS cell take effect immediately.
+            if isLive {
+                RoundedRectangle(cornerRadius: cellCornerRadius)
+                    .stroke(Color.green, lineWidth: 2)
+                    .shadow(color: .green.opacity(0.5), radius: 3)
+            }
+            if isSelected {
+                RoundedRectangle(cornerRadius: cellCornerRadius)
+                    .stroke(isLive ? Color.white : Color.yellow, lineWidth: 2)
+            }
+            Text(formatValue(value))
+                .modifier(RetroFont(size: 10))
+                .foregroundColor(.white.opacity(0.95))
+                .shadow(color: .black.opacity(0.7), radius: 1)
+                .lineLimit(1)
+                .minimumScaleFactor(0.6)
+        }
     }
 
     private var xAxisLabels: some View {
@@ -264,6 +348,63 @@ private struct EcuTuningEditor: View {
         .padding(.vertical, 6)
         .background(RoundedRectangle(cornerRadius: 4).fill(Color.white.opacity(0.04)))
     }
+
+    // MARK: - iOS paint-mode UI
+
+    #if !os(macOS)
+    /// Top-row pills on iOS: pick a delta to paint when dragging across
+    /// the heatmap. Tap again to clear and return to read-only mode.
+    private var iosPaintBar: some View {
+        // Show the most recently painted cell so the user can verify the
+        // delta they're applying; falls back to the live operating cell
+        // before they've touched the heatmap.
+        let displayCell = lastPaintedCell ?? liveCell ?? selectedCell
+        return HStack(spacing: 6) {
+            VStack(alignment: .leading, spacing: 1) {
+                Text(cellLabel(displayCell))
+                    .modifier(RetroFont(size: 8))
+                    .foregroundColor(.white.opacity(0.55))
+                Text(formatValue(ecu.value(in: activeMap, at: displayCell)))
+                    .modifier(RetroFont(size: 12))
+                    .foregroundColor(.white)
+            }
+            .frame(minWidth: 90, alignment: .leading)
+
+            ForEach(IosPaintMode.allOptions, id: \.self) { mode in
+                IosPaintPill(
+                    label: mode.label(step: mapStep()),
+                    active: paintMode == mode,
+                    accent: mode.accent
+                ) {
+                    paintMode = (paintMode == mode) ? nil : mode
+                }
+            }
+
+            Spacer(minLength: 4)
+
+            SmallActionButton(label: "SMOOTH") { ecu.smooth(activeMap) }
+            SmallActionButton(label: "RESET") { ecu.reset(activeMap) }
+        }
+        .padding(.horizontal, 4)
+        .padding(.vertical, 5)
+        .background(RoundedRectangle(cornerRadius: 4).fill(Color.white.opacity(0.04)))
+    }
+
+    /// Compact stack of live engine telemetry on iOS — narrower than the
+    /// macOS row so it sits on a single line at iPad widths.
+    private var iosLiveReadouts: some View {
+        let totalAdvance = ecu.baseTiming(at: vm.rpm) + vm.ignitionOffset
+        return HStack(spacing: 10) {
+            Readout(label: "RPM", value: String(format: "%.0f", vm.rpm))
+            Readout(label: "MAP", value: String(format: "%.0f", clampedLiveLoadKpa()))
+            Readout(label: "ADV", value: String(format: "%.1f°", totalAdvance))
+            Readout(label: "Δ", value: String(format: "%+.1f°", vm.ignitionOffset))
+            Readout(label: "TRIM", value: String(format: "%.2f", vm.fuelTrim))
+            Readout(label: "AFR", value: String(format: "%.1f", vm.intakeAFR))
+            Spacer()
+        }
+    }
+    #endif
 
     // MARK: - Live readouts
 
@@ -392,6 +533,79 @@ private struct EcuTuningEditor: View {
 
 // MARK: - Small UI pieces
 
+#if !os(macOS)
+
+/// Paint delta selected in the iOS paint bar. Dragging across the heatmap
+/// while a mode is active bumps each cell the finger crosses.
+private enum IosPaintMode: Hashable {
+    case decBig
+    case decSmall
+    case incSmall
+    case incBig
+
+    static let allOptions: [IosPaintMode] = [.decBig, .decSmall, .incSmall, .incBig]
+
+    func delta(step: Double) -> Double {
+        switch self {
+        case .decBig:   return -step * stepBumpScale
+        case .decSmall: return -step
+        case .incSmall: return +step
+        case .incBig:   return +step * stepBumpScale
+        }
+    }
+
+    func label(step: Double) -> String {
+        switch self {
+        case .decBig:   return "−\(IosPaintMode.formatStep(step * stepBumpScale))"
+        case .decSmall: return "−\(IosPaintMode.formatStep(step))"
+        case .incSmall: return "+\(IosPaintMode.formatStep(step))"
+        case .incBig:   return "+\(IosPaintMode.formatStep(step * stepBumpScale))"
+        }
+    }
+
+    var accent: Color {
+        switch self {
+        case .decBig, .decSmall: return .red
+        case .incSmall, .incBig: return .green
+        }
+    }
+
+    private static func formatStep(_ s: Double) -> String {
+        s == s.rounded() ? "\(Int(s))" : String(format: "%.1f", s)
+    }
+}
+
+private struct IosPaintPill: View {
+    let label: String
+    let active: Bool
+    let accent: Color
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Text(label)
+                .modifier(RetroFont(size: 10, weight: .bold))
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+                .fixedSize()
+                .foregroundColor(active ? .black : accent)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 5)
+                .background(
+                    RoundedRectangle(cornerRadius: 4)
+                        .fill(active ? accent : accent.opacity(0.12))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 4)
+                        .stroke(accent.opacity(active ? 1.0 : 0.6), lineWidth: 1)
+                )
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+#endif
+
 private struct TabButton: View {
     let label: String
     let active: Bool
@@ -427,6 +641,9 @@ private struct SmallActionButton: View {
         Button(action: action) {
             Text(label)
                 .modifier(RetroFont(size: 9))
+                .lineLimit(1)
+                .minimumScaleFactor(0.6)
+                .fixedSize()
                 .foregroundColor(accent == .white ? .white.opacity(0.8) : accent)
                 .padding(.horizontal, 6)
                 .padding(.vertical, 4)
@@ -451,6 +668,9 @@ private struct EditButton: View {
         Button(action: action) {
             Text(label)
                 .modifier(RetroFont(size: 12))
+                .lineLimit(1)
+                .minimumScaleFactor(0.6)
+                .fixedSize()
                 .foregroundColor(.white)
                 .frame(minWidth: 36)
                 .padding(.horizontal, 8)
