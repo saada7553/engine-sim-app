@@ -14,7 +14,7 @@ import Combine
 // Camera framing: distance is a multiple of the engine diagonal so it always
 // fits, regardless of size. Direction is a normalized vector pointing from the
 // engine center toward the camera, giving a top-front-side 3/4 view.
-private let cameraDistanceFactor: Double = 1.6
+private let cameraDistanceFactor: Double = 1.15
 private let cameraDirX: Float = 0.9   // side
 private let cameraDirY: Float = 0.7   // top
 private let cameraDirZ: Float = 1.0   // front

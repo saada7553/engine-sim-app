@@ -303,7 +303,9 @@ struct LayoutRow: View {
                     .foregroundColor(isSelected ? primaryText : dimText)
             }
         } trailing: {
-            if hovered {
+            // Built-in layouts ship with the app and aren't user-deletable
+            // — no trash affordance for those rows.
+            if hovered && !layout.isBuiltIn {
                 Button(action: onDelete) {
                     Image(systemName: "trash")
                         .font(.system(size: 11))

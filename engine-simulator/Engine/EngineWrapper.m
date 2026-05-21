@@ -73,7 +73,20 @@ static inline double kRadToDeg(double rad) { return rad * (180.0 / M_PI); }
 
     // Scope Filtering State
     double _updateTimer;
+
+    // Cylinder-pressure peak detector. Raw chamber pressure swings from
+    // ~atm to ~600+ psi every combustion cycle; reporting the instantaneous
+    // value makes the needle and readout text flicker uselessly. Track the
+    // peak with a slow exponential decay so the gauge surfaces "peak
+    // combustion pressure", which is the number tuners actually care about.
+    double _cylinderPressurePeakPsi;
 }
+
+// Per-frame multiplicative decay applied to the cylinder-pressure peak.
+// ~0.985 per simulation tick decays the peak by ~e^-1 over roughly 1.5s of
+// sim time at the default frequency, so a drop in combustion pressure is
+// reflected on the gauge within ~2 seconds.
+static const double kCylinderPressurePeakDecay = 0.985;
 
 - (instancetype)init {
     return [self initWithMRPath:nil];
@@ -280,13 +293,22 @@ static inline double kRadToDeg(double rad) { return rad * (180.0 / M_PI); }
                     : (actualAirPerSecond / theoreticalAirPerSecond);
                 state.volumetricEfficiency = 100.0 * volumetricEfficiency;
 
-                // Cylinder pressure for first cylinder (PSI)
+                // Cylinder pressure: track the running peak so the gauge
+                // reflects PEAK combustion pressure (the meaningful tuning
+                // number) rather than the raw chamber pressure that swings
+                // 14→600+ PSI every cycle.
                 if (engine->getCylinderCount() > 0) {
-                    state.cylinderPressure = units::convert(
+                    const double instantPsi = units::convert(
                         engine->getChamber(0)->m_system.pressure(),
                         units::psi
                     );
+                    _cylinderPressurePeakPsi *= kCylinderPressurePeakDecay;
+                    if (instantPsi > _cylinderPressurePeakPsi) {
+                        _cylinderPressurePeakPsi = instantPsi;
+                    }
+                    state.cylinderPressure = _cylinderPressurePeakPsi;
                 } else {
+                    _cylinderPressurePeakPsi = 0.0;
                     state.cylinderPressure = 0.0;
                 }
 

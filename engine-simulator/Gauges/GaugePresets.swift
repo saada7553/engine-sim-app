@@ -309,22 +309,26 @@ enum GaugePresets {
 
     /// Exhaust O2 percentage gauge configuration
     static func exhaustO2() -> GaugeConfiguration {
+        // Real engines run with 0–5% residual O2 (rich/stoich) up to ~21%
+        // for an engine breathing pure air (idling without combustion). 100%
+        // is impossible. Cap the gauge at 25% so the needle actually has
+        // room to move within the meaningful range.
         return GaugeConfiguration(
             title: "EXHAUST O2",
             unit: "%",
             precision: 1,
             spaceBeforeUnit: false,
             minValue: 0,
-            maxValue: 100,
+            maxValue: 25,
             gamma: 1.0,
             ticks: GaugeTickConfig(
-                minorStep: 5,
-                majorStep: 10,
+                minorStep: 1,
+                majorStep: 5,
                 minorTickWidth: 1,
                 majorTickWidth: 2,
                 minorTickLength: 5,
                 majorTickLength: 10,
-                maxMinorTick: 100
+                maxMinorTick: 25
             ),
             needle: GaugeNeedleConfig(
                 innerRadiusRatio: -0.1,

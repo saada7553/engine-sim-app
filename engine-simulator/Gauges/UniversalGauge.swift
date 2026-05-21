@@ -11,15 +11,32 @@ import Combine
 
 // MARK: - Needle Animation State
 
-/// Class to manage needle physics state across TimelineView updates
-/// Uses spring-damper physics for smooth, realistic needle movement
+/// Class to manage needle physics state across TimelineView updates.
+///
+/// Uses spring-damper physics with two stability tweaks:
+///
+/// 1. **Substepping** — semi-implicit Euler is stable only while
+///    `dt × √ks < 2`. With ks values up to 1000 that's ~63 ms; one dropped
+///    frame can push real dt past that. Each call now slices the elapsed
+///    time into fixed `physicsStepSeconds` chunks so the inner step never
+///    sees an unstable dt, regardless of how busy the run loop is.
+///
+/// 2. **Damping floor** — many of the gauge presets ship with kd well below
+///    `2√ks` (critical damping). That's a recipe for visible oscillation on
+///    a steady target — exactly the "RPM bouncing 3-5K on idle" the user
+///    reported. We always run with at least critical damping so the needle
+///    asymptotes to the target instead of ringing.
 class NeedleAnimationState: ObservableObject {
     var position: Double = 0.0
     private var velocity: Double = 0.0
     private var lastUpdateTime: Date?
 
-    /// Update needle position using spring-damper physics
-    /// Returns true to trigger view update (discardable result used in TimelineView)
+    private static let physicsStepSeconds: Double = 1.0 / 240.0
+    /// Hard cap on the elapsed time we'll catch up on in one update. If the
+    /// app goes background for several seconds we don't want to spin in a
+    /// substep loop — just snap the integrator forward.
+    private static let maxCatchUpSeconds: Double = 0.25
+
     @discardableResult
     func update(targetPosition: Double, currentTime: Date, config: GaugeNeedleConfig) -> Bool {
         guard let lastTime = lastUpdateTime else {
@@ -29,28 +46,36 @@ class NeedleAnimationState: ObservableObject {
 
         let dt = currentTime.timeIntervalSince(lastTime)
         lastUpdateTime = currentTime
+        if dt <= 0 { return true }
 
-        // Clamp dt to avoid physics explosions on app resume
-        let clampedDt = min(dt, 0.1)
+        let cappedDt = min(dt, Self.maxCatchUpSeconds)
+        let stepDt = Self.physicsStepSeconds
+        let ks = config.ks
+        // Damping below critical (kd_c = 2√ks) lets the needle ring on a
+        // steady target. Treat the preset's kd as a floor: we never damp
+        // less than critical.
+        let kdMin = 2.0 * sqrt(max(ks, 0))
+        let kd = max(config.kd, kdMin)
 
-        // Spring-damper physics
-        // F = ks * (target - position) - kd * velocity
-        let springForce = config.ks * (targetPosition - position)
-        let dampingForce = config.kd * velocity
-        let acceleration = springForce - dampingForce
+        var remaining = cappedDt
+        while remaining > 0 {
+            let step = min(stepDt, remaining)
+            remaining -= step
 
-        // Update velocity and clamp
-        velocity += acceleration * clampedDt
-        velocity = max(-config.maxVelocity, min(config.maxVelocity, velocity))
+            let springForce = ks * (targetPosition - position)
+            let dampingForce = kd * velocity
+            let acceleration = springForce - dampingForce
 
-        // Update position and clamp to valid range
-        position += velocity * clampedDt
-        position = max(0.0, min(1.0, position))
+            velocity += acceleration * step
+            velocity = max(-config.maxVelocity, min(config.maxVelocity, velocity))
+
+            position += velocity * step
+            position = max(0.0, min(1.0, position))
+        }
 
         return true
     }
 
-    /// Reset state (useful when gauge configuration changes)
     func reset(to initialPosition: Double = 0.0) {
         position = initialPosition
         velocity = 0.0

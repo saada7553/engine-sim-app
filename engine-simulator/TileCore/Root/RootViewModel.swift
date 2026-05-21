@@ -29,8 +29,26 @@ class RootViewModel: ObservableObject, Observable {
     /// The id of the saved layout currently loaded into the workspace, and
     /// whether the user has modified the tiles since then. Both feed the
     /// sidebar's "Current Workspace" row and the active highlight.
-    @Published var activeLayoutId: UUID?
+    ///
+    /// Persisted to UserDefaults under ``lastActiveLayoutKey`` so the next
+    /// launch can re-open whatever the user was using. Resolved against
+    /// `TileStore.shared.layouts` (built-ins ∪ user layouts); a missing or
+    /// stale id falls back to ``BuiltInLayouts.defaultLayout``.
+    @Published var activeLayoutId: UUID? {
+        didSet { persistActiveLayoutId() }
+    }
     @Published var isLayoutDirty: Bool = false
+
+    static let lastActiveLayoutKey = "lastActiveLayoutId"
+
+    private func persistActiveLayoutId() {
+        let defaults = UserDefaults.standard
+        if let id = activeLayoutId {
+            defaults.set(id.uuidString, forKey: Self.lastActiveLayoutKey)
+        } else {
+            defaults.removeObject(forKey: Self.lastActiveLayoutKey)
+        }
+    }
 
     /// Used for window management only.
     let id = UUID()
@@ -96,7 +114,7 @@ class RootViewModel: ObservableObject, Observable {
 //        self.focusedTile = tile
 //    }
     
-    init(engineVm: EngineViewModel, data: TileData) {
+    init(engineVm: EngineViewModel, data: TileData, activeLayoutId: UUID? = nil) {
         hoveredTile = nil
         hoverPosition = nil
         browserMode = .operational
@@ -104,6 +122,7 @@ class RootViewModel: ObservableObject, Observable {
         rootTile = newTile
         focusedTile = newTile
         self.engineVm = engineVm
+        self.activeLayoutId = activeLayoutId
     }
     
     func loadState(newRootData: TileData, layoutId: UUID? = nil) {

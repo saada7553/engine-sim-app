@@ -11,8 +11,20 @@ struct TileSurfApp: App {
         let oscilloscopeManager = OscilloscopeManager()
         let engineViewModelInst = EngineViewModel(oscillioscopeManager: oscilloscopeManager)
         self._engineViewModel = StateObject(wrappedValue: engineViewModelInst)
+        // Resolve the layout to boot into. Order: last-used (per UserDefaults)
+        // → Default. The lookup goes through TileStore.shared.layouts, which
+        // already merges built-ins with user-saved layouts, so a custom one
+        // the user picked last time also re-opens here.
+        let storedId = UserDefaults.standard
+            .string(forKey: RootViewModel.lastActiveLayoutKey)
+            .flatMap(UUID.init(uuidString:))
+        let resolved = storedId
+            .flatMap { id in TileStore.shared.layouts.first(where: { $0.id == id }) }
+            ?? BuiltInLayouts.defaultLayout
         self._rootViewModel = StateObject(wrappedValue: RootViewModel(
-            engineVm: engineViewModelInst, data: TileData(id: UUID(), type: .engine3DView))
+            engineVm: engineViewModelInst,
+            data: resolved.rootData,
+            activeLayoutId: resolved.id)
         )
         self._keyboardController = State(
             initialValue: KeyboardController(engineVm: engineViewModelInst)
