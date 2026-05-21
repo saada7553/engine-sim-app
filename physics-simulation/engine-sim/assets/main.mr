@@ -1,4 +1,4 @@
 import "engine_sim.mr"
-import "engines/atg-video-2/03_2jz.mr"
+import "test_flat4_builder.mr"
 
 main()

@@ -46,7 +46,7 @@ private let builtInCatalog: [BuiltInEntry] = [
     BuiltInEntry(name: "Geo Metro G10", displacement: "1.0L", cylinders: 3,
                  relativePath: "engines/atg-video-2/00_geo_metro_g10.mr",
                  stableUUID: BuiltInEngineIds.geoMetroG10),
-    BuiltInEntry(name: "Suzuki Hayabusa", displacement: "1.3L", cylinders: 4,
+    BuiltInEntry(name: "Suzuki Hayabusa (Bike)", displacement: "1.3L", cylinders: 4,
                  relativePath: "engines/atg-video-1/04_hayabusa.mr",
                  stableUUID: BuiltInEngineIds.suzukiHayabusa),
     BuiltInEntry(name: "Honda F20C (VTEC)", displacement: "2.0L", cylinders: 4,

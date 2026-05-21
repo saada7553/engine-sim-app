@@ -44,7 +44,7 @@ private let errorColor = Color.red.opacity(0.9)
 // MARK: - Carousel constants
 
 /// Seconds each engine stays on screen before crossfading to the next.
-private let carouselDwellSeconds: TimeInterval = 7.0
+private let carouselDwellSeconds: TimeInterval = 5.6
 /// Crank speed for the hero. Slow enough that the eye reads each stroke.
 private let heroCrankRPM: Double = 15.0
 /// Full turntable revolution duration (seconds). Independent of crank.
@@ -145,7 +145,7 @@ struct PaywallSheet: View {
     private var heroBackdrop: some View {
         RadialGradient(
             gradient: Gradient(stops: [
-                .init(color: Color(red: 0.18, green: 0.13, blue: 0.10), location: 0),
+                .init(color: Color(red: 0.10, green: 0.08, blue: 0.07), location: 0),
                 .init(color: Color.black.opacity(0.75), location: 0.65),
                 .init(color: Color.black.opacity(0.95), location: 1.0),
             ]),
@@ -160,7 +160,9 @@ struct PaywallSheet: View {
             Rectangle()
                 .fill(heroAnnotationBorder)
                 .frame(height: 1)
-            HStack(alignment: .firstTextBaseline) {
+            HStack(alignment: .center, spacing: 10) {
+                carouselArrow(systemName: "chevron.left", help: "Previous engine",
+                              action: { carousel.previous() })
                 Text(carousel.currentName.uppercased())
                     .modifier(RetroFont(size: 12, weight: .bold))
                     .tracking(2.5)
@@ -173,6 +175,8 @@ struct PaywallSheet: View {
                     .foregroundColor(bodyText)
                     .id(carousel.currentSubtitle)
                     .transition(.opacity)
+                carouselArrow(systemName: "chevron.right", help: "Next engine",
+                              action: { carousel.next() })
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 10)
@@ -182,6 +186,27 @@ struct PaywallSheet: View {
                                 currentIndex: carousel.currentIndex)
                 .frame(height: 2)
         }
+    }
+
+    private func carouselArrow(systemName: String,
+                               help: String,
+                               action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: systemName)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundColor(bodyText)
+                .frame(width: 22, height: 22)
+                .background(
+                    RoundedRectangle(cornerRadius: 4)
+                        .fill(Color.white.opacity(0.06))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 4)
+                        .stroke(Color.white.opacity(0.12), lineWidth: 1)
+                )
+        }
+        .buttonStyle(.plain)
+        .help(help)
     }
 
     // MARK: Copy
@@ -390,14 +415,39 @@ final class EngineCarousel: ObservableObject {
 
     func start() {
         guard timer == nil, count > 1 else { return }
-        timer = Timer.scheduledTimer(withTimeInterval: carouselDwellSeconds, repeats: true) { [weak self] _ in
-            Task { @MainActor in self?.advance() }
-        }
+        scheduleTimer()
     }
 
     func stop() {
         timer?.invalidate()
         timer = nil
+    }
+
+    /// User-driven next/previous. Restart the dwell timer so the engine the
+    /// user just landed on gets a full cycle of screen time before the
+    /// auto-advance kicks back in.
+    func next() {
+        step(by: 1)
+    }
+
+    func previous() {
+        step(by: -1)
+    }
+
+    private func step(by delta: Int) {
+        withAnimation(.easeInOut(duration: 0.35)) {
+            currentIndex = ((currentIndex + delta) % count + count) % count
+        }
+        if timer != nil {
+            timer?.invalidate()
+            scheduleTimer()
+        }
+    }
+
+    private func scheduleTimer() {
+        timer = Timer.scheduledTimer(withTimeInterval: carouselDwellSeconds, repeats: true) { [weak self] _ in
+            Task { @MainActor in self?.advance() }
+        }
     }
 
     private func advance() {
@@ -451,20 +501,24 @@ private struct PaywallEngineHero: NSViewRepresentable {
     // MARK: Lights
 
     private func configureLights(in scene: SCNScene) {
+        // White key light does the actual lifting — bright enough now that
+        // HDR auto-exposure isn't masking dim intensities. The warm lights
+        // are deliberately a small fraction of the key so the aura reads
+        // as a tint, not as the dominant illumination.
         let key = SCNNode()
         key.light = SCNLight()
         key.light?.type = .directional
-        key.light?.intensity = 700
+        key.light?.intensity = 900
         key.light?.color = NSColor(white: 0.98, alpha: 1.0)
         key.eulerAngles = SCNVector3(-Float.pi / 4, Float.pi / 4, 0)
         scene.rootNode.addChildNode(key)
 
-        // Warm rim light from behind / off-axis — gives the gold edge
-        // highlight that reads as "showroom" rather than "viewport".
+        // Warm rim light from behind / off-axis. Faint relative to key —
+        // just a hint of gold on the edge, not a wash.
         let rim = SCNNode()
         rim.light = SCNLight()
         rim.light?.type = .directional
-        rim.light?.intensity = 450
+        rim.light?.intensity = 80
         rim.light?.color = NSColor(red: 1.0, green: 0.78, blue: 0.45, alpha: 1.0)
         rim.eulerAngles = SCNVector3(-Float.pi / 8, -Float.pi * 0.7, 0)
         scene.rootNode.addChildNode(rim)
@@ -474,18 +528,19 @@ private struct PaywallEngineHero: NSViewRepresentable {
         let underLight = SCNNode()
         underLight.light = SCNLight()
         underLight.light?.type = .omni
-        underLight.light?.intensity = 220
+        underLight.light?.intensity = 40
         underLight.light?.color = NSColor(red: 1.0, green: 0.65, blue: 0.30, alpha: 1.0)
         underLight.light?.attenuationStartDistance = 0.1
         underLight.light?.attenuationEndDistance = 1.2
         underLight.position = SCNVector3(0, -0.35, 0.1)
         scene.rootNode.addChildNode(underLight)
 
+        // Neutral ambient fills the shadow side so unlit detail still reads.
         let ambient = SCNNode()
         ambient.light = SCNLight()
         ambient.light?.type = .ambient
-        ambient.light?.intensity = 95
-        ambient.light?.color = NSColor(white: 0.40, alpha: 1.0)
+        ambient.light?.intensity = 220
+        ambient.light?.color = NSColor(white: 0.55, alpha: 1.0)
         scene.rootNode.addChildNode(ambient)
     }
 
@@ -530,13 +585,12 @@ private struct PaywallEngineHero: NSViewRepresentable {
             camera.zNear = 0.005
             camera.zFar = 50.0
             camera.fieldOfView = 36
-            // HDR + bloom gives metallic highlights a soft glow on the rim
-            // light; the vignette darkens the frame edges so the engine
-            // sits in a pool of light. Subtle on purpose.
-            camera.wantsHDR = true
-            camera.bloomIntensity = 0.65
-            camera.bloomThreshold = 0.85
-            camera.bloomBlurRadius = 12.0
+            // Bloom was blowing the warm rim light into a yellow haze that
+            // hid engine detail — disabled entirely. HDR auto-exposure was
+            // also pushing mid-tones too bright; without HDR the lights
+            // hit the surface at their literal intensity. The vignette is
+            // still safe (cheap post-fx, only darkens the corners).
+            camera.wantsHDR = false
             camera.vignettingIntensity = 0.6
             camera.vignettingPower = 0.4
             cam.camera = camera

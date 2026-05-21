@@ -69,16 +69,13 @@ final class PurchaseManager: ObservableObject {
         // Sandbox-key bypass. Release builds with a `test_` key get killed
         // by the SDK at launch, and we run release builds during dev for
         // the performance. Skip configure entirely; the user starts non-Pro
-        // with the paywall raised so the purchase flow is exercised, and
-        // the bypassed `purchaseLifetime()` flips `isPro` for the rest of
-        // the session. State is in-memory only, so a relaunch resets back
-        // to non-Pro + paywall. Swapping to a real production key
+        // so the existing gate paths (locked engine cards, save layout) raise
+        // the paywall normally, and the bypassed `purchaseLifetime()` flips
+        // `isPro` for the rest of the session. State is in-memory only, so a
+        // relaunch resets back to non-Pro. Swapping to a real production key
         // disengages all of this automatically.
         if apiKey.hasPrefix("test_") {
             bypassed = true
-            Task { @MainActor in
-                shared.isPresentingPaywall = true
-            }
             return
         }
 

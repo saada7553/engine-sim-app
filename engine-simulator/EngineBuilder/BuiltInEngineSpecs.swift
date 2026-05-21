@@ -250,7 +250,7 @@ enum BuiltInEngineSpecs {
 
     // Source: assets/engines/atg-video-1/04_hayabusa.mr — Suzuki GSX1300R inline-4.
     private static let suzukiHayabusa: EngineSpec = {
-        var spec = EngineSpec.defaultSpec(name: "Suzuki Hayabusa", layout: .inline4)
+        var spec = EngineSpec.defaultSpec(name: "Suzuki Hayabusa (Bike)", layout: .inline4)
         spec.id = BuiltInEngineIds.suzukiHayabusa
         spec.boreMm = 81.0
         spec.strokeMm = 65.0

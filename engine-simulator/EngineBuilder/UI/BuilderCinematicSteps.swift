@@ -298,12 +298,12 @@ struct BottomEndStep: View {
                                  strokeMm: state.spec.strokeMm,
                                  rodLengthMm: state.spec.rodLengthMm,
                                  compressionHeightMm: state.spec.compressionHeightMm)
-                    .frame(width: 240, height: 340)
+                    .frame(width: 380, height: 540)
                 HStack {
                     StatBox(label: "B / S", value: String(format: "%.2f", state.spec.boreMm / state.spec.strokeMm))
                     StatBox(label: "R / S", value: String(format: "%.2f", state.spec.rodLengthMm / state.spec.strokeMm))
                 }
-                .frame(width: 240)
+                .frame(width: 380)
             }
             Spacer()
         }
