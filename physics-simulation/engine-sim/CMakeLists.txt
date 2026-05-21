@@ -16,12 +16,25 @@ if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE Release)
 endif()
 
-if(CMAKE_BUILD_TYPE STREQUAL "Release")
-    set(CMAKE_CXX_FLAGS_RELEASE "-O3 -DNDEBUG -ffast-math -march=native")
+# -march=native and -mcpu=apple-m1 only make sense when targeting the host
+# Mac. For iOS the build is a cross-compile and these would either fail or
+# pin to the wrong CPU.
+set(ENGINE_SIM_TARGETING_IOS FALSE)
+if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
+    set(ENGINE_SIM_TARGETING_IOS TRUE)
 endif()
 
-# Apple Silicon specific optimizations
-if(APPLE AND CMAKE_SYSTEM_PROCESSOR STREQUAL "arm64")
+if(CMAKE_BUILD_TYPE STREQUAL "Release")
+    if(ENGINE_SIM_TARGETING_IOS)
+        set(CMAKE_CXX_FLAGS_RELEASE "-O3 -DNDEBUG -ffast-math")
+    else()
+        set(CMAKE_CXX_FLAGS_RELEASE "-O3 -DNDEBUG -ffast-math -march=native")
+    endif()
+endif()
+
+# Apple Silicon (host Mac) specific optimizations. Skip on iOS — the iOS
+# arm64 toolchain rejects `-mcpu=apple-m1`.
+if(APPLE AND CMAKE_SYSTEM_PROCESSOR STREQUAL "arm64" AND NOT ENGINE_SIM_TARGETING_IOS)
     add_compile_options(-mcpu=apple-m1 -fvectorize -fslp-vectorize)
 endif()
 find_library(AUDIOTOOLBOX_LIBRARY AudioToolbox)
@@ -184,13 +197,18 @@ target_link_libraries(engine-sim-script-interpreter
     csv-io
     piranha)
 
-add_executable(engine-sim-cli
-    src/main.cpp
-)
-target_link_libraries(engine-sim-cli 
-    engine-sim
-    engine-sim-script-interpreter
-)
+# Host-only smoke-test CLI. iOS app targets can't bundle bare executables,
+# and the audio adapter inside engine-sim needs an active AVAudioSession for
+# iOS playback (set up from Swift) so a CLI doesn't help there anyway.
+if(NOT ENGINE_SIM_TARGETING_IOS)
+    add_executable(engine-sim-cli
+        src/main.cpp
+    )
+    target_link_libraries(engine-sim-cli
+        engine-sim
+        engine-sim-script-interpreter
+    )
+endif()
 
 add_subdirectory(dependencies/submodules/csv-io)
 add_subdirectory(dependencies/submodules/simple-2d-constraint-solver)

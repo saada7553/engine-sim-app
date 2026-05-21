@@ -28,8 +28,15 @@ set(CMAKE_CXX_STANDARD 17)
 # =========================================================
 # FLEX BISON
 
+# macOS ships bison 2.3 in /usr/bin which is too old to parse the grammar
+# (it needs bison >= 3.2). Prefer the Homebrew install when present so the
+# CMake build works out of the box on Apple Silicon dev machines.
+if(NOT BISON_EXECUTABLE AND EXISTS "/opt/homebrew/opt/bison/bin/bison")
+    set(BISON_EXECUTABLE "/opt/homebrew/opt/bison/bin/bison")
+endif()
+
 find_package(FLEX REQUIRED)
-find_package(BISON REQUIRED)
+find_package(BISON 3.2 REQUIRED)
 
 flex_target(
     lexer
@@ -47,11 +54,6 @@ add_flex_bison_dependency(lexer parser)
 include_directories(${CMAKE_CURRENT_BINARY_DIR})
 include_directories(dependencies/libraries/flex/include)
 include_directories(include)
-
-set(Boost_USE_STATIC_LIBS ON)
-set(Boost_USE_MULTITHREADED ON)
-set(Boost_USE_STATIC_RUNTIME OFF)
-find_package(Boost 1.40 COMPONENTS filesystem REQUIRED)
 
 add_library(piranha STATIC
     # Source files
@@ -166,20 +168,23 @@ add_library(piranha STATIC
     ${FLEX_lexer_OUTPUTS}
 )
 
-target_link_libraries(piranha Boost::filesystem)
+# piranha_reference_compiler is a host-only demo CLI. Don't build it for iOS
+# (no main entry point allowed in an app target), but keep it on macOS so the
+# existing dev workflow still works.
+if(NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
+    add_executable(piranha_reference_compiler
+        # Source files
+        demos/main.cpp
+        demos/reference_language_rules.cpp
+        demos/utilities.cpp
 
-add_executable(piranha_reference_compiler
-    # Source files
-    demos/main.cpp
-    demos/reference_language_rules.cpp
-    demos/utilities.cpp
+        # Include files
+        demos/utilities.h
+        demos/reference_language_rules.h
+    )
 
-    # Include files
-    demos/utilities.h
-    demos/reference_language_rules.h
-)
-
-target_link_libraries(piranha_reference_compiler piranha)
+    target_link_libraries(piranha_reference_compiler piranha)
+endif()
 
 # gtest
 

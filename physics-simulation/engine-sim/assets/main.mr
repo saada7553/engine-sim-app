@@ -1,4 +1,4 @@
 import "engine_sim.mr"
-import "test_flat4_builder.mr"
+import "test_user_inline3.mr"
 
 main()

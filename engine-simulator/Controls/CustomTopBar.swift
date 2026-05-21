@@ -38,9 +38,16 @@ struct CustomTopBar: View {
     }
 
     // MARK: Left — controls
+    //
+    // The sidebar toggle button and the WorkspaceToolCluster (add tile /
+    // remove tile / save layout) are macOS-only. On iOS the sidebar collapses
+    // via NavigationSplitView's built-in toolbar control, and the custom
+    // tiling system is intentionally not exposed — users get the built-in
+    // layouts read-only.
 
     private var leftCluster: some View {
         HStack(spacing: 22) {
+            #if os(macOS)
             Button(action: { SidebarManager.shared.toggleSidebar() }) {
                 Image(systemName: "sidebar.left")
                     .font(.system(size: 17, weight: .light))
@@ -62,6 +69,7 @@ struct CustomTopBar: View {
                 onToggleDelete: onToggleDelete,
                 onSaveLayout: onSaveLayout
             )
+            #endif
 
             ArmedIgnitionSwitch(isOn: vm.isIgnitionOn) { vm.toggleIgnition() }
 

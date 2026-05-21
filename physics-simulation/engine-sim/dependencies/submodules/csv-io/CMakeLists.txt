@@ -42,16 +42,20 @@ add_library("${ProjectName}" STATIC
 
 target_compile_definitions("${ProjectName}" PRIVATE PROJECT_NAMESPACE=${ProjectNamespace})
 
-add_executable("${ProjectName}-main"
-    # Source files
-    src/main.cpp
+# Host-only demo CLI. iOS app targets can't bundle bare executables, so skip
+# it when cross-compiling for iOS but keep it on macOS for the CLI workflow.
+if(NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
+    add_executable("${ProjectName}-main"
+        # Source files
+        src/main.cpp
 
-    # Header files
-)
+        # Header files
+    )
 
-target_link_libraries("${ProjectName}-main"
-    "${ProjectName}"
-)
+    target_link_libraries("${ProjectName}-main"
+        "${ProjectName}"
+    )
+endif()
 
 # gtest
 

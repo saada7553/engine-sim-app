@@ -1,5 +1,8 @@
 import SwiftUI
 import WebKit
+#if os(macOS)
+import AppKit
+#endif
 
 /// RevenueCat sandbox key. Swap to the production key on release.
 private let revenueCatAPIKey = "test_ZYpdwVJIKcNhwMICqAkYNPRCGur"
@@ -42,36 +45,47 @@ struct TileSurfApp: App {
     
     var body: some Scene {
         WindowGroup {
-            NavigationSplitView {
-                SideBarView(
-                    rootViewModel: rootViewModel
-                )
-                .navigationSplitViewColumnWidth(ideal: 260)
-            } detail: {
-                detailView
-            }
-            .environmentObject(purchaseManager)
-            .background(Color.appBackground)
-            .toolbarBackground(Color.appBackground, for: .windowToolbar)
-            .toolbarColorScheme(.dark, for: .windowToolbar)
-            .toolbarRole(.editor)
-            .onAppear {
-                DispatchQueue.main.async {
-                    if let window = NSApplication.shared.windows.first(where: { $0.isKeyWindow }) ?? NSApplication.shared.windows.first {
-                        if let screen = window.screen {
-                            window.setFrame(screen.visibleFrame, display: true)
-                        }
-                    }
+            rootScene
+                .environmentObject(purchaseManager)
+                .background(Color.appBackground)
+                #if os(macOS)
+                .toolbarBackground(Color.appBackground, for: .windowToolbar)
+                .toolbarColorScheme(.dark, for: .windowToolbar)
+                .toolbarRole(.editor)
+                .onAppear { resizeMacWindowToScreen() }
+                #endif
+                .onKeyPress { press in
+                    handleKeyPress(press: press)
                 }
-            }
-            .onKeyPress { press in
-                handleKeyPress(press: press)
-            }
         }
+        #if os(macOS)
         .commands {
             tileSurfCommands(rootViewModel: rootViewModel)
         }
+        #endif
     }
+
+    private var rootScene: some View {
+        NavigationSplitView {
+            SideBarView(rootViewModel: rootViewModel)
+                .navigationSplitViewColumnWidth(ideal: 260)
+        } detail: {
+            detailView
+        }
+    }
+
+    #if os(macOS)
+    /// Forces the freshly-opened window to fill the screen, since SwiftUI's
+    /// default `WindowGroup` sizing is a small floating panel.
+    private func resizeMacWindowToScreen() {
+        DispatchQueue.main.async {
+            let key = NSApplication.shared.windows.first(where: { $0.isKeyWindow })
+            guard let window = key ?? NSApplication.shared.windows.first,
+                  let screen = window.screen else { return }
+            window.setFrame(screen.visibleFrame, display: true)
+        }
+    }
+    #endif
     
     var detailView: some View {
         ZStack {

@@ -39,8 +39,14 @@ You should also play this noise if you need my permission to do something / are 
 5) Do not redefine exsiting colors, read the color file and you should reuse the existing ones, if you need a new color that does not exist and is radically different from the exisitng ones, then you can add it.
 
 # Current TODOs: 
-1) There is a bug with the vehicle speed. Curretly, even in big powerful engines, I feel like the speed is being severly under reported. Everythign seems to top out at like 60 mph and this stuff isnt realistic. There is a bug somewhere in the speed. 
-2) in the engine builder, increasing the runner cfm does not change the preview as you would expect. Additionally, the throttle on the intake in the builder in induction is just placed in a random location / not aligned with the manifold, and chaanging the idle throttle seems to have no effect on the preview.
-3) The ECU tuning tile, the aspect ratio for the graph needs to be fixed, it becomes ugly in both directions when streached
-4) in engine builder, the cancel button you have to click the border or the word cancel, the rest of the button is empty unclickable space which is poor ui. 
-5) at the front of the engine, I want a semi translucent (not as transparrent as the block but still transparrent, fun colored) fan attached to the engine that spins along with the crankshaft. It should be sized appropriately depending on the rod length / other engine parameters. 
+This is currently a macos only application. I want to also ship this to ios and ipados. Here is what you need to do: 
+
+1) First, make changes so that the underlying c++ engine can compile for both ios and macos. Currently, it creates a macos only binary which wont work on ios. You have to use ios audio generation pipelines and need to make the changes necessary to compile for ios. 
+    - In part of your changes, you also need to preserve compatability with macos, so maybe different build folders would be good
+2) You need to setup xcode such that it builds the ios c++ engine when you select to deploy to ios and the macos c++ otherwise. 
+3) You need to do a ui overhaul (we still need to support both macos and ios, but you just need to make edits / feature flags to get the ios stuff to work fine)
+    - Main things to do would be to fix the sidebar situation, it is currently a macos thing I beleive. 
+    - lets just get rid of the custom tiling system and instead just ship the preloaded hardcoded layouts to ios (no option to resize stuff either)
+    - The sidebar should still be collapsable but it should work on ios, i dont think the current versio works on ios
+    - Any other ui changes as needed to make the ios experience work
+4) Try building both ios and macos as see if both work

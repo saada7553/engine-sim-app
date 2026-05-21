@@ -7,7 +7,11 @@
 //
 
 import SceneKit
+#if os(macOS)
 import AppKit
+#else
+import UIKit
+#endif
 
 private let pinSegmentCount: Int = 24
 
@@ -30,7 +34,7 @@ enum WristPinGeometry {
     private static func pinMaterial() -> SCNMaterial {
         // Wrist pin: polished hardened steel — darker than rod, very shiny.
         let m = SCNMaterial()
-        m.diffuse.contents = NSColor(calibratedRed: 0.30, green: 0.32, blue: 0.36, alpha: 1.0)
+        m.diffuse.contents = PlatformColor.calibrated(red: 0.30, green: 0.32, blue: 0.36, alpha: 1.0)
         m.metalness.contents = 0.98
         m.roughness.contents = 0.12
         m.lightingModel = .physicallyBased

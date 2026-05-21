@@ -10,7 +10,11 @@
 //
 
 import SceneKit
+#if os(macOS)
 import AppKit
+#else
+import UIKit
+#endif
 import simd
 
 private let shaftRadialSegments: Int = 24
@@ -36,12 +40,12 @@ enum CamshaftGeometry {
         shaft.radialSegmentCount = shaftRadialSegments
         shaft.firstMaterial = camMaterial()
         let shaftNode = SCNNode(geometry: shaft)
-        shaftNode.position.y = CGFloat((shaftStartY + shaftEndY) / 2.0)
+        shaftNode.position.y = SCNFloat((shaftStartY + shaftEndY) / 2.0)
         node.addChildNode(shaftNode)
 
         for lobe in lobes {
             let lobeNode = makeLobeNode(params: p, peakAngleRad: lobe.peakAngleRad)
-            lobeNode.position.y = CGFloat(lobe.yOffset)
+            lobeNode.position.y = SCNFloat(lobe.yOffset)
             node.addChildNode(lobeNode)
         }
 
@@ -165,13 +169,13 @@ enum CamshaftGeometry {
         let node = SCNNode(geometry: geo)
         // Rotate so the lobe peak (currently at +X) sits at peakAngleRad in
         // the cam's X-Z plane.
-        node.eulerAngles.y = CGFloat(peakAngleRad)
+        node.eulerAngles.y = SCNFloat(peakAngleRad)
         return node
     }
 
     private static func camMaterial() -> SCNMaterial {
         let m = SCNMaterial()
-        m.diffuse.contents = NSColor(calibratedRed: 0.62, green: 0.58, blue: 0.52, alpha: 1.0)
+        m.diffuse.contents = PlatformColor.calibrated(red: 0.62, green: 0.58, blue: 0.52, alpha: 1.0)
         m.metalness.contents = 0.85
         m.roughness.contents = 0.35
         m.lightingModel = .physicallyBased

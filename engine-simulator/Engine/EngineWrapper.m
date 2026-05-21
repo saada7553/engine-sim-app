@@ -6,6 +6,10 @@
 //
 
 #import <Foundation/Foundation.h>
+#import <TargetConditionals.h>
+#if TARGET_OS_IOS
+#import <AVFoundation/AVFoundation.h>
+#endif
 #import "EngineWrapper.h"
 
 // C++ Includes
@@ -228,6 +232,30 @@ static const double kCylinderPressurePeakDecay = 0.985;
        waveFile.DestroyInternalBuffer();
    }
     _sim->startAudioRenderingThread();
+
+#if TARGET_OS_IOS
+    // On iOS the AudioUnit won't actually deliver audio unless the app has an
+    // active AVAudioSession with a playback-friendly category. Configure once
+    // per engine load (idempotent: setting the same category and reactivating
+    // is fine).
+    {
+        AVAudioSession *session = [AVAudioSession sharedInstance];
+        NSError *configError = nil;
+        [session setCategory:AVAudioSessionCategoryPlayback
+                        mode:AVAudioSessionModeDefault
+                     options:0
+                       error:&configError];
+        if (configError) {
+            NSLog(@"engine-sim: AVAudioSession setCategory failed: %@", configError);
+        }
+        NSError *activationError = nil;
+        [session setActive:YES error:&activationError];
+        if (activationError) {
+            NSLog(@"engine-sim: AVAudioSession setActive failed: %@", activationError);
+        }
+    }
+#endif
+
     _audioAdapter = new MacOSAudioAdapter();
     _audioAdapter->Initialize(&_sim->synthesizer());
     _audioAdapter->Start();

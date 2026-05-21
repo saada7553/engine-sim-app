@@ -96,7 +96,7 @@ enum ProceduralEngineAssembly {
             let pivot = SCNNode()
             pivot.name = "bankPivot_\(bankIndex)"
             let bankAngle = cylinders.first?.bankAngleRad ?? 0
-            pivot.eulerAngles.y = CGFloat(bankAngle)
+            pivot.eulerAngles.y = SCNFloat(bankAngle)
             assembly.addChildNode(pivot)
 
             // Block slab is added separately in the engine block; head goes here
@@ -104,7 +104,7 @@ enum ProceduralEngineAssembly {
             // sit directly over this bank's pistons (no shift for inline).
             let head = CylinderHeadGeometry.makeNode(params: params)
             let bankSign: Float = (bankIndex == 0) ? -1.0 : 1.0
-            head.position.y = CGFloat(bankSign * Float(params.bankAxialShift))
+            head.position.y = SCNFloat(bankSign * Float(params.bankAxialShift))
             pivot.addChildNode(head)
 
             // Per-cylinder pistons / rods / wristpins / valves.
@@ -236,11 +236,11 @@ enum ProceduralEngineAssembly {
     // MARK: - Animation
 
     static func animate(parts: ProceduralEngineParts, crankAngle: Double) {
-        parts.crankshaft?.eulerAngles.y = CGFloat(crankAngle)
+        parts.crankshaft?.eulerAngles.y = SCNFloat(crankAngle)
 
         let camAngle = crankAngle / 2.0
-        for cam in parts.intakeCams { cam.eulerAngles.y = CGFloat(camAngle) }
-        for cam in parts.exhaustCams { cam.eulerAngles.y = CGFloat(camAngle) }
+        for cam in parts.intakeCams { cam.eulerAngles.y = SCNFloat(camAngle) }
+        for cam in parts.exhaustCams { cam.eulerAngles.y = SCNFloat(camAngle) }
 
         let r = parts.params.crankThrow
         let L = parts.params.rodLength
@@ -266,7 +266,7 @@ enum ProceduralEngineAssembly {
 
             let rodNode = parts.rods[idx]
             rodNode.position = SCNVector3(0, yPos, zPos)
-            rodNode.eulerAngles.y = CGFloat(rodAngle)
+            rodNode.eulerAngles.y = SCNFloat(rodAngle)
 
             // Valves
             guard let vs = parts.valveSetsByCylinder[idx] else { continue }

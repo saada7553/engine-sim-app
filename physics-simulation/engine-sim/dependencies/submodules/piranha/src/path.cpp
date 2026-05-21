@@ -2,7 +2,7 @@
 
 #include "../include/memory_tracker.h"
 
-#include <boost/filesystem.hpp>
+#include <filesystem>
 
 piranha::Path::Path(const std::string &path) {
     m_path = nullptr;
@@ -15,16 +15,16 @@ piranha::Path::Path(const char *path) {
 }
 
 piranha::Path::Path(const Path &path) {
-    m_path = TRACK(new boost::filesystem::path);
-    *m_path = path.getBoostPath();
+    m_path = TRACK(new std::filesystem::path);
+    *m_path = path.getStdPath();
 }
 
 piranha::Path::Path() {
     m_path = nullptr;
 }
 
-piranha::Path::Path(const boost::filesystem::path &path) {
-    m_path = TRACK(new boost::filesystem::path);
+piranha::Path::Path(const std::filesystem::path &path) {
+    m_path = TRACK(new std::filesystem::path);
     *m_path = path;
 }
 
@@ -39,27 +39,28 @@ std::string piranha::Path::toString() const {
 void piranha::Path::setPath(const std::string &path) {
     if (m_path != nullptr) delete FTRACK(m_path);
 
-    m_path = TRACK(new boost::filesystem::path(path));
+    m_path = TRACK(new std::filesystem::path(path));
 }
 
 bool piranha::Path::operator==(const Path &path) const {
-    return boost::filesystem::equivalent(this->getBoostPath(), path.getBoostPath());
+    std::error_code ec;
+    return std::filesystem::equivalent(this->getStdPath(), path.getStdPath(), ec);
 }
 
 piranha::Path piranha::Path::append(const Path &path) const {
-    return Path(getBoostPath() / path.getBoostPath());
+    return Path(getStdPath() / path.getStdPath());
 }
 
 void piranha::Path::getParentPath(Path *path) const {
-    path->m_path = TRACK(new boost::filesystem::path);
+    path->m_path = TRACK(new std::filesystem::path);
     *path->m_path = m_path->parent_path();
 }
 
 const piranha::Path &piranha::Path::operator=(const Path &b) {
     if (m_path != nullptr) delete FTRACK(m_path);
 
-    m_path = TRACK(new boost::filesystem::path);
-    *m_path = b.getBoostPath();
+    m_path = TRACK(new std::filesystem::path);
+    *m_path = b.getStdPath();
 
     return *this;
 }
@@ -77,5 +78,5 @@ bool piranha::Path::isAbsolute() const {
 }
 
 bool piranha::Path::exists() const {
-    return boost::filesystem::exists(*m_path);
+    return std::filesystem::exists(*m_path);
 }

@@ -12,7 +12,11 @@
 //
 
 import SceneKit
+#if os(macOS)
 import AppKit
+#else
+import UIKit
+#endif
 
 private let blockAlpha: CGFloat = 0.03
 private let chamferFactorOfBore: Double = 0.04
@@ -76,7 +80,7 @@ enum EngineBlockGeometry {
 
             let pivot = SCNNode()
             pivot.name = "bankSlabPivot_\(bankIndex)"
-            pivot.eulerAngles.y = CGFloat(angle)
+            pivot.eulerAngles.y = SCNFloat(angle)
             pivot.addChildNode(slabNode)
             parent.addChildNode(pivot)
         }
@@ -85,7 +89,7 @@ enum EngineBlockGeometry {
     private static func blockMaterial() -> SCNMaterial {
         // Block: dark cast iron with a cool tint, very translucent.
         let m = SCNMaterial()
-        m.diffuse.contents = NSColor(calibratedRed: 0.30, green: 0.32, blue: 0.36, alpha: blockAlpha)
+        m.diffuse.contents = PlatformColor.calibrated(red: 0.30, green: 0.32, blue: 0.36, alpha: blockAlpha)
         m.transparency = blockAlpha
         m.isDoubleSided = true
         m.metalness.contents = 0.1

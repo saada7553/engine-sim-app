@@ -1,8 +1,20 @@
 #include "../include/macOS_audio_unit.h"
 #include <AudioToolbox/AudioToolbox.h>
+#include <TargetConditionals.h>
 #include <algorithm>
 #include <vector>
 #include <iostream>
+
+// macOS uses the DefaultOutput AudioUnit subtype to route playback to the
+// currently-selected system output. iOS doesn't have that subtype — its
+// equivalent is RemoteIO. The rest of the AudioUnit property dance is
+// identical, so we only branch on the subtype. AVAudioSession activation on
+// iOS is handled from the Swift app target.
+#if TARGET_OS_IOS
+static constexpr OSType kEngineSimOutputUnitSubType = kAudioUnitSubType_RemoteIO;
+#else
+static constexpr OSType kEngineSimOutputUnitSubType = kAudioUnitSubType_DefaultOutput;
+#endif
 
 MacOSAudioAdapter::MacOSAudioAdapter() {
     m_synth = nullptr;
@@ -19,10 +31,10 @@ bool MacOSAudioAdapter::Initialize(Synthesizer* synth) {
     if (m_initialized) return true;
     m_synth = synth;
 
-    // 1. Describe the Default Output
+    // 1. Describe the Default Output (macOS) or RemoteIO (iOS).
     AudioComponentDescription desc = {};
     desc.componentType = kAudioUnitType_Output;
-    desc.componentSubType = kAudioUnitSubType_DefaultOutput;
+    desc.componentSubType = kEngineSimOutputUnitSubType;
     desc.componentManufacturer = kAudioUnitManufacturer_Apple;
 
     AudioComponent comp = AudioComponentFindNext(NULL, &desc);

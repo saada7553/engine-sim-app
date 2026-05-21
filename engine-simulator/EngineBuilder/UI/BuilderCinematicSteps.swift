@@ -1104,8 +1104,10 @@ private struct DraggableFiringSequence: View {
         .scaleEffect(lifted ? 0.96 : 1.0)
         .animation(.easeOut(duration: 0.12), value: lifted)
         .onHover { inside in
+            #if os(macOS)
             if inside { NSCursor.openHand.push() }
             else { NSCursor.pop() }
+            #endif
         }
     }
 
@@ -2157,10 +2159,14 @@ private struct InteractiveTimingCurve: View {
             .onHover { inside in
                 if inside {
                     hoveredId = pt.id
+                    #if os(macOS)
                     NSCursor.openHand.push()
+                    #endif
                 } else {
                     if hoveredId == pt.id { hoveredId = nil }
+                    #if os(macOS)
                     NSCursor.pop()
+                    #endif
                 }
             }
             .gesture(dragGesture(pointId: pt.id, w: w, h: h, maxRpm: maxRpm))

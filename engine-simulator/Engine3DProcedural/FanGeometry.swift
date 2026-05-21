@@ -12,7 +12,11 @@
 //
 
 import SceneKit
+#if os(macOS)
 import AppKit
+#else
+import UIKit
+#endif
 
 private let fanBladeCount: Int = 5
 private let fanHubRadiusFactorOfBore: Double = 0.22
@@ -51,7 +55,7 @@ enum FanGeometry {
 
         let fanRoot = SCNNode()
         fanRoot.name = "crankshaftFan"
-        fanRoot.position.y = CGFloat(fanY)
+        fanRoot.position.y = SCNFloat(fanY)
         crankNode.addChildNode(fanRoot)
 
         let hubRadius = p.bore * fanHubRadiusFactorOfBore
@@ -93,7 +97,7 @@ enum FanGeometry {
         cyl.radialSegmentCount = 24
         cyl.firstMaterial = shaftMaterial()
         let node = SCNNode(geometry: cyl)
-        node.position.y = CGFloat((startLocalY + endLocalY) / 2.0)
+        node.position.y = SCNFloat((startLocalY + endLocalY) / 2.0)
         parent.addChildNode(node)
     }
 
@@ -126,11 +130,11 @@ enum FanGeometry {
         // along +Z. Rotating -90° around X swings Y→Z (chord into the fan
         // plane) and Z→-Y (thickness out of the fan plane). Then we tilt by
         // the pitch angle around the radial (X) axis for angle of attack.
-        bladeNode.eulerAngles.x = CGFloat(-(.pi / 2.0) + fanBladePitchDeg * .pi / 180.0)
+        bladeNode.eulerAngles.x = SCNFloat(-(.pi / 2.0) + fanBladePitchDeg * .pi / 180.0)
         bladeNode.position = SCNVector3(Float(hubRadius), 0, 0)
 
         let pivot = SCNNode()
-        pivot.eulerAngles.y = CGFloat(angleRad)
+        pivot.eulerAngles.y = SCNFloat(angleRad)
         pivot.addChildNode(bladeNode)
         parent.addChildNode(pivot)
     }
@@ -139,7 +143,7 @@ enum FanGeometry {
     ///   x ∈ [0, bladeLength] is the radial span (0 = root, length = tip)
     ///   y is the chord, with a slight backward sweep at the tip.
     private static func bladeProfilePath(bladeLength: Double,
-                                         bore: Double) -> NSBezierPath {
+                                         bore: Double) -> PlatformBezierPath {
         let rootHalf = bore * fanBladeChordAtRootFactor
         let midHalf = bore * fanBladeChordAtMidFactor
         let tipHalf = bore * fanBladeChordAtTipFactor
@@ -149,23 +153,23 @@ enum FanGeometry {
         let xMid = bladeLength * 0.55
         let xTip = bladeLength
 
-        let path = NSBezierPath()
-        path.move(to: NSPoint(x: xRoot, y: -rootHalf))
-        path.curve(to: NSPoint(x: xMid, y: -midHalf),
-                   controlPoint1: NSPoint(x: bladeLength * 0.18, y: -rootHalf),
-                   controlPoint2: NSPoint(x: bladeLength * 0.40, y: -midHalf))
-        path.curve(to: NSPoint(x: xTip, y: -tipHalf - sweep * 0.4),
-                   controlPoint1: NSPoint(x: bladeLength * 0.75, y: -midHalf * 0.95),
-                   controlPoint2: NSPoint(x: bladeLength * 0.92, y: -tipHalf - sweep * 0.6))
-        path.curve(to: NSPoint(x: xTip, y: tipHalf - sweep),
-                   controlPoint1: NSPoint(x: bladeLength + tipHalf * 0.6, y: -tipHalf - sweep),
-                   controlPoint2: NSPoint(x: bladeLength + tipHalf * 0.6, y: tipHalf - sweep))
-        path.curve(to: NSPoint(x: xMid, y: midHalf),
-                   controlPoint1: NSPoint(x: bladeLength * 0.92, y: tipHalf - sweep * 0.4),
-                   controlPoint2: NSPoint(x: bladeLength * 0.75, y: midHalf * 1.05))
-        path.curve(to: NSPoint(x: xRoot, y: rootHalf),
-                   controlPoint1: NSPoint(x: bladeLength * 0.40, y: midHalf),
-                   controlPoint2: NSPoint(x: bladeLength * 0.18, y: rootHalf))
+        let path = PlatformBezierPath()
+        path.move(to: CGPoint(x: xRoot, y: -rootHalf))
+        path.addCurve(to: CGPoint(x: xMid, y: -midHalf),
+                   controlPoint1: CGPoint(x: bladeLength * 0.18, y: -rootHalf),
+                   controlPoint2: CGPoint(x: bladeLength * 0.40, y: -midHalf))
+        path.addCurve(to: CGPoint(x: xTip, y: -tipHalf - sweep * 0.4),
+                   controlPoint1: CGPoint(x: bladeLength * 0.75, y: -midHalf * 0.95),
+                   controlPoint2: CGPoint(x: bladeLength * 0.92, y: -tipHalf - sweep * 0.6))
+        path.addCurve(to: CGPoint(x: xTip, y: tipHalf - sweep),
+                   controlPoint1: CGPoint(x: bladeLength + tipHalf * 0.6, y: -tipHalf - sweep),
+                   controlPoint2: CGPoint(x: bladeLength + tipHalf * 0.6, y: tipHalf - sweep))
+        path.addCurve(to: CGPoint(x: xMid, y: midHalf),
+                   controlPoint1: CGPoint(x: bladeLength * 0.92, y: tipHalf - sweep * 0.4),
+                   controlPoint2: CGPoint(x: bladeLength * 0.75, y: midHalf * 1.05))
+        path.addCurve(to: CGPoint(x: xRoot, y: rootHalf),
+                   controlPoint1: CGPoint(x: bladeLength * 0.40, y: midHalf),
+                   controlPoint2: CGPoint(x: bladeLength * 0.18, y: rootHalf))
         path.close()
         path.flatness = 0.001
         return path
@@ -175,7 +179,7 @@ enum FanGeometry {
         let m = SCNMaterial()
         // Muted steel-teal — interesting but mechanical, doesn't fight the
         // crank/piston colors for attention the way a saturated pink would.
-        let color = NSColor(calibratedRed: 0.38, green: 0.58, blue: 0.66,
+        let color = PlatformColor.calibrated(red: 0.38, green: 0.58, blue: 0.66,
                             alpha: fanAlpha)
         m.diffuse.contents = color
         m.transparency = fanAlpha
@@ -192,7 +196,7 @@ enum FanGeometry {
     /// joint reads as a continuous piece of hardware.
     private static func shaftMaterial() -> SCNMaterial {
         let m = SCNMaterial()
-        m.diffuse.contents = NSColor(calibratedRed: 0.40, green: 0.42, blue: 0.46,
+        m.diffuse.contents = PlatformColor.calibrated(red: 0.40, green: 0.42, blue: 0.46,
                                      alpha: 1.0)
         m.metalness.contents = 0.95
         m.roughness.contents = 0.32

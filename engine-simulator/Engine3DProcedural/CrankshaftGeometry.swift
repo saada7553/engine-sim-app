@@ -15,7 +15,11 @@
 //
 
 import SceneKit
+#if os(macOS)
 import AppKit
+#else
+import UIKit
+#endif
 import simd
 
 private let mainJournalSegmentCount: Int = 24
@@ -86,7 +90,7 @@ enum CrankshaftGeometry {
         flange.radialSegmentCount = mainJournalSegmentCount
         flange.firstMaterial = steelMaterial()
         let flangeNode = SCNNode(geometry: flange)
-        flangeNode.position.y = CGFloat(rearSnoutEnd + flangeT / 2.0)
+        flangeNode.position.y = SCNFloat(rearSnoutEnd + flangeT / 2.0)
         node.addChildNode(flangeNode)
 
         return node
@@ -104,7 +108,7 @@ enum CrankshaftGeometry {
         cyl.radialSegmentCount = mainJournalSegmentCount
         cyl.firstMaterial = steelMaterial()
         let cylNode = SCNNode(geometry: cyl)
-        cylNode.position.y = CGFloat((fromY + toY) / 2.0)
+        cylNode.position.y = SCNFloat((fromY + toY) / 2.0)
         parent.addChildNode(cylNode)
     }
 
@@ -135,7 +139,7 @@ enum CrankshaftGeometry {
         for side: Double in [-1.0, +1.0] {
             let webY = slotY + side * p.crankWebCenterOffset
             let web = makeWebNode(params: p, throwAngleRad: throwAngleRad)
-            web.position.y = CGFloat(webY)
+            web.position.y = SCNFloat(webY)
             parent.addChildNode(web)
         }
     }
@@ -158,7 +162,7 @@ enum CrankshaftGeometry {
         // (throwAngleRad − π/2). Inline cyl 1 (throwAngleRad = 0) then places
         // the web's pin boss directly above the crank center at +Z, matching
         // the pin's initial location.
-        node.eulerAngles.y = CGFloat(throwAngleRad - .pi / 2)
+        node.eulerAngles.y = SCNFloat(throwAngleRad - .pi / 2)
         return node
     }
 
@@ -317,7 +321,7 @@ enum CrankshaftGeometry {
 
     private static func steelMaterial() -> SCNMaterial {
         let m = SCNMaterial()
-        m.diffuse.contents = NSColor(calibratedRed: 0.40, green: 0.42, blue: 0.46, alpha: 1.0)
+        m.diffuse.contents = PlatformColor.calibrated(red: 0.40, green: 0.42, blue: 0.46, alpha: 1.0)
         m.metalness.contents = 0.95
         m.roughness.contents = 0.32
         m.lightingModel = .physicallyBased
@@ -327,7 +331,7 @@ enum CrankshaftGeometry {
     private static func pinMaterial() -> SCNMaterial {
         // Polished pin: a touch shinier than the web bodies.
         let m = SCNMaterial()
-        m.diffuse.contents = NSColor(calibratedRed: 0.48, green: 0.50, blue: 0.54, alpha: 1.0)
+        m.diffuse.contents = PlatformColor.calibrated(red: 0.48, green: 0.50, blue: 0.54, alpha: 1.0)
         m.metalness.contents = 0.97
         m.roughness.contents = pinPolishedRoughness
         m.lightingModel = .physicallyBased

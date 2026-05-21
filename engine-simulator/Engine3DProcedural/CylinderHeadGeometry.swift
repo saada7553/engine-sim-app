@@ -8,7 +8,11 @@
 //
 
 import SceneKit
+#if os(macOS)
 import AppKit
+#else
+import UIKit
+#endif
 
 private let headAlpha: CGFloat = 0.04
 private let chamferFactorOfBore: Double = 0.06
@@ -34,7 +38,7 @@ enum CylinderHeadGeometry {
     private static func headMaterial() -> SCNMaterial {
         // Head: lighter aluminum cast (vs. iron block), still translucent.
         let m = SCNMaterial()
-        m.diffuse.contents = NSColor(calibratedRed: 0.72, green: 0.70, blue: 0.66, alpha: headAlpha)
+        m.diffuse.contents = PlatformColor.calibrated(red: 0.72, green: 0.70, blue: 0.66, alpha: headAlpha)
         m.transparency = headAlpha
         m.isDoubleSided = true
         m.metalness.contents = 0.18

@@ -8,7 +8,11 @@
 //
 
 import SceneKit
+#if os(macOS)
 import AppKit
+#else
+import UIKit
+#endif
 
 private let valveSegments: Int = 18
 
@@ -32,7 +36,7 @@ enum ValveGeometry {
         head.firstMaterial = material
         let headNode = SCNNode(geometry: head)
         headNode.eulerAngles.x = .pi / 2
-        headNode.position.z = CGFloat(headThickness / 2.0)
+        headNode.position.z = SCNFloat(headThickness / 2.0)
         node.addChildNode(headNode)
 
         // Stem extending up from the head.
@@ -42,7 +46,7 @@ enum ValveGeometry {
         stem.firstMaterial = material
         let stemNode = SCNNode(geometry: stem)
         stemNode.eulerAngles.x = .pi / 2
-        stemNode.position.z = CGFloat(headThickness + p.valveStemLength / 2.0)
+        stemNode.position.z = SCNFloat(headThickness + p.valveStemLength / 2.0)
         node.addChildNode(stemNode)
 
         return node
@@ -53,12 +57,12 @@ enum ValveGeometry {
         switch kind {
         case .intake:
             // Intake: bright polished stainless.
-            m.diffuse.contents = NSColor(calibratedRed: 0.82, green: 0.84, blue: 0.86, alpha: 1.0)
+            m.diffuse.contents = PlatformColor.calibrated(red: 0.82, green: 0.84, blue: 0.86, alpha: 1.0)
             m.metalness.contents = 0.95
             m.roughness.contents = 0.20
         case .exhaust:
             // Exhaust: heat-tinted (orange/bronze) from cycling at high temperature.
-            m.diffuse.contents = NSColor(calibratedRed: 0.62, green: 0.36, blue: 0.20, alpha: 1.0)
+            m.diffuse.contents = PlatformColor.calibrated(red: 0.62, green: 0.36, blue: 0.20, alpha: 1.0)
             m.metalness.contents = 0.88
             m.roughness.contents = 0.40
         }

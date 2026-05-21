@@ -10,6 +10,13 @@
 import SwiftUI
 import SceneKit
 import Combine
+#if os(macOS)
+import AppKit
+typealias _SCNViewRepresentable = NSViewRepresentable
+#else
+import UIKit
+typealias _SCNViewRepresentable = UIViewRepresentable
+#endif
 
 // Camera framing: distance is a multiple of the engine diagonal so it always
 // fits, regardless of size. Direction is a normalized vector pointing from the
@@ -20,15 +27,15 @@ private let cameraDirY: Float = 0.7   // top
 private let cameraDirZ: Float = 1.0   // front
 private let maxDtSeconds: Double = 1.0 / 30.0
 
-struct Engine3DProceduralView: NSViewRepresentable {
+struct Engine3DProceduralView: _SCNViewRepresentable {
     @ObservedObject var vm: EngineViewModel
 
-    func makeNSView(context: Context) -> SCNView {
+    private func makeSCNView(context: Context) -> SCNView {
         let scnView = SCNView()
         scnView.scene = SCNScene()
         scnView.allowsCameraControl = true
         scnView.defaultCameraController.interactionMode = .orbitAngleMapping
-        scnView.backgroundColor = NSColor(Color.appBackground)
+        scnView.backgroundColor = PlatformColor(Color.appBackground)
         scnView.antialiasingMode = .multisampling4X
         scnView.isPlaying = true
         scnView.loops = true
@@ -49,9 +56,17 @@ struct Engine3DProceduralView: NSViewRepresentable {
         return scnView
     }
 
+#if os(macOS)
+    func makeNSView(context: Context) -> SCNView { makeSCNView(context: context) }
     func updateNSView(_ nsView: SCNView, context: Context) {
         context.coordinator.currentRPM = vm.rpm
     }
+#else
+    func makeUIView(context: Context) -> SCNView { makeSCNView(context: context) }
+    func updateUIView(_ uiView: SCNView, context: Context) {
+        context.coordinator.currentRPM = vm.rpm
+    }
+#endif
 
     func makeCoordinator() -> Coordinator { Coordinator() }
 
@@ -66,7 +81,7 @@ struct Engine3DProceduralView: NSViewRepresentable {
         key.light = SCNLight()
         key.light?.type = .directional
         key.light?.intensity = 600
-        key.light?.color = NSColor(white: 0.95, alpha: 1.0)
+        key.light?.color = PlatformColor(white: 0.95, alpha: 1.0)
         key.eulerAngles = SCNVector3(-Float.pi / 4, Float.pi / 4, 0)
         scene.rootNode.addChildNode(key)
 
@@ -74,7 +89,7 @@ struct Engine3DProceduralView: NSViewRepresentable {
         fill.light = SCNLight()
         fill.light?.type = .directional
         fill.light?.intensity = 250
-        fill.light?.color = NSColor(white: 0.75, alpha: 1.0)
+        fill.light?.color = PlatformColor(white: 0.75, alpha: 1.0)
         fill.eulerAngles = SCNVector3(-Float.pi / 6, -Float.pi / 3, 0)
         scene.rootNode.addChildNode(fill)
 
@@ -82,7 +97,7 @@ struct Engine3DProceduralView: NSViewRepresentable {
         ambient.light = SCNLight()
         ambient.light?.type = .ambient
         ambient.light?.intensity = 120
-        ambient.light?.color = NSColor(white: 0.4, alpha: 1.0)
+        ambient.light?.color = PlatformColor(white: 0.4, alpha: 1.0)
         scene.rootNode.addChildNode(ambient)
     }
 

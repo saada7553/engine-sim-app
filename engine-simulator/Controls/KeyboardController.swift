@@ -6,11 +6,19 @@
 //  the user-facing reference of these bindings.
 //
 
+#if os(macOS)
 import AppKit
+#endif
 
 /// Installs an app-wide key monitor that drives the engine simulation.
 /// Engine keys are ignored while a text field is being edited or while a menu
 /// shortcut modifier (Command/Control/Option) is held.
+///
+/// iOS doesn't get the global NSEvent monitor — the dashboard there is driven
+/// by on-screen controls and SwiftUI's `.onKeyPress` for any attached hardware
+/// keyboard. The Swift call sites only need a stable type with the same init,
+/// so on iOS this collapses to an empty stub.
+#if os(macOS)
 final class KeyboardController {
     private let engineVm: EngineViewModel
     private var monitor: Any?
@@ -116,3 +124,10 @@ final class KeyboardController {
         return responder is NSText
     }
 }
+#else
+final class KeyboardController {
+    init(engineVm: EngineViewModel) {
+        _ = engineVm
+    }
+}
+#endif

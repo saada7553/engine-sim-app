@@ -474,10 +474,10 @@ final class EngineCarousel: ObservableObject {
 /// SceneKit carousel: spawns the carousel's current EngineSpec, slowly spins
 /// both the crankshaft (heroCrankRPM) and the whole assembly (turntable),
 /// and rebuilds when the carousel advances.
-private struct PaywallEngineHero: NSViewRepresentable {
+private struct PaywallEngineHero: _SCNViewRepresentable {
     @ObservedObject var carousel: EngineCarousel
 
-    func makeNSView(context: Context) -> SCNView {
+    private func makeSCNView(context: Context) -> SCNView {
         let view = SCNView()
         view.scene = SCNScene()
         view.allowsCameraControl = false
@@ -492,9 +492,17 @@ private struct PaywallEngineHero: NSViewRepresentable {
         return view
     }
 
+#if os(macOS)
+    func makeNSView(context: Context) -> SCNView { makeSCNView(context: context) }
     func updateNSView(_ nsView: SCNView, context: Context) {
         context.coordinator.swapTo(spec: carousel.currentSpec)
     }
+#else
+    func makeUIView(context: Context) -> SCNView { makeSCNView(context: context) }
+    func updateUIView(_ uiView: SCNView, context: Context) {
+        context.coordinator.swapTo(spec: carousel.currentSpec)
+    }
+#endif
 
     func makeCoordinator() -> Coordinator { Coordinator() }
 
@@ -509,7 +517,7 @@ private struct PaywallEngineHero: NSViewRepresentable {
         key.light = SCNLight()
         key.light?.type = .directional
         key.light?.intensity = 900
-        key.light?.color = NSColor(white: 0.98, alpha: 1.0)
+        key.light?.color = PlatformColor(white: 0.98, alpha: 1.0)
         key.eulerAngles = SCNVector3(-Float.pi / 4, Float.pi / 4, 0)
         scene.rootNode.addChildNode(key)
 
@@ -519,7 +527,7 @@ private struct PaywallEngineHero: NSViewRepresentable {
         rim.light = SCNLight()
         rim.light?.type = .directional
         rim.light?.intensity = 80
-        rim.light?.color = NSColor(red: 1.0, green: 0.78, blue: 0.45, alpha: 1.0)
+        rim.light?.color = PlatformColor(red: 1.0, green: 0.78, blue: 0.45, alpha: 1.0)
         rim.eulerAngles = SCNVector3(-Float.pi / 8, -Float.pi * 0.7, 0)
         scene.rootNode.addChildNode(rim)
 
@@ -529,7 +537,7 @@ private struct PaywallEngineHero: NSViewRepresentable {
         underLight.light = SCNLight()
         underLight.light?.type = .omni
         underLight.light?.intensity = 40
-        underLight.light?.color = NSColor(red: 1.0, green: 0.65, blue: 0.30, alpha: 1.0)
+        underLight.light?.color = PlatformColor(red: 1.0, green: 0.65, blue: 0.30, alpha: 1.0)
         underLight.light?.attenuationStartDistance = 0.1
         underLight.light?.attenuationEndDistance = 1.2
         underLight.position = SCNVector3(0, -0.35, 0.1)
@@ -540,7 +548,7 @@ private struct PaywallEngineHero: NSViewRepresentable {
         ambient.light = SCNLight()
         ambient.light?.type = .ambient
         ambient.light?.intensity = 220
-        ambient.light?.color = NSColor(white: 0.55, alpha: 1.0)
+        ambient.light?.color = PlatformColor(white: 0.55, alpha: 1.0)
         scene.rootNode.addChildNode(ambient)
     }
 
