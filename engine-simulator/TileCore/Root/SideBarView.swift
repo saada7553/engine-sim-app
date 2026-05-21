@@ -66,6 +66,7 @@ struct SideBarView: View {
                 EngineRow(
                     entry: entry,
                     isSelected: engineLibrary.selectedEngineId == entry.id,
+                    isLocked: engineLibrary.isPaywalled(entry.id) && !purchaseManager.isPro,
                     onSelect: { selectEngine(entry) },
                     onDelete: { engineLibrary.deleteUserEngine(id: entry.id) }
                 )
@@ -258,6 +259,7 @@ private struct SidebarRow<Content: View, Trailing: View>: View {
 struct EngineRow: View {
     let entry: EngineEntry
     let isSelected: Bool
+    let isLocked: Bool
     let onSelect: () -> Void
     let onDelete: () -> Void
 
@@ -272,9 +274,7 @@ struct EngineRow: View {
     var body: some View {
         SidebarRow(isSelected: isSelected, isHovered: hovered, onTap: onSelect) {
             HStack(spacing: 10) {
-                Circle()
-                    .fill(isSelected ? activeDot : inactiveDot)
-                    .frame(width: 6, height: 6)
+                leadingGlyph
                 VStack(alignment: .leading, spacing: 1) {
                     Text(entry.name)
                         .font(.system(size: 13))
@@ -285,17 +285,43 @@ struct EngineRow: View {
                 }
             }
         } trailing: {
+            // Hover-only on macOS; iOS has no hover state so we show the
+            // trash whenever the row belongs to a user-built engine.
+            #if os(macOS)
             if hovered && entry.isUserBuilt {
-                Button(action: onDelete) {
-                    Image(systemName: "trash")
-                        .font(.system(size: 11))
-                        .foregroundColor(mutedText)
-                }
-                .buttonStyle(.plain)
-                .help("Delete this engine")
+                deleteButton(label: "Delete this engine")
             }
+            #else
+            if entry.isUserBuilt {
+                deleteButton(label: "Delete this engine")
+            }
+            #endif
         }
         .onHover { hovered = $0 }
+    }
+
+    @ViewBuilder
+    private var leadingGlyph: some View {
+        if isLocked {
+            Image(systemName: "lock.fill")
+                .font(.system(size: 9, weight: .semibold))
+                .foregroundColor(mutedText)
+                .frame(width: 6, height: 6)
+        } else {
+            Circle()
+                .fill(isSelected ? activeDot : inactiveDot)
+                .frame(width: 6, height: 6)
+        }
+    }
+
+    private func deleteButton(label: String) -> some View {
+        Button(action: onDelete) {
+            Image(systemName: "trash")
+                .font(.system(size: 11))
+                .foregroundColor(mutedText)
+        }
+        .buttonStyle(.plain)
+        .help(label)
     }
 }
 
@@ -307,6 +333,16 @@ struct LayoutRow: View {
     let action: () -> Void
     let onDelete: () -> Void
     @State private var hovered = false
+
+    private var deleteButton: some View {
+        Button(action: onDelete) {
+            Image(systemName: "trash")
+                .font(.system(size: 11))
+                .foregroundColor(mutedText)
+        }
+        .buttonStyle(.plain)
+        .help("Delete this layout")
+    }
 
     var body: some View {
         SidebarRow(isSelected: isSelected, isHovered: hovered, onTap: action) {
@@ -320,16 +356,17 @@ struct LayoutRow: View {
             }
         } trailing: {
             // Built-in layouts ship with the app and aren't user-deletable
-            // — no trash affordance for those rows.
+            // — no trash affordance for those rows. macOS uses hover; iOS
+            // shows the trash for every user-saved layout (no hover state).
+            #if os(macOS)
             if hovered && !layout.isBuiltIn {
-                Button(action: onDelete) {
-                    Image(systemName: "trash")
-                        .font(.system(size: 11))
-                        .foregroundColor(mutedText)
-                }
-                .buttonStyle(.plain)
-                .help("Delete this layout")
+                deleteButton
             }
+            #else
+            if !layout.isBuiltIn {
+                deleteButton
+            }
+            #endif
         }
         .onHover { hovered = $0 }
     }

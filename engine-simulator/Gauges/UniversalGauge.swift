@@ -160,12 +160,17 @@ struct UniversalGauge: View {
                         context.stroke(Circle().path(in: capRect), with: .color(.sidebarTextSecondary), lineWidth: 1)
                     }
 
-                    // Value display (using SwiftUI views for text)
+                    // Value display (using SwiftUI views for text).
+                    // iOS compact / very-compact gauges drop the unit
+                    // subtitle so a five-digit RPM (e.g. an F1 V12 redline
+                    // of 18K) doesn't fight a "RPM" label for the same
+                    // ~80pt of vertical space. macOS keeps the full
+                    // treatment at every size.
                     VStack(spacing: 2) {
                         Text(formattedDisplayValue(compact: isCompact))
                             .font(.system(size: size * 0.12, weight: .bold, design: .monospaced))
                             .foregroundColor(.white)
-                        if !config.unit.isEmpty {
+                        if !config.unit.isEmpty && shouldShowUnit(isCompact: isCompact) {
                             Text(config.unit)
                                 .font(.system(size: size * 0.05, weight: .medium, design: .monospaced))
                                 .foregroundColor(config.needleColor)
@@ -173,15 +178,42 @@ struct UniversalGauge: View {
                     }
                     .position(x: center.x, y: center.y + outerRadius * 0.25)
 
-                    // Title label
-                    Text(config.title)
-                        .font(.system(size: max(8, size * 0.05), weight: .medium, design: .monospaced))
-                        .foregroundColor(config.labelColor)
-                        .position(x: center.x, y: center.y + outerRadius * 0.65)
+                    // Title label — hidden on iOS in very-compact mode
+                    // since the value alone is enough info at that size.
+                    if shouldShowTitle(isVeryCompact: isVeryCompact) {
+                        Text(config.title)
+                            .font(.system(size: max(8, size * 0.05), weight: .medium, design: .monospaced))
+                            .foregroundColor(config.labelColor)
+                            .position(x: center.x, y: center.y + outerRadius * 0.65)
+                    }
                 }
             }
         }
         .aspectRatio(1, contentMode: .fit)
+    }
+
+    // MARK: - Adaptive text density
+
+    /// Whether to render the small unit subtitle below the value. On iOS
+    /// the global 0.7 scaleEffect makes compact gauges very small visually,
+    /// so we drop the subtitle to give the value digits more room.
+    private func shouldShowUnit(isCompact: Bool) -> Bool {
+        #if os(macOS)
+        return true
+        #else
+        return !isCompact
+        #endif
+    }
+
+    /// Whether to render the bottom title label. iOS hides it in
+    /// very-compact mode — the gauge's overall placement on the dash
+    /// already communicates what it measures.
+    private func shouldShowTitle(isVeryCompact: Bool) -> Bool {
+        #if os(macOS)
+        return true
+        #else
+        return !isVeryCompact
+        #endif
     }
 
     // MARK: - Formatted Value
@@ -233,15 +265,29 @@ struct UniversalGauge: View {
                            isCompact: Bool, isVeryCompact: Bool, gaugeSize: CGFloat) {
         let tickStart = outerRadius - 2
 
-        // Adaptive step multiplier - show fewer ticks on smaller gauges
+        // Adaptive step multiplier — show fewer ticks on smaller gauges.
+        // iOS is more aggressive (3× / 6× / 1.5× even at full size) so the
+        // dial doesn't end up littered with numbers — the global 0.7
+        // scaleEffect shrinks the gauge so every label is already 30%
+        // smaller visually, and we'd rather show fewer + readable than
+        // many + tiny.
+        #if os(macOS)
         let majorStepMultiplier: Double = isVeryCompact ? 4.0 : (isCompact ? 2.0 : 1.0)
+        #else
+        let majorStepMultiplier: Double = isVeryCompact ? 6.0 : (isCompact ? 3.0 : 1.5)
+        #endif
         let effectiveMajorStep = config.ticks.majorStep * majorStepMultiplier
 
         // Skip minor ticks on compact gauges
         let showMinorTicks = !isCompact
 
-        // Adaptive font size
+        // Adaptive font size — slightly smaller floor on iOS so the tick
+        // labels stay readable but never dominate the dial.
+        #if os(macOS)
         let fontSize = max(7, min(12, gaugeSize * 0.05))
+        #else
+        let fontSize = max(6, min(10, gaugeSize * 0.04))
+        #endif
 
         var tickValue = config.minValue
         while tickValue <= config.maxValue {
@@ -346,8 +392,17 @@ struct UniversalGauge: View {
     private func formatTickLabel(_ value: Double, compact: Bool) -> String {
         let intValue = Int(value)
 
-        if compact && abs(intValue) >= 1000 {
-            // Use K abbreviation
+        // iOS uses "K" abbreviation at *any* size for thousands-scale
+        // values (RPM, mph above 100, etc.) — "16K" reads much cleaner
+        // on a small mobile dial than "16000". macOS keeps the existing
+        // compact-only abbreviation.
+        #if os(macOS)
+        let abbreviate = compact && abs(intValue) >= 1000
+        #else
+        let abbreviate = abs(intValue) >= 1000
+        #endif
+
+        if abbreviate {
             let kValue = Double(intValue) / 1000.0
             if kValue == kValue.rounded() {
                 return "\(Int(kValue))K"

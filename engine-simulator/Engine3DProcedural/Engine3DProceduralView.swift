@@ -38,7 +38,10 @@ typealias _SCNViewRepresentable = UIViewRepresentable
 // empty space below.
 private let cameraDistanceFactor: Double = 1.15
 private let cameraDirX: Float = 0.9   // side
-private let cameraDirY: Float = 0.7   // top
+// Lowered further from 0.45 → 0.25, so the camera now sits ~10.5°
+// above horizontal — nearly level with the engine, with just enough
+// tilt to see the head + intake plumbing from above the cylinder line.
+private let cameraDirY: Float = 0.25  // top
 private let cameraDirZ: Float = 1.0   // front
 /// Vertical FOV (radians) used by the framing math. Matches SCNCamera's
 /// default of 60°; only used for the distance-fit calculation here — the
@@ -147,10 +150,13 @@ struct Engine3DProceduralView: _SCNViewRepresentable {
 
         // 2) Engine's visual center in world coords. The assembly rotates
         //    local +Z → world +Y, so `blockCenterZ` (local Z) becomes the
-        //    world Y position the camera should aim at. X / Z (depth) are
-        //    centered at world origin because the crank sits on the world
-        //    Y axis.
-        let engineCenter = SCNVector3(0, Float(p.blockCenterZ), 0)
+        //    world Y position the camera should aim at. Kept as plain Float
+        //    components because SCNVector3.y is CGFloat on macOS and Float
+        //    on iOS — doing the math in Float and constructing SCNVector3
+        //    at the end side-steps that mismatch.
+        let centerX: Float = 0
+        let centerY: Float = Float(p.blockCenterZ)
+        let centerZ: Float = 0
 
         // 3) Distance so the bounding sphere just fits the FOV, with a
         //    modest buffer (cameraDistanceFactor). This is mathematically
@@ -170,11 +176,11 @@ struct Engine3DProceduralView: _SCNViewRepresentable {
         let uy = cameraDirY / dirLen
         let uz = cameraDirZ / dirLen
         cameraNode.position = SCNVector3(
-            engineCenter.x + ux * distance,
-            engineCenter.y + uy * distance,
-            engineCenter.z + uz * distance
+            centerX + ux * distance,
+            centerY + uy * distance,
+            centerZ + uz * distance
         )
-        cameraNode.look(at: engineCenter)
+        cameraNode.look(at: SCNVector3(centerX, centerY, centerZ))
     }
 
     fileprivate func placeCamera(_ cameraNode: SCNNode, params p: EngineGeometryParams) {
