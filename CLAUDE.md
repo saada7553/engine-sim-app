@@ -40,7 +40,6 @@ You should also play this noise if you need my permission to do something / are 
 
 # Current TODOs: 
 
-1) When only the valves are damaged and the user is accelerating, the sound appears to be muffeled, when the throttle is let go, the damage sound returns. Why does the engine sound so muffeled when accelerating with only valve damage? Investigate and fix.
 2) Hitting the repair button should clear any OBD2 codes
 5) Fuel turning on the ecu needs work
     - Currently, the entire map says 1s. What do these 1s mean? aren't they supposed to be seperate values? 
@@ -50,4 +49,4 @@ You should also play this noise if you need my permission to do something / are 
     - On macos, this should be a slider on the control pannel, think about the best way to incorporate this in 
 8) Coolant & Oil problems
     - When driving hard, the coolant cools down instead of heating up
-    
+    - Turning the pumps on / off seems to have very little effect on the engine, think about how the cooland / oil should change the engine, think aobut what happens in a real engine. The pump state has what effect on the temps? think about all this and make the required changes.

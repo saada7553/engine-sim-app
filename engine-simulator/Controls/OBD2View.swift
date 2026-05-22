@@ -7,10 +7,11 @@
 //  on every code row.
 //
 //  Stored-DTC semantics — engine state is sampled on a timer and faults
-//  accumulate into a scrolling log that keeps piling on; codes are not
-//  capped and don't drop off when a condition resolves. A fault must
-//  persist past a short debounce before it's committed, so a value
-//  hovering on a threshold doesn't flash rows on and off.
+//  accumulate into a scrolling log. A fault must persist past a short
+//  debounce before it's committed, so a value hovering on a threshold
+//  doesn't flash rows on and off. A committed code self-clears once its
+//  fault has resolved and it's been shown for at least codeExpireSeconds;
+//  a fault that's still active is kept indefinitely.
 //
 //  The CLEAR CODES button wipes the log for ~0.4s; any fault still
 //  active afterwards re-accumulates once it clears the debounce. That
@@ -46,6 +47,12 @@ private let clearWipeSeconds: Double = 0.4
 private let sampleInterval: Double = 0.2
 private let appearDebounceSeconds: Double = 0.5
 
+// A committed code self-clears once it's been shown for at least this long
+// AND its underlying fault is no longer active. Codes whose fault is still
+// present never expire; recently-committed codes linger until they age out,
+// so a fault that flickers off briefly doesn't blank the row.
+private let codeExpireSeconds: Double = 10.0
+
 // Code-row text scales with the panel width so it stays readable on a
 // large tile without being hardcoded to a single point size. Clamped so
 // it never gets tiny on a narrow tile or oversized on a wide one.
@@ -54,6 +61,7 @@ private let maxCodeFontSize: CGFloat = 17
 private let codeFontWidthRatio: CGFloat = 0.032
 private let descFontRatio: CGFloat = 0.85
 private let glyphFontRatio: CGFloat = 0.92
+private let actionFontRatio: CGFloat = 0.72
 
 // MARK: - View
 
@@ -74,6 +82,11 @@ struct OBD2View: View {
     /// Candidate faults seen but not yet committed, with the time they
     /// were first observed. Used to enforce `appearDebounceSeconds`.
     @State private var firstSeen: [String: Date] = [:]
+
+    /// When each committed code was first added to `accumulated`. Drives the
+    /// `codeExpireSeconds` auto-clear so a resolved fault eventually drops off
+    /// instead of lingering until CLEAR CODES is pressed.
+    @State private var committedAt: [String: Date] = [:]
 
     /// Fault ids that were active when CLEAR CODES was last pressed. They stay
     /// suppressed (won't re-accumulate) for as long as they remain continuously
@@ -113,6 +126,7 @@ struct OBD2View: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(Color.appBackground)
         .onReceive(sampleTimer) { _ in sample() }
+        .onChange(of: vm.repairToken) { _, _ in clearCodes() }
     }
 
     /// Re-derive raw codes, refresh any already-shown code's fields, and
@@ -137,6 +151,7 @@ struct OBD2View: View {
             let seenAt = pending[code.id] ?? now
             if now.timeIntervalSince(seenAt) >= appearDebounceSeconds {
                 accumulated.append(code)
+                committedAt[code.id] = now
                 pending[code.id] = nil
             } else {
                 pending[code.id] = seenAt
@@ -146,6 +161,18 @@ struct OBD2View: View {
         // Drop candidates that vanished before committing — their debounce
         // restarts if they reappear.
         firstSeen = pending.filter { rawIds.contains($0.key) }
+
+        // Auto-clear committed codes whose fault has resolved and that have
+        // been shown longer than codeExpireSeconds. Active faults (still in
+        // rawIds) are always kept regardless of age.
+        accumulated.removeAll { code in
+            guard !rawIds.contains(code.id) else { return false }
+            let addedAt = committedAt[code.id] ?? now
+            return now.timeIntervalSince(addedAt) >= codeExpireSeconds
+        }
+        committedAt = committedAt.filter { key, _ in
+            accumulated.contains { $0.id == key }
+        }
     }
 
     // MARK: Header
@@ -200,6 +227,7 @@ struct OBD2View: View {
         suppressed = Set(OBD2CodeService.codes(for: vm).map { $0.id })
         accumulated = []
         firstSeen = [:]
+        committedAt = [:]
         clearedAt = Date()
         DispatchQueue.main.asyncAfter(deadline: .now() + clearWipeSeconds) {
             clearedAt = nil
@@ -303,12 +331,23 @@ private struct CodeRow: View {
                 .font(.system(size: fontSize, weight: .bold, design: .monospaced))
                 .foregroundColor(color)
                 .shadow(color: color.opacity(0.6), radius: 3)
-            Text(code.description.uppercased())
-                .font(.system(size: fontSize * descFontRatio, weight: .regular, design: .monospaced))
-                .foregroundColor(color.opacity(0.80))
-                .lineLimit(1)
-                .truncationMode(.tail)
-                .shadow(color: color.opacity(0.4), radius: 2)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(code.description.uppercased())
+                    .font(.system(size: fontSize * descFontRatio, weight: .regular, design: .monospaced))
+                    .foregroundColor(color.opacity(0.80))
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .shadow(color: color.opacity(0.4), radius: 2)
+                // Remediation hint: what the user should actually do. Dimmer
+                // and smaller so it reads as secondary guidance, not a fault.
+                if let action = code.action {
+                    Text("▸ " + action.uppercased())
+                        .font(.system(size: fontSize * actionFontRatio, weight: .regular, design: .monospaced))
+                        .foregroundColor(amberDim)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                }
+            }
             Spacer(minLength: 0)
             severityGlyph
         }

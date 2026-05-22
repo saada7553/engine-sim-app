@@ -63,7 +63,6 @@ private let gaugeHeightFractionThermalsOnly: CGFloat = 0.55
 private let gaugeHeightMin: CGFloat = 78
 
 private let cardCorner: CGFloat = 3
-private let borderColor = Color.white.opacity(0.12)
 private let mutedText = Color.white.opacity(0.45)
 private let pumpAccent = Color.green
 private let repairAccent = Color.orange
@@ -131,7 +130,9 @@ struct EngineHealthView: View {
 
     private func thermalsSection(scale: CGFloat, gaugeHeight: CGFloat) -> some View {
         VStack(alignment: .leading, spacing: panelSpacingBase * scale) {
-            sectionLabel("THERMALS", scale: scale)
+            if showsDamageSection {
+                sectionLabel("THERMALS", scale: scale)
+            }
 
             HStack(alignment: .center, spacing: gaugeSpacingBase * scale) {
                 gauge(GaugePresets.coolantTemp(), \.coolantTempC)
@@ -144,7 +145,6 @@ struct EngineHealthView: View {
             .frame(minHeight: gaugeHeight)
         }
         .padding(panelSpacingBase * scale)
-        .overlay(panelBorder)
         .clipShape(RoundedRectangle(cornerRadius: cardCorner))
     }
 
@@ -249,17 +249,11 @@ struct EngineHealthView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .padding(panelSpacingBase * scale)
-        .overlay(panelBorder)
         .clipShape(RoundedRectangle(cornerRadius: cardCorner))
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     // MARK: Helpers
-
-    private var panelBorder: some View {
-        RoundedRectangle(cornerRadius: cardCorner)
-            .stroke(borderColor, lineWidth: 0.75)
-    }
 
     private var isDamaged: Bool {
         let wide = vm.engineWideHealth

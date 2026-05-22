@@ -19,7 +19,7 @@ import SwiftUI
 
 // MARK: - Palette / thresholds
 
-private let healthyFill = Color.green
+private let healthyFill = Color.healthGreen
 private let warningColor = Color.orange
 private let criticalColor = Color.red
 private let emptySegmentFill = Color.white.opacity(0.06)

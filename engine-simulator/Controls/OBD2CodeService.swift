@@ -20,6 +20,31 @@
 import Foundation
 import SwiftUI
 
+// MARK: - Tune-fault thresholds
+
+// Below this rpm (engine off / cranking) the AFR and timing aren't
+// meaningful, so tune codes are suppressed.
+private let runningRpmFloor: Double = 400.0
+// Oil pressure lags engine speed at start-up — the pump needs a moment to
+// build pressure after the engine catches. Suppress oil-pressure codes until
+// the engine has been running at least this long so a normal start doesn't
+// throw a false low-pressure fault.
+private let oilPressureGraceSeconds: TimeInterval = 4.0
+// Lean/rich limits on the commanded target AFR. The factory tune spans
+// 14.7 (cruise) → 12.8 (WOT), so these sit clear of a stock map and only
+// fire once the user dials the mixture past a safe window.
+private let leanWarnAfr: Double = 15.5
+private let leanCriticalAfr: Double = 17.0
+private let richWarnAfr: Double = 12.0
+private let richCriticalAfr: Double = 10.8
+// Spark advance offset from the engine's own base curve. Big positive
+// offsets are detonation territory; big negative offsets (timing pulled way
+// out) kill power and dump heat into the exhaust.
+private let overAdvanceWarnDeg: Double = 8.0
+private let overAdvanceCriticalDeg: Double = 16.0
+private let overRetardWarnDeg: Double = -8.0
+private let overRetardCriticalDeg: Double = -16.0
+
 // MARK: - Models
 
 enum OBD2Severity {
@@ -32,6 +57,10 @@ struct OBD2Code: Identifiable, Equatable {
     let code: String        // e.g. "P0301"
     let description: String
     let severity: OBD2Severity
+    /// Optional remediation hint shown under the description — what the user
+    /// should actually do about it. Populated for user-tunable faults (fuel /
+    /// spark); damage codes leave it nil since there's no in-app fix.
+    var action: String? = nil
 }
 
 // MARK: - Service
@@ -48,6 +77,7 @@ enum OBD2CodeService {
         codes.append(contentsOf: engineWideCodes(vm: vm))
         codes.append(contentsOf: knockCodes(vm: vm))
         codes.append(contentsOf: ignitionCutCodes(vm: vm))
+        codes.append(contentsOf: tuneCodes(vm: vm))
 
         // Severity then code ordering: critical first, then alphanumeric.
         return codes.sorted { lhs, rhs in
@@ -76,33 +106,49 @@ enum OBD2CodeService {
                              severity: .warning))
         }
 
-        // Oil temp: P0196
-        if vm.oilTempC > 120 {
+        // Oil temp: P0196. Normal full-load oil runs ~100-105°C across engine
+        // types (the thermal model is engine-normalized), so the warning sits
+        // above that band and only genuine oil overheating trips a code.
+        if vm.oilTempC > 135 {
             out.append(.init(id: "P0196",
                              code: "P0196",
                              description: "Engine Oil Temperature High",
                              severity: .critical))
-        } else if vm.oilTempC > 105 {
+        } else if vm.oilTempC > 120 {
             out.append(.init(id: "P0196",
                              code: "P0196",
                              description: "Engine Oil Temperature Elevated",
                              severity: .warning))
         }
 
-        // Oil pressure: P0521 (warn) / P0524 (critical)
-        if vm.oilPressurePsi < 15 {
-            out.append(.init(id: "P0524",
-                             code: "P0524",
-                             description: "Engine Oil Pressure Too Low",
-                             severity: .critical))
-        } else if vm.oilPressurePsi < 25 {
-            out.append(.init(id: "P0521",
-                             code: "P0521",
-                             description: "Engine Oil Pressure Sensor Performance",
-                             severity: .warning))
+        // Oil pressure: P0521 (warn) / P0524 (critical). Idle oil pressure is
+        // ~25 psi, so the warning sits below idle to avoid false-tripping when
+        // the engine is just ticking over. Only evaluated once the engine has
+        // been running past the start-up grace — a stopped engine reads zero
+        // pressure, and a fresh start needs a moment for the pump to spin up,
+        // neither of which is a real fault.
+        if engineRunningPastGrace(vm: vm) {
+            if vm.oilPressurePsi < 10 {
+                out.append(.init(id: "P0524",
+                                 code: "P0524",
+                                 description: "Engine Oil Pressure Too Low",
+                                 severity: .critical))
+            } else if vm.oilPressurePsi < 18 {
+                out.append(.init(id: "P0521",
+                                 code: "P0521",
+                                 description: "Engine Oil Pressure Sensor Performance",
+                                 severity: .warning))
+            }
         }
 
         return out
+    }
+
+    /// True once the engine has been continuously running longer than the
+    /// oil-pressure start-up grace. False while stopped or just-started.
+    private static func engineRunningPastGrace(vm: EngineViewModel) -> Bool {
+        guard let runningSince = vm.runningSince else { return false }
+        return Date().timeIntervalSince(runningSince) >= oilPressureGraceSeconds
     }
 
     // MARK: - Per-cylinder
@@ -236,6 +282,75 @@ enum OBD2CodeService {
                              code: "P035\(cylDigit)",
                              description: "Cylinder \(cylNum) Ignition Coil Disabled",
                              severity: .warning))
+        }
+
+        return out
+    }
+
+    // MARK: - Tune faults
+
+    /// Codes driven by the user's ECU tune rather than mechanical damage. The
+    /// commanded target AFR (fuel map) and the commanded spark advance above
+    /// the engine's base curve are both things the user can push out of a safe
+    /// window, and a real scanner would flag them as lean/rich/knock faults.
+    /// Only evaluated while the engine is actually running.
+    private static func tuneCodes(vm: EngineViewModel) -> [OBD2Code] {
+        guard vm.isIgnitionOn, vm.rpm > runningRpmFloor else { return [] }
+        var out: [OBD2Code] = []
+
+        let targetAfr = vm.ecu.targetAfr(rpm: vm.ecu.currentRpm,
+                                         loadKpa: vm.ecu.currentLoadKpa)
+        if targetAfr >= leanCriticalAfr {
+            out.append(.init(id: "P0171",
+                             code: "P0171",
+                             description: "System Too Lean — Detonation / Burn Risk",
+                             severity: .critical,
+                             action: "Add fuel now: lower the FUEL map target AFR"))
+        } else if targetAfr >= leanWarnAfr {
+            out.append(.init(id: "P0171",
+                             code: "P0171",
+                             description: "System Too Lean (Bank 1)",
+                             severity: .warning,
+                             action: "Richen the tune: lower the FUEL map target AFR"))
+        } else if targetAfr <= richCriticalAfr {
+            out.append(.init(id: "P0172",
+                             code: "P0172",
+                             description: "System Too Rich — Plug Fouling Risk",
+                             severity: .critical,
+                             action: "Lean it out: raise the FUEL map target AFR"))
+        } else if targetAfr <= richWarnAfr {
+            out.append(.init(id: "P0172",
+                             code: "P0172",
+                             description: "System Too Rich (Bank 1)",
+                             severity: .warning,
+                             action: "Lean the tune: raise the FUEL map target AFR"))
+        }
+
+        let advance = vm.ignitionOffset
+        if advance >= overAdvanceCriticalDeg {
+            out.append(.init(id: "P0325",
+                             code: "P0325",
+                             description: "Ignition Over-Advanced — Detonation Risk",
+                             severity: .critical,
+                             action: "Pull timing now: lower the IGNITION map"))
+        } else if advance >= overAdvanceWarnDeg {
+            out.append(.init(id: "P0325",
+                             code: "P0325",
+                             description: "Ignition Timing Over-Advanced",
+                             severity: .warning,
+                             action: "Reduce advance: lower the IGNITION map"))
+        } else if advance <= overRetardCriticalDeg {
+            out.append(.init(id: "P1325",
+                             code: "P1325",
+                             description: "Ignition Over-Retarded — Power Loss / High EGT",
+                             severity: .critical,
+                             action: "Add timing: raise the IGNITION map"))
+        } else if advance <= overRetardWarnDeg {
+            out.append(.init(id: "P1325",
+                             code: "P1325",
+                             description: "Ignition Timing Over-Retarded",
+                             severity: .warning,
+                             action: "Add advance: raise the IGNITION map"))
         }
 
         return out

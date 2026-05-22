@@ -30,6 +30,25 @@ private let clutchEngagedThreshold: Double = 0.5
 private let defaultGearCount: Int = 6
 // Fallback cylinders-per-bank when no spec is available (typical 4-cyl bank).
 private let defaultCylindersPerBank: Int = 4
+// rpm above which (with ignition on) the engine counts as "running" — used to
+// stamp runningSince so diagnostics can grace start-up transients.
+private let engineRunningRpmFloor: Double = 400.0
+// Map roughness (mean adjacent-cell gap) above which a tune is "jagged" enough
+// to destabilise the engine, plus the extra roughness over that mapping to full
+// chaos. Fuel is in AFR, ignition in degrees, so they're scaled separately. A
+// factory/smooth tune sits well under both thresholds.
+private let fuelRoughnessThreshold: Double = 2.0
+private let fuelRoughnessSpan: Double = 5.0
+private let ignitionRoughnessThreshold: Double = 6.0
+private let ignitionRoughnessSpan: Double = 25.0
+// Peak disturbance at full chaos. The spark swing is the heavy hitter — ±28°
+// drags timing into deep retard (torque collapses, rpm sags) and back, so the
+// engine bucks and you struggle to keep it lit. Fuel is surged in parallel
+// across a misfire-lean / flood-rich band so the mixture lurches too.
+private let ignitionChaosAmplitudeDeg: Double = 28.0
+private let fuelChaosAmplitude: Double = 0.9
+private let chaosTrimMin: Double = 0.25
+private let chaosTrimMax: Double = 1.80
 
 class EngineViewModel: ObservableObject {
     private var engine: EngineWrapper?
@@ -39,6 +58,12 @@ class EngineViewModel: ObservableObject {
     @Published var gear: Int = 0 // 0=Neutral, -1=Reverse, 1-6=Gears
     @Published var isIgnitionOn: Bool = false
     @Published var isStarterOn: Bool = false
+
+    /// Wall-clock time the engine last began running (ignition on + rpm above
+    /// the running floor), or nil while it isn't running. Diagnostics read this
+    /// to grace start-up transients — e.g. oil pressure that hasn't built yet —
+    /// rather than firing a fault the instant the engine catches.
+    @Published var runningSince: Date? = nil
     @Published var vehicleSpeed: Double = 0.0
     @Published var distanceTravelled: Double = 0.0
     @Published var fuelConsumed: Double = 0.0
@@ -94,6 +119,11 @@ class EngineViewModel: ObservableObject {
     @Published var engineWideHealth: EngineWideHealthState = EngineWideHealthState()
     @Published var rodKnocking: Bool = false
 
+    /// Bumped every time the engine is repaired. Views holding stored state
+    /// (e.g. the OBD2 scanner's accumulated trouble-code log) observe this to
+    /// reset themselves, since a repair clears every fault at once.
+    @Published var repairToken: Int = 0
+
     /// Per-cylinder spark state. Index i is `true` while cylinder i fires,
     /// `false` when the user has cut ignition to it from the Cylinder Control
     /// tile. Mirrors the C++ ignition module each poll.
@@ -130,6 +160,12 @@ class EngineViewModel: ObservableObject {
     /// prevents the shifter from snapping back through old states while the
     /// sim thread catches up.
     private var pendingGear: Int?
+
+    /// Latched once the starter has been auto-cut at the moment a cylinder
+    /// seizes, so we cut it exactly once — the user is then free to re-engage
+    /// it. Cleared when the engine is no longer seized (repair / swap) so a
+    /// fresh failure re-arms the one-shot.
+    private var autoKilledStarterOnSeizure = false
 
     /// Count of consecutive polling ticks where pollState returned nil while
     /// an engine is supposedly mounted. Used to surface the load-failure
@@ -188,6 +224,10 @@ class EngineViewModel: ObservableObject {
                 self.clutchPressed = state.clutchPressure < clutchEngagedThreshold
                 self.isIgnitionOn = state.isIgnitionOn
                 self.isStarterOn = state.isStarterOn
+                // Stamp the moment the engine catches and clear it when it
+                // stops, so diagnostics can measure how long it's been running.
+                let running = state.isIgnitionOn && state.rpm > engineRunningRpmFloor
+                self.runningSince = running ? (self.runningSince ?? Date()) : nil
                 self.vehicleSpeed = state.vehicleSpeed
                 self.distanceTravelled = state.distanceTravelled
                 self.fuelConsumed = state.fuelConsumed
@@ -222,6 +262,22 @@ class EngineViewModel: ObservableObject {
                 self.rodKnocking = state.rodKnocking
                 self.cylinderIgnitionEnabled =
                     (state.cylinderIgnitionEnabled ?? []).map { $0.boolValue }
+
+                // A seized cylinder means the engine has mechanically failed.
+                // Cut the starter once at the moment of failure (cranking a
+                // locked engine just grinds it); after that one-shot the user
+                // is free to re-engage the starter. The latch re-arms once the
+                // engine is no longer seized.
+                let anySeized = (state.cylinderHealths ?? []).contains(where: { $0.seized })
+                if anySeized {
+                    if state.isStarterOn && !self.autoKilledStarterOnSeizure {
+                        self.toggleStarter()
+                        self.isStarterOn = false
+                    }
+                    self.autoKilledStarterOnSeizure = true
+                } else {
+                    self.autoKilledStarterOnSeizure = false
+                }
 
                 // Pass engine wrapper to oscilloscope manager for sampling
                 self.oscilloscopeManager.sample(from: engine)
@@ -268,11 +324,51 @@ class EngineViewModel: ObservableObject {
         let loadKpa = manifoldPressureToAbsoluteKpa(manifoldPressure)
         let targetAdvance = ecu.ignitionAdvance(rpm: rpm, loadKpa: loadKpa)
         let baseAdvance = ecu.baseTiming(at: rpm)
-        let delta = targetAdvance - baseAdvance
-        let trim = ecu.fuelTrim(rpm: rpm, loadKpa: loadKpa)
+        var delta = targetAdvance - baseAdvance
+        var trim = ecu.fuelTrim(rpm: rpm, loadKpa: loadKpa)
+
+        // A jagged map runs the engine erratically. Fuel trim alone has weak
+        // torque authority at idle, so the dominant disturbance is a violent,
+        // ever-shifting swing in spark timing — yanking it deep into retard
+        // kills torque and the rpm sags, then it snaps back, so the engine
+        // bucks and hunts and you fight to keep it lit. The fuel trim is surged
+        // in parallel (out of phase) so the mixture lurches too.
+        let chaos = tuneChaos()
+        if chaos > 0 {
+            let t = Date().timeIntervalSinceReferenceDate
+            delta += chaosWave(t, phase: 0.0) * chaos * ignitionChaosAmplitudeDeg
+            trim += chaosWave(t, phase: 2.3) * chaos * fuelChaosAmplitude
+            trim = min(chaosTrimMax, max(chaosTrimMin, trim))
+        }
+
         engine.setIgnitionOffset(delta)
         engine.setFuelTrim(trim)
         ecu.recordSample(rpm: rpm, loadKpa: loadKpa)
+    }
+
+    /// 0 (clean tune) → 1 (wildly jagged). Whichever map is more broken wins,
+    /// so corrupting either the fuel or the ignition tab destabilises the engine.
+    private func tuneChaos() -> Double {
+        let fuel = chaosFraction(ecu.fuelMapRoughness(),
+                                 threshold: fuelRoughnessThreshold, span: fuelRoughnessSpan)
+        let ignition = chaosFraction(ecu.ignitionMapRoughness(),
+                                     threshold: ignitionRoughnessThreshold, span: ignitionRoughnessSpan)
+        return max(fuel, ignition)
+    }
+
+    private func chaosFraction(_ roughness: Double, threshold: Double, span: Double) -> Double {
+        guard roughness > threshold else { return 0 }
+        return min(1.0, (roughness - threshold) / span)
+    }
+
+    /// Erratic wave in roughly [-1, 1]. Summed incommensurate sines divided by
+    /// less than their count, so it saturates at the rails often — the engine
+    /// spends real time pinned lean/retarded rather than gently wobbling.
+    private func chaosWave(_ t: Double, phase: Double) -> Double {
+        let s = sin(t * 5.0 + phase)
+              + sin(t * 12.1 + phase * 1.7)
+              + sin(t * 8.3 + phase * 0.5)
+        return max(-1.0, min(1.0, s / 2.0))
     }
     
     deinit {
@@ -292,6 +388,8 @@ class EngineViewModel: ObservableObject {
         gear = 0
         isIgnitionOn = false
         isStarterOn = false
+        runningSince = nil
+        autoKilledStarterOnSeizure = false
         vehicleSpeed = 0
         distanceTravelled = 0
         fuelConsumed = 0
@@ -472,6 +570,7 @@ class EngineViewModel: ObservableObject {
     }
     func repairEngine() {
         engine?.repairEngine()
+        repairToken &+= 1
     }
 
     /// Cut or restore spark to a single cylinder. Optimistically flips the

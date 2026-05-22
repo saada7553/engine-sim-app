@@ -4,10 +4,12 @@
 //
 //  The Swift-side "ECU" that drives the C++ engine's scalar ignition offset
 //  and fuel trim. Holds two 2D maps (RPM × MAP-load), each editable by the
-//  user. On every polling tick EngineViewModel asks this model for the
-//  values that correspond to the current operating point and writes them
-//  through to the engine via setIgnitionOffset / setFuelTrim — the same
-//  mechanism a real ECU uses when looking up a tune.
+//  user: an absolute spark-advance map and a target-AFR map. On every polling
+//  tick EngineViewModel asks this model for the values at the current
+//  operating point and writes them through to the engine via
+//  setIgnitionOffset / setFuelTrim — the same mechanism a real ECU uses when
+//  looking up a tune. The fuel map stores a target AFR; the model converts
+//  that to the fuel-trim multiplier the engine actually consumes.
 //
 //  Axes match common tuner conventions:
 //    X = engine speed (RPM, 8 bins between 500 and redline)
@@ -18,13 +20,36 @@ import Foundation
 import Combine
 
 private let ignitionStep: Double = 0.5         // degrees per bump
-private let fuelStep: Double = 0.02            // multiplier per bump
-// Cells store absolute spark advance (degrees BTDC). Range covers retard
-// territory and aggressive race timing without clamping reasonable engines.
+private let fuelStep: Double = 0.1             // target-AFR per bump
+// Ignition cells store absolute spark advance (degrees BTDC). Range covers
+// retard territory and aggressive race timing without clamping reasonable
+// engines.
 private let ignitionMin: Double = -10.0
 private let ignitionMax: Double = 60.0
-private let fuelMin: Double = 0.6
-private let fuelMax: Double = 1.5
+// Fuel cells store a TARGET air-fuel ratio on the same ~10-18 scale the AFR
+// gauge reads. The ECU converts the looked-up target into a fuel-trim
+// multiplier (trim = stoichAfr / target) before pushing it to the engine, so
+// the map shows the user's intent in familiar units while the gauge keeps
+// showing the engine's real measured AFR.
+private let afrMin: Double = 10.0
+private let afrMax: Double = 18.0
+private let stoichAfr: Double = 14.7           // target AFR that maps to trim 1.0 (stock fuelling)
+private let trimMin: Double = 0.5              // physics-safe clamp on the derived trim
+private let trimMax: Double = 1.6
+// Factory fuel curve: hold stoich at light load for economy, richen toward
+// the WOT target at full load for power + charge cooling.
+private let cruiseTargetAfr: Double = 14.7
+private let wotTargetAfr: Double = 12.8
+private let cruiseLoadCeilingKpa: Double = 45.0  // at/below this load, run stoich
+private let wotLoadKpa: Double = 100.0
+// "Known bad tune" extremes. Neighbouring cells alternate hard between a lean
+// and a rich target (and heavy advance / retard for ignition) so the operating
+// point swings through wildly different fuelling as revs drift — the engine
+// hunts and the rpm bounces instead of merely running rich/lean/sluggish.
+private let badLeanAfr: Double = 17.5
+private let badRichAfr: Double = 10.5
+private let badAdvanceDeg: Double = 45.0
+private let badRetardDeg: Double = -8.0
 private let trailDuration: TimeInterval = 3.0
 private let trailMaxSamples: Int = 90          // 30 Hz × 3 s
 private let standardLoadBins: [Double] = [30, 45, 60, 75, 90, 100]   // kPa absolute
@@ -68,8 +93,12 @@ final class EcuTuneModel: ObservableObject {
     let baseTimingByRpmBin: [Double]
 
     @Published var ignitionMap: [[Double]]    // [loadIdx][rpmIdx] → absolute deg BTDC
-    @Published var fuelMap: [[Double]]        // [loadIdx][rpmIdx] → trim multiplier
+    @Published var fuelMap: [[Double]]        // [loadIdx][rpmIdx] → target AFR
     @Published var tracerTrail: [EcuTraceSample] = []
+
+    /// Factory target-AFR table captured at init. Used to restore the fuel
+    /// map on reset, the same way baseTimingByRpmBin restores ignition.
+    private let factoryFuelMap: [[Double]]
 
     /// Last sampled operating point — used by the view to draw the live dot
     /// without subscribing to high-frequency rpm changes through every cell.
@@ -113,7 +142,26 @@ final class EcuTuneModel: ObservableObject {
             }
         }
         self.ignitionMap = ig
-        self.fuelMap = Array(repeating: Array(repeating: 1.0, count: cols), count: rows)
+
+        // Seed the fuel map with the factory target-AFR curve. Targets vary by
+        // manifold load only (flat across rpm) so the stock tune reads as clean
+        // bands the user can then reshape.
+        var fm = Array(repeating: Array(repeating: 0.0, count: cols), count: rows)
+        for loadIdx in 0..<rows {
+            let afr = Self.factoryTargetAfr(loadKpa: loadBins[loadIdx])
+            for rpmIdx in 0..<cols { fm[loadIdx][rpmIdx] = afr }
+        }
+        self.fuelMap = fm
+        self.factoryFuelMap = fm
+    }
+
+    /// Factory target AFR for a manifold load: flat stoich up to the cruise
+    /// ceiling, then linearly richening to the WOT target at full load.
+    private static func factoryTargetAfr(loadKpa: Double) -> Double {
+        if loadKpa <= cruiseLoadCeilingKpa { return cruiseTargetAfr }
+        let span = wotLoadKpa - cruiseLoadCeilingKpa
+        let frac = min(1.0, (loadKpa - cruiseLoadCeilingKpa) / span)
+        return cruiseTargetAfr + frac * (wotTargetAfr - cruiseTargetAfr)
     }
 
     /// Linearly-interpolated base curve sample for any rpm. Used by
@@ -134,8 +182,52 @@ final class EcuTuneModel: ObservableObject {
         return lookup(map: ignitionMap, rpm: rpm, loadKpa: loadKpa)
     }
 
-    func fuelTrim(rpm: Double, loadKpa: Double) -> Double {
+    /// Bilinearly-interpolated target AFR at the operating point — the value
+    /// the fuel map cells hold, used for display and tune diagnostics.
+    func targetAfr(rpm: Double, loadKpa: Double) -> Double {
         return lookup(map: fuelMap, rpm: rpm, loadKpa: loadKpa)
+    }
+
+    /// Fuel-trim multiplier the engine receives. Derived from the target AFR:
+    /// a richer target (lower AFR) needs more fuel → trim > 1, leaner → trim < 1.
+    /// Clamped to a physics-safe band so an extreme target can't break the sim.
+    func fuelTrim(rpm: Double, loadKpa: Double) -> Double {
+        let target = targetAfr(rpm: rpm, loadKpa: loadKpa)
+        let trim = stoichAfr / max(target, afrMin)
+        return min(max(trim, trimMin), trimMax)
+    }
+
+    /// Mean absolute AFR difference between adjacent fuel cells. Near zero for a
+    /// smooth tune, large for a jagged one (the "bad tune" checkerboard runs
+    /// ~7). EngineViewModel uses this to decide how hard to surge the engine:
+    /// a real ECU fed a wildly inconsistent map delivers erratic fuelling that
+    /// makes the idle hunt, which a single interpolated trim value can't capture.
+    func fuelMapRoughness() -> Double {
+        return mapRoughness(fuelMap)
+    }
+
+    /// Same roughness measure for the ignition map (degrees). The "bad tune"
+    /// ignition checkerboard runs huge; a normal timing curve is near zero.
+    func ignitionMapRoughness() -> Double {
+        return mapRoughness(ignitionMap)
+    }
+
+    /// Mean absolute difference between adjacent cells of a map.
+    private func mapRoughness(_ map: [[Double]]) -> Double {
+        var sum = 0.0
+        var count = 0.0
+        for loadIdx in 0..<map.count {
+            for rpmIdx in 0..<map[loadIdx].count {
+                let v = map[loadIdx][rpmIdx]
+                if rpmIdx + 1 < map[loadIdx].count {
+                    sum += abs(v - map[loadIdx][rpmIdx + 1]); count += 1
+                }
+                if loadIdx + 1 < map.count {
+                    sum += abs(v - map[loadIdx + 1][rpmIdx]); count += 1
+                }
+            }
+        }
+        return count > 0 ? sum / count : 0
     }
 
     private func lookup(map: [[Double]], rpm: Double, loadKpa: Double) -> Double {
@@ -187,7 +279,7 @@ final class EcuTuneModel: ObservableObject {
     // MARK: - Cell editing
 
     static var ignitionRange: ClosedRange<Double> { ignitionMin ... ignitionMax }
-    static var fuelRange: ClosedRange<Double> { fuelMin ... fuelMax }
+    static var fuelRange: ClosedRange<Double> { afrMin ... afrMax }
     static var ignitionBumpStep: Double { ignitionStep }
     static var fuelBumpStep: Double { fuelStep }
 
@@ -241,7 +333,7 @@ final class EcuTuneModel: ObservableObject {
 
     /// Snap cells back to their factory baseline. Ignition restores to the
     /// engine's base timing curve (per-rpm value, flat across load). Fuel
-    /// restores to a 1.0 trim everywhere (no enrichment / no enleanment).
+    /// restores to the factory target-AFR table captured at init.
     func reset(_ kind: EcuMapKind) {
         switch kind {
         case .ignition:
@@ -251,8 +343,57 @@ final class EcuTuneModel: ObservableObject {
                 }
             }
         case .fuel:
-            for i in 0..<fuelMap.count {
-                for j in 0..<fuelMap[i].count { fuelMap[i][j] = 1.0 }
+            fuelMap = factoryFuelMap
+        }
+    }
+
+    /// Load a deliberately broken tune into the map. Neighbouring cells
+    /// alternate between extremes in a checkerboard (lean ↔ rich for fuel,
+    /// advance ↔ retard for ignition) with a deterministic per-cell jitter so
+    /// the result is reproducible — the same "known bad" tune every press — yet
+    /// erratic enough that the engine hunts and the rpm bounces around as the
+    /// operating point crosses wildly different cells, rather than just running
+    /// flatly rich, lean, or sluggish.
+    func corrupt(_ kind: EcuMapKind) {
+        switch kind {
+        case .ignition:
+            forEachCell(in: &ignitionMap) { rpmIdx, loadIdx in
+                let j = Self.cellJitter(rpmIdx, loadIdx)
+                let value = isLeanCell(rpmIdx, loadIdx)
+                    ? badAdvanceDeg - j * 10.0
+                    : badRetardDeg + j * 6.0
+                return value.clamped(to: EcuTuneModel.ignitionRange)
+            }
+        case .fuel:
+            forEachCell(in: &fuelMap) { rpmIdx, loadIdx in
+                let j = Self.cellJitter(rpmIdx, loadIdx)
+                let value = isLeanCell(rpmIdx, loadIdx)
+                    ? badLeanAfr - j * 1.5
+                    : badRichAfr + j * 1.5
+                return value.clamped(to: EcuTuneModel.fuelRange)
+            }
+        }
+    }
+
+    /// Checkerboard parity: which diagonal of cells gets the lean / high-advance
+    /// extreme. Alternating on (rpm + load) means a small drift in either axis
+    /// flips the target, so the engine can't settle.
+    private func isLeanCell(_ rpmIdx: Int, _ loadIdx: Int) -> Bool {
+        (rpmIdx + loadIdx) % 2 == 0
+    }
+
+    /// Deterministic per-cell value in [0,1). Looks random but is stable across
+    /// presses so the "bad tune" is the same every time.
+    private static func cellJitter(_ rpmIdx: Int, _ loadIdx: Int) -> Double {
+        let h = (rpmIdx &* 73856093) ^ (loadIdx &* 19349663)
+        return Double((h & 0x7fffffff) % 1000) / 1000.0
+    }
+
+    /// Rewrite every cell of `map` from a transform of its (rpmIdx, loadIdx).
+    private func forEachCell(in map: inout [[Double]], _ transform: (Int, Int) -> Double) {
+        for loadIdx in 0..<map.count {
+            for rpmIdx in 0..<map[loadIdx].count {
+                map[loadIdx][rpmIdx] = transform(rpmIdx, loadIdx)
             }
         }
     }

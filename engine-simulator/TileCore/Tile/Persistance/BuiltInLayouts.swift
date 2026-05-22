@@ -158,8 +158,9 @@ enum BuiltInLayouts {
         #endif
     }
 
-    /// The single tuning workbench. Left column = ECU Tuning + Engine 3D
-    /// reference. Right column = three stacked rows of paired panels that
+    /// The single tuning workbench. Left column = ECU Tuning + OBD-II scanner
+    /// (so tune faults surface beside the map). Right column = three stacked
+    /// rows of paired panels that
     /// progress top-to-bottom from "what the tune produces" → "how the
     /// burn looks" → "what the engine is doing right now":
     ///
@@ -201,15 +202,16 @@ enum BuiltInLayouts {
         isBuiltIn: true
     )
 
-    /// Left column of the Tuner layout. macOS includes a small live 3D
-    /// preview under the ECU map; iOS drops it so the ECU map gets the
-    /// full column height (3D in a corner tile is too cramped on iPad).
+    /// Left column of the Tuner layout. macOS stacks the OBD-II scanner under
+    /// the ECU map so a bad tune surfaces its lean/rich/spark codes right next
+    /// to the cells that caused them; iOS drops the scanner so the ECU map gets
+    /// the full column height (a corner tile is too cramped on iPad).
     private static var tunerLeftColumn: TileData {
         #if os(macOS)
         BuiltInBuilder.split(.vertical, [
             BuiltInBuilder.leaf(.ecuTuning,
                                 size: CGSize(width: 720, height: 720)),
-            BuiltInBuilder.leaf(.engine3DProcedural,
+            BuiltInBuilder.leaf(.obd2,
                                 size: CGSize(width: 720, height: 280)),
         ], size: CGSize(width: 720, height: 1000))
         #else
@@ -322,18 +324,18 @@ enum BuiltInLayouts {
         ])
         #else
         return BuiltInBuilder.split(.horizontal, [
-            BuiltInBuilder.split(.vertical, [
-                BuiltInBuilder.leaf(.engine3DWireframe,
-                                    size: CGSize(width: 880, height: 780)),
+            BuiltInBuilder.leaf(.engine3DWireframe,
+                                size: CGSize(width: 640, height: 1000)),
+            BuiltInBuilder.split(.horizontal, [
                 BuiltInBuilder.leaf(.cylinderControl,
-                                    size: CGSize(width: 880, height: 220)),
-            ], size: CGSize(width: 880, height: 1000)),
-            BuiltInBuilder.split(.vertical, [
-                BuiltInBuilder.leaf(.engineHealth,
-                                    size: CGSize(width: 720, height: 600)),
-                BuiltInBuilder.leaf(.obd2,
-                                    size: CGSize(width: 720, height: 400)),
-            ], size: CGSize(width: 720, height: 1000)),
+                                    size: CGSize(width: 160, height: 1000)),
+                BuiltInBuilder.split(.vertical, [
+                    BuiltInBuilder.leaf(.engineHealth,
+                                        size: CGSize(width: 800, height: 600)),
+                    BuiltInBuilder.leaf(.obd2,
+                                        size: CGSize(width: 800, height: 400)),
+                ], size: CGSize(width: 800, height: 1000)),
+            ], size: CGSize(width: 960, height: 1000)),
         ])
         #endif
     }

@@ -13,6 +13,10 @@ extension Color {
     public static let accentSecondary = Color(hue: 0.55, saturation: 0.65, brightness: 0.9)
     public static let accentTertiary = Color(hue: 0.85, saturation: 0.6, brightness: 0.92)
     
+    // Shared "full health" green — the bright green used by the diagnostic
+    // wireframe and the Engine Health panel so both read identically.
+    public static let healthGreen = Color(hue: 0.33, saturation: 0.9, brightness: 1.0)
+
     // App Concept Colors
     public static let appBackground = Color(white: 0.08)
     public static let sidebarHighlight = Color(white: 0.15)

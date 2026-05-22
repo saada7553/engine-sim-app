@@ -440,6 +440,16 @@ void PistonEngineSimulator::simulateStep_() {
                 m_engine->getCrankshaft(c)->m_body.v_theta *= decay;
             }
         }
+
+        // The crankshaft wind-down above doesn't touch the car's momentum,
+        // which lives in the separate vehicle rotating mass — so once seized
+        // the car would coast almost indefinitely on rolling resistance alone.
+        // A locked/destroyed bottom end drags the driveline, so bleed the
+        // vehicle mass down to a stop over a few seconds instead.
+        constexpr double vehicleSeizureBrakeRate = 0.9;   // 1/s; half-life ~0.77 s
+        if (engineSeized) {
+            m_vehicleMass.v_theta *= std::exp(-vehicleSeizureBrakeRate * timestep);
+        }
     }
     for (int i = 0; i < cylinderCount; ++i) {
         if (im->getIgnitionEvent(i)) {

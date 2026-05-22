@@ -3,7 +3,7 @@
 //  engine-simulator
 //
 //  Tuner-style 2D map editor. Tabs switch between an ignition-advance map
-//  and a fuel-trim map; both are colour-coded heatmaps indexed by RPM
+//  and a target-AFR fuel map; both are colour-coded heatmaps indexed by RPM
 //  (columns) and manifold absolute pressure (rows). The currently active
 //  operating point is drawn as a live tracer dot with a short trail of the
 //  last ~3 seconds of samples — so the user can literally see which cells
@@ -348,6 +348,7 @@ private struct EcuTuningEditor: View {
                 SmallActionButton(label: "−ALL") { ecu.bumpAll(in: activeMap, by: -mapStep()) }
                 SmallActionButton(label: "+ALL") { ecu.bumpAll(in: activeMap, by: +mapStep()) }
                 SmallActionButton(label: "SMOOTH") { ecu.smooth(activeMap) }
+                SmallActionButton(label: "BAD", accent: .red) { ecu.corrupt(activeMap) }
                 SmallActionButton(label: "RESET") { ecu.reset(activeMap) }
             }
         }
@@ -399,6 +400,7 @@ private struct EcuTuningEditor: View {
             Spacer()
 
             SmallActionButton(label: "SMOOTH") { ecu.smooth(activeMap) }
+            SmallActionButton(label: "BAD", accent: .red) { ecu.corrupt(activeMap) }
             SmallActionButton(label: "RESET") { ecu.reset(activeMap) }
         }
         .padding(.horizontal, 4)
@@ -461,14 +463,14 @@ private struct EcuTuningEditor: View {
     private func formatValue(_ value: Double) -> String {
         switch activeMap {
         case .ignition: return String(format: "%+.1f", value)
-        case .fuel:     return String(format: "%.2f", value)
+        case .fuel:     return String(format: "%.1f", value)
         }
     }
 
     private func formatStep(_ mult: Double) -> String {
         switch activeMap {
         case .ignition: return String(format: "%.1f°", mapStep() * mult)
-        case .fuel:     return String(format: "%.2f", mapStep() * mult)
+        case .fuel:     return String(format: "%.1f", mapStep() * mult)
         }
     }
 
@@ -480,7 +482,7 @@ private struct EcuTuningEditor: View {
         let safe = ecu.clampToBounds(coord)
         let rpm = ecu.rpmBins[safe.rpmIndex]
         let load = ecu.loadBins[safe.loadIndex]
-        let unit = activeMap == .ignition ? "° adv" : "x trim"
+        let unit = activeMap == .ignition ? "° adv" : "AFR"
         return "\(rpmLabel(rpm)) RPM · \(Int(load)) kPa · \(unit)"
     }
 
@@ -488,21 +490,16 @@ private struct EcuTuningEditor: View {
         return max(0, ecu.currentLoadKpa)
     }
 
-    /// Cold-blue → green → red rainbow over the editable range. Neutral
-    /// (0° for ignition, 1.0 for fuel) lands roughly in the green zone, which
-    /// matches how HP Tuners / EFILive colour their stock tunes.
+    /// Cold-blue → green → red rainbow over the editable range, matching how
+    /// HP Tuners / EFILive colour their tables. Ignition: more advance → red.
+    /// Fuel: a richer target (lower AFR) → red, leaner → blue, so the hot end
+    /// always reads as "more fuel / more timing".
     private func heatColor(for value: Double) -> Color {
-        let norm: Double
-        switch activeMap {
-        case .ignition:
-            let r = EcuTuneModel.ignitionRange
-            norm = (value - r.lowerBound) / (r.upperBound - r.lowerBound)
-        case .fuel:
-            let r = EcuTuneModel.fuelRange
-            norm = (value - r.lowerBound) / (r.upperBound - r.lowerBound)
-        }
+        let r = activeMap == .ignition ? EcuTuneModel.ignitionRange : EcuTuneModel.fuelRange
+        let norm = (value - r.lowerBound) / (r.upperBound - r.lowerBound)
         let clamped = max(0.0, min(1.0, norm))
-        let hue = 0.62 - clamped * 0.62  // blue (0.62) → red (0.0)
+        // Ignition reddens as the value rises; fuel reddens as AFR falls.
+        let hue = activeMap == .ignition ? (0.62 - clamped * 0.62) : (clamped * 0.62)
         return Color(hue: hue, saturation: 0.62, brightness: 0.58)
     }
 

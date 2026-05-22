@@ -46,7 +46,6 @@ private let switchMinScale: CGFloat = 0.65
 private let switchMaxScale: CGFloat = 1.4
 
 private let cardCorner: CGFloat = 3
-private let borderColor = Color.white.opacity(0.12)
 private let mutedText = Color.white.opacity(0.45)
 private let ignitionAccent = Color.green
 
@@ -70,7 +69,13 @@ struct CylinderControlView: View {
     // MARK: Header
 
     private func header(scale: CGFloat) -> some View {
-        Text("CYLINDER IGNITION CONTROL")
+        let title: String
+        #if os(macOS)
+        title = "CYLINDER IGNITION CONTROL"
+        #else
+        title = "IGNITION"
+        #endif
+        return Text(title)
             .modifier(RetroFont(size: max(titleFontMin, titleFontBase * scale)))
             .tracking(1.0)
             .foregroundColor(.white)
@@ -83,7 +88,43 @@ struct CylinderControlView: View {
     private func switchPanel(scale: CGFloat) -> some View {
         let spacing = cellSpacingBase * scale
 
-        return GeometryReader { box in
+        return Group {
+            #if os(iOS)
+            scrollingColumn(scale: scale, spacing: spacing)
+            #else
+            reflowingGrid(scale: scale, spacing: spacing)
+            #endif
+        }
+        .padding(panelSpacingBase * scale)
+        .clipShape(RoundedRectangle(cornerRadius: cardCorner))
+    }
+
+    #if os(iOS)
+    /// On iPhone / iPad the tile is narrow and tall, so the switches read best
+    /// as a single vertical line that scrolls when the cylinder count exceeds
+    /// the visible height.
+    private func scrollingColumn(scale: CGFloat, spacing: CGFloat) -> some View {
+        Group {
+            if vm.cylinderIgnitionEnabled.isEmpty {
+                emptyState(scale: scale)
+            } else {
+                GeometryReader { box in
+                    ScrollView(.vertical, showsIndicators: false) {
+                        VStack(spacing: spacing) {
+                            ForEach(0..<vm.cylinderIgnitionEnabled.count, id: \.self) { index in
+                                cylinderSwitch(index: index, switchScale: 1.0)
+                            }
+                        }
+                        .padding(.vertical, spacing)
+                        .frame(maxWidth: .infinity, minHeight: box.size.height)
+                    }
+                }
+            }
+        }
+    }
+    #else
+    private func reflowingGrid(scale: CGFloat, spacing: CGFloat) -> some View {
+        GeometryReader { box in
             let count = vm.cylinderIgnitionEnabled.count
             if count == 0 {
                 emptyState(scale: scale)
@@ -93,10 +134,8 @@ struct CylinderControlView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
             }
         }
-        .padding(panelSpacingBase * scale)
-        .overlay(panelBorder)
-        .clipShape(RoundedRectangle(cornerRadius: cardCorner))
     }
+    #endif
 
     private func emptyState(scale: CGFloat) -> some View {
         Text("NO ENGINE LOADED")
@@ -105,6 +144,7 @@ struct CylinderControlView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
+    #if !os(iOS)
     private func switchGrid(layout: GridLayout, spacing: CGFloat) -> some View {
         let switchScale = layout.switchScale
 
@@ -121,6 +161,7 @@ struct CylinderControlView: View {
             }
         }
     }
+    #endif
 
     private func cylinderSwitch(index: Int, switchScale: CGFloat) -> some View {
         VStack(spacing: controlCaptionGapBase * switchScale) {
@@ -139,13 +180,9 @@ struct CylinderControlView: View {
         }
     }
 
-    private var panelBorder: some View {
-        RoundedRectangle(cornerRadius: cardCorner)
-            .stroke(borderColor, lineWidth: 0.75)
-    }
-
     // MARK: Responsive layout
 
+    #if !os(iOS)
     private struct GridLayout {
         let columns: Int
         let rows: Int
@@ -180,4 +217,5 @@ struct CylinderControlView: View {
 
         return best
     }
+    #endif
 }

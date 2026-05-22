@@ -16,6 +16,7 @@
 
 import SceneKit
 import Foundation
+import SwiftUI
 
 private let valveYHalfPitchFactorOfBore: Double = 0.25  // two valves per cam per cylinder
 
@@ -31,7 +32,7 @@ enum ProceduralWireframeBuild {
     static var active = false
 
     /// Cam-lobe contour points: full detail vs. coarse wireframe.
-    static let lobeContourPoints = 28
+    static let lobeContourPoints = 14
     /// Bezier flatness for the extruded fan-blade silhouette in wireframe.
     static let fanBladeFlatness: CGFloat = 0.12
 }
@@ -420,6 +421,14 @@ enum ProceduralEngineAssembly {
     private static let wireframeMaxRingSegments: Int = 12
     private static let wireframeMaxPipeSegments: Int = 4
 
+    // The crankshaft and camshafts stack many overlapping cylinders (journals,
+    // pins, webs, cam shaft) so they read as a dense blob even at the standard
+    // coarseness. They get an extra, tighter pass; the cam-lobe contour is
+    // thinned separately at build time (see ProceduralWireframeBuild).
+    private static let wireframeCrankCamRadialSegments: Int = 5
+    private static let wireframeCrankCamRingSegments: Int = 6
+    private static let wireframeCrankCamPipeSegments: Int = 3
+
     /// Switch all still-visible part materials to a constant-shaded line fill,
     /// coarsen the geometry, and hide the shells. Call once after a rebuild;
     /// colour is set per-frame via `applyWireframeHealthColors`.
@@ -437,50 +446,114 @@ enum ProceduralEngineAssembly {
                 m.emission.contents = PlatformColor.black
             }
         }
+
+        // Tighter second pass for the dense rotating assemblies.
+        coarsenSubtree(parts.crankshaft)
+        for cam in parts.intakeCams  { coarsenSubtree(cam) }
+        for cam in parts.exhaustCams { coarsenSubtree(cam) }
     }
 
-    /// Colour each visible part by its health: green when pristine, sliding
-    /// through yellow / orange to red as that specific part takes damage.
-    /// Cheap enough to call per-frame.
+    /// Re-coarsen an already-styled subtree to the crank/cam segment budget.
+    private static func coarsenSubtree(_ root: SCNNode?) {
+        guard let root = root else { return }
+        forEachVisibleNode(under: root) { node in
+            coarsenGeometry(node.geometry,
+                            maxRadial: wireframeCrankCamRadialSegments,
+                            maxRing: wireframeCrankCamRingSegments,
+                            maxPipe: wireframeCrankCamPipeSegments)
+        }
+    }
+
+    /// Wire colors track the same green → orange → red health convention used
+    /// across the app (see `DamageMatrixView`): a single healthy green for
+    /// every part, easing through amber into red as it fails.
+    private static let wireHealthyColor  = PlatformColor(Color.healthGreen)
+    private static let wireWarningColor  = PlatformColor(Color.orange)
+    private static let wireCriticalColor = PlatformColor(Color.red)
+
+    /// Colour each visible part by its health. All parts share one green at full
+    /// health and slide through the app's warning/critical colors as they wear,
+    /// so damage stands out without inventing a per-type palette. Cheap enough
+    /// to call per-frame.
     static func applyWireframeHealthColors(
         parts: ProceduralEngineParts,
         cylinderHealths: [CylinderHealthState],
         engineWide: EngineWideHealthState
     ) {
-        forEachTrackedPart(parts: parts,
-                           cylinderHealths: cylinderHealths,
-                           engineWide: engineWide) { node, health in
-            let color = wireframeHealthColor(health: health)
-            forEachVisibleNode(under: node) { n in
-                for m in n.geometry?.materials ?? [] { m.diffuse.contents = color }
+        let n = min(cylinderHealths.count, parts.pistons.count)
+        for i in 0..<n {
+            let c = cylinderHealths[i]
+            setWireColor(parts.pistons[i], health: c.piston)
+            if i < parts.rods.count      { setWireColor(parts.rods[i],      health: c.rod) }
+            if i < parts.wristPins.count { setWireColor(parts.wristPins[i], health: c.piston) }
+            if i < parts.valveSetsByCylinder.count,
+               let vs = parts.valveSetsByCylinder[i] {
+                for v in vs.intakeValves  { setWireColor(v, health: c.intakeValve) }
+                for v in vs.exhaustValves { setWireColor(v, health: c.exhaustValve) }
             }
+        }
+        if let crank = parts.crankshaft { setWireColor(crank, health: engineWide.crankshaft) }
+        for cam in parts.intakeCams  { setWireColor(cam, health: engineWide.camshaft) }
+        for cam in parts.exhaustCams { setWireColor(cam, health: engineWide.camshaft) }
+        for head in parts.heads      { setWireColor(head, health: engineWide.cylinderHead) }
+    }
+
+    private static func setWireColor(_ node: SCNNode, health: Double) {
+        let color = wireframeHealthColor(health: health)
+        forEachVisibleNode(under: node) { n in
+            for m in n.geometry?.materials ?? [] { m.diffuse.contents = color }
         }
     }
 
-    /// Hue runs green (0.33) at full health → red (0.0) at zero, passing
-    /// through yellow on the way, so worsening damage warms the part up.
+    /// Maps health (0 = destroyed, 1 = pristine) onto the green → orange → red
+    /// gradient: the top half eases green→orange, the bottom half orange→red.
     private static func wireframeHealthColor(health: Double) -> PlatformColor {
         let h = max(0.0, min(1.0, health))
-        return PlatformColor(hue: CGFloat(h) * 0.33,
-                             saturation: 0.9,
-                             brightness: 1.0,
-                             alpha: 1.0)
+        if h >= 0.5 {
+            return blend(wireWarningColor, wireHealthyColor, t: CGFloat((h - 0.5) / 0.5))
+        }
+        return blend(wireCriticalColor, wireWarningColor, t: CGFloat(h / 0.5))
+    }
+
+    /// Linear RGB blend; `t` = 0 returns `from`, `t` = 1 returns `to`.
+    private static func blend(_ from: PlatformColor, _ to: PlatformColor, t: CGFloat) -> PlatformColor {
+        let f = rgba(from), g = rgba(to)
+        return PlatformColor(red: f.r + t * (g.r - f.r),
+                             green: f.g + t * (g.g - f.g),
+                             blue: f.b + t * (g.b - f.b),
+                             alpha: f.a + t * (g.a - f.a))
+    }
+
+    /// RGBA components, converting through sRGB first so system/catalog colors
+    /// (e.g. `NSColor.systemGreen`) are safe to read on macOS.
+    private static func rgba(_ color: PlatformColor) -> (r: CGFloat, g: CGFloat, b: CGFloat, a: CGFloat) {
+        var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+        #if os(macOS)
+        let rgbColor = color.usingColorSpace(.sRGB) ?? color
+        #else
+        let rgbColor = color
+        #endif
+        rgbColor.getRed(&r, green: &g, blue: &b, alpha: &a)
+        return (r, g, b, a)
     }
 
     /// Lower the segment counts of SceneKit's round primitives in place. The
     /// primitive regenerates its mesh when these are set, so this is all it
     /// takes to thin out the wireframe.
-    private static func coarsenGeometry(_ geometry: SCNGeometry?) {
+    private static func coarsenGeometry(_ geometry: SCNGeometry?,
+                                        maxRadial: Int = wireframeMaxRadialSegments,
+                                        maxRing: Int = wireframeMaxRingSegments,
+                                        maxPipe: Int = wireframeMaxPipeSegments) {
         switch geometry {
         case let cyl as SCNCylinder:
-            cyl.radialSegmentCount = min(cyl.radialSegmentCount, wireframeMaxRadialSegments)
+            cyl.radialSegmentCount = min(cyl.radialSegmentCount, maxRadial)
         case let tube as SCNTube:
-            tube.radialSegmentCount = min(tube.radialSegmentCount, wireframeMaxRadialSegments)
+            tube.radialSegmentCount = min(tube.radialSegmentCount, maxRadial)
         case let torus as SCNTorus:
-            torus.ringSegmentCount = min(torus.ringSegmentCount, wireframeMaxRingSegments)
-            torus.pipeSegmentCount = min(torus.pipeSegmentCount, wireframeMaxPipeSegments)
+            torus.ringSegmentCount = min(torus.ringSegmentCount, maxRing)
+            torus.pipeSegmentCount = min(torus.pipeSegmentCount, maxPipe)
         case let sphere as SCNSphere:
-            sphere.segmentCount = min(sphere.segmentCount, wireframeMaxRadialSegments)
+            sphere.segmentCount = min(sphere.segmentCount, maxRadial)
         default:
             break
         }

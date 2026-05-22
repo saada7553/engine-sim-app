@@ -18,7 +18,7 @@ struct IgnitionIcon: Shape {
         var p = Path()
         let w = rect.width
         let h = rect.height
-        let bodyTop = h * 0.30
+        let bodyTop = h * 0.30      
         let bodyHeight = h * 0.55
         let bodyRect = CGRect(x: w * 0.10, y: bodyTop, width: w * 0.80, height: bodyHeight)
         p.addRoundedRect(in: bodyRect, cornerSize: CGSize(width: w * 0.06, height: w * 0.06))
