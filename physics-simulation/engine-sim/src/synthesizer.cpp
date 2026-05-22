@@ -360,8 +360,14 @@ int16_t Synthesizer::renderAudio(int inputSample) {
 
     signal = m_antialiasing.fast_f(signal);
 
+    // The engine bed is dropped 25% so the (full-scale) money-shift bang towers
+    // ~1.33x higher above it — the bang is already at the digital ceiling and
+    // can't go louder on its own, so the extra relative loudness comes from a
+    // quieter engine. (User raises overall volume to restore the engine level.)
+    constexpr float kEngineBedScale = 0.75f;
     m_levelingFilter.p_target = m_audioParameters.levelerTarget;
-    const float v_leveled = m_levelingFilter.f(signal) * m_audioParameters.volume;
+    const float v_leveled =
+        m_levelingFilter.f(signal) * m_audioParameters.volume * kEngineBedScale;
 
     // Mix the DRY catastrophe (boom/clanks) over the leveled engine as a
     // separate MASTER-BUS one-shot, at a KNOWN output level in the int16 domain.
@@ -391,20 +397,21 @@ int16_t Synthesizer::renderAudio(int inputSample) {
     if (aCat > prevPeak) {
         m_catHapticPeak.store(aCat, std::memory_order_relaxed);
     }
-    // The bang must SPIKE well above the engine — so it is mixed near FULL SCALE
-    // and the engine is ducked almost to silence under it. Levels are chosen so
-    // boom (cat~1)+ducked engine stays just under the int16 ceiling, i.e. it is
-    // LOUD but doesn't clip; no tanh squash (that was capping the bang at engine
-    // level and is why there was "no bang"). Hard clamp is only a safety net.
-    constexpr float kCatLevel = 30200.0f;   // catastrophe peak (int16 domain)
-    constexpr float kCatDuck  = 0.96f;      // duck engine HARD so the bang dominates
-                                            // (perceived "louder" without raising the
-                                            // peak into clipping — see note below)
+    // The bang must SPIKE above the engine, so it is mixed loud and the engine is
+    // ducked under it. CRITICAL: the master sum is run through a tanh SOFT-LIMITER
+    // (not a hard clamp) so loud peaks round off smoothly instead of squaring into
+    // a buzzy, harsh, "everything-is-clipping" distortion. kCatLevel is kept below
+    // kLimit so the bang is loud but the limiter only gently catches transients.
+    constexpr float kCatLevel = 64000.0f;   // catastrophe drive (~2x louder money shift)
+    constexpr float kCatDuck  = 0.93f;      // duck engine so the bang dominates
+    constexpr float kLimit    = 32600.0f;   // tanh soft-limit ceiling (no hard square clip)
     const float v_out =
         v_leveled * (1.0f - kCatDuck * std::min(1.0f, aCat))
         + cat * kCatLevel * m_audioParameters.volume;
 
-    int r_int = std::lround(v_out);
+    const float v_lim = kLimit * std::tanh(v_out / kLimit);
+
+    int r_int = std::lround(v_lim);
     if (r_int > INT16_MAX) {
         r_int = INT16_MAX;
     }

@@ -47,6 +47,24 @@ class PistonEngineSimulator : public Simulator {
         // Configure a 2-pole damped-resonator: y[n]=a1·y[n-1]+a2·y[n-2]+x[n].
         void configureResonator(double freq, double Q, double &a1, double &a2) const;
 
+        // One money-shift impact = a SHAPED NOISE BURST (no tones — tones sound
+        // like a piano). White noise through a 2-pole lowpass whose cutoff sweeps
+        // DOWN over the hit: it starts as a broadband CRACK and decays into a low
+        // combustion-like THUD, exactly like a loud backfire / explosion. Bigger
+        // hits are deeper, louder and longer; small debris are sharp bright clacks.
+        struct ImpactVoice {
+            double env = 0.0, envDecay = 1.0;          // amplitude envelope
+            double lp1 = 0.0, lp2 = 0.0;               // cascaded lowpass state
+            double lpA = 0.0, lpAEnd = 0.0, lpACoef = 0.0; // swept cutoff (up=duller)
+            double amp = 0.0;                          // makeup gain
+            double crackAmp = 0.0;                     // broadband attack-edge level
+            int    crackSamples = 0;
+        };
+        // fire = trigger one bang (scale 0..1 loudness, bigness 0=small tick ..
+        // 1=huge bang); render = advance one voice a sample, returning its output.
+        void fireImpactVoice(double scale, double bigness);
+        double renderImpactVoice(ImpactVoice &v, double sampleRate);
+
     protected:
         virtual void writeToSynthesizer() override;
 
@@ -109,35 +127,6 @@ class PistonEngineSimulator : public Simulator {
         int    *m_knockBurstSamples = nullptr;
         double *m_knockBurstAmp     = nullptr;
 
-        // --- Rod knock (rotation-driven) ---
-        // Bearing journal slap on TDC crossings. Block fundamental mode.
-        double *m_rodResonY1 = nullptr;
-        double *m_rodResonY2 = nullptr;
-        double m_rodResonA1 = 0.0;
-        double m_rodResonA2 = 0.0;
-        int    *m_rodBurstSamples = nullptr;
-        double *m_rodBurstAmp     = nullptr;
-
-        // --- Piston slap (rotation-driven) ---
-        // Piston rocks in the bore at velocity reversals. Higher-pitched body
-        // resonance than rod knock — second block mode.
-        double *m_pistonResonY1 = nullptr;
-        double *m_pistonResonY2 = nullptr;
-        double m_pistonResonA1 = 0.0;
-        double m_pistonResonA2 = 0.0;
-        int    *m_pistonBurstSamples = nullptr;
-        double *m_pistonBurstAmp     = nullptr;
-
-        // --- Valve clatter (rotation-driven) ---
-        // Bent/worn valves click against their seats at every cam event.
-        // Higher-frequency mid-band ring — metallic but not as bright as knock.
-        double *m_valveResonY1 = nullptr;
-        double *m_valveResonY2 = nullptr;
-        double m_valveResonA1 = 0.0;
-        double m_valveResonA2 = 0.0;
-        int    *m_valveBurstSamples = nullptr;
-        double *m_valveBurstAmp     = nullptr;
-
         // --- Bearing growl (continuous filtered noise) ---
         // Worn bearings make a low rumbling growl, not a whistle. Generated
         // by feeding white noise through two cascaded one-pole low-pass
@@ -145,61 +134,30 @@ class PistonEngineSimulator : public Simulator {
         double m_growlLP1 = 0.0;
         double m_growlLP2 = 0.0;
 
-        // --- Catastrophic event state ---
-        // A moneyshift catastrophe fires the BOOM + CLANK synthesizer below. The
-        // per-failure-type weights tilt the clank pitch (a valve-drop clanks
-        // higher/brighter than a rod-eject).
-        double m_catastropheSizeFactor = 1.0;
+        // --- Catastrophic event (money-shift grenade) ---
+        // A money shift is modelled as a STOCHASTIC CHAIN OF IMPACTS: one big
+        // initial BANG when something lets go, then a chaotic, decaying flurry of
+        // secondary bangs as broken parts get flung around and ejected. Each bang
+        // is a punchy IMPACT VOICE (sharp click + downward pitch-swept thump +
+        // inharmonic metallic ring); a randomized point process schedules them.
+        // Failure-type weights tilt impact pitch (rod/crank deep, valve/cam high).
+        double m_catastropheSizeFactor   = 1.0;
         double m_catastropheRodWeight    = 1.0;
         double m_catastrophePistonWeight = 1.0;
         double m_catastropheValveWeight  = 1.0;
-        double m_catastropheRateMul      = 1.0;  // per-event impact-count randomization (>=1)
 
-        // --- The BOOM (initial detonation) ---
-        // Audible-band (~110-170 Hz) resonator driven by a short NOISE burst
-        // (m_boomBurst samples at m_boomBurstAmp) for a punchy thud + harmonics,
-        // plus a brief broadband CLICK (m_boomClickSamples at m_boomClickAmp) for
-        // the sharp detonation crack. ~110-170 Hz so it survives speaker rolloff.
-        double m_boomY1 = 0.0;
-        double m_boomY2 = 0.0;
-        double m_boomA1 = 0.0;
-        double m_boomA2 = 0.0;
-        int    m_boomBurst       = 0;     // low-body resonator excitation samples
-        double m_boomBurstAmp    = 0.0;
-        // Explosive BLAST: a short, fast-decaying broadband noise burst (the
-        // sharp "crack" of the detonation) — this is what makes it read as a
-        // BANG rather than a pure low tone. m_boomBlastAmp decays each sample.
-        int    m_boomBlastSamples = 0;
-        double m_boomBlastAmp     = 0.0;
-        double m_boomBlastLP      = 0.0;
+        static constexpr int kImpactVoices = 24;
+        ImpactVoice m_impact[kImpactVoices] = {};
+        int m_impactNext = 0;                          // round-robin voice index
 
-        // --- The DEBRIS (parts breaking apart) ---
-        // Two ingredients fired by a decaying-rate event window:
-        //   1. Original-style metallic IMPACTS: the per-cylinder rod/piston/valve
-        //      block resonators + a short grind-noise burst (m_grindLP*).
-        //   2. MINI-BOOMS: occasional quieter, cleaner versions of the main bang
-        //      — low-frequency thumps voiced through the resonator pool below.
-        double m_grindLP1 = 0.0;   // grind-noise amplitude (decays per impact)
-        double m_grindLP2 = 0.0;
-        double m_grindLP3 = 0.0;
-        static constexpr int kCrashVoices = 14;
-        double m_crashVY1[kCrashVoices] = {};
-        double m_crashVY2[kCrashVoices] = {};
-        double m_crashVA1[kCrashVoices] = {};
-        double m_crashVA2[kCrashVoices] = {};
-        int    m_crashVBurst[kCrashVoices] = {};    // remaining excitation samples
-        double m_crashVBurstAmp[kCrashVoices] = {}; // excitation amplitude
-        int    m_crashVoiceNext = 0;                // round-robin voice index
-        int    m_clankCountdown  = 0;   // samples until the next clank
-        int    m_clanksRemaining = 0;   // clanks left to fire this event
-        int    m_clankTotal      = 1;   // total clanks this event (for settling)
-        double m_clankAmp        = 0.0; // per-event peak clank amplitude
-
-        // --- Block hum (deprecated, kept to avoid header churn) ---
-        double m_blockHumY1 = 0.0;
-        double m_blockHumY2 = 0.0;
-        double m_blockHumA1 = 0.0;
-        double m_blockHumA2 = 0.0;
+        // Chaotic-debris scheduler.
+        bool   m_crashActive    = false;
+        double m_crashElapsed   = 0.0;   // s since the primary bang
+        double m_crashDuration  = 0.0;   // s, randomized per event
+        int    m_bounceCount    = 0;     // hits left in the current bounce cluster
+        double m_bounceTimer    = 0.0;   // s until the next bounce hit
+        double m_bounceInterval = 0.0;   // s between bounce hits (shrinks)
+        double m_bounceAmp      = 0.0;   // bounce amplitude (shrinks)
 
         // RNG for noise bursts. Sim-thread only.
         std::mt19937 m_audioRng{0xC0DEBEEFu};

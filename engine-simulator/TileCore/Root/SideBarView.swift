@@ -74,6 +74,7 @@ struct SideBarView: View {
                     isSelected: engineLibrary.selectedEngineId == entry.id,
                     isLocked: engineLibrary.isPaywalled(entry.id) && !purchaseManager.isPro,
                     onSelect: { selectEngine(entry) },
+                    onEdit: { editEngine(entry) },
                     onDelete: { engineLibrary.deleteUserEngine(id: entry.id) }
                 )
             }
@@ -116,6 +117,13 @@ struct SideBarView: View {
         } else {
             engineLibrary.selectedEngineId = entry.id
         }
+    }
+
+    /// Open the builder seeded with this user-built engine so the user can
+    /// revise and re-save it (overwrites the original by id).
+    private func editEngine(_ entry: EngineEntry) {
+        guard let spec = entry.spec else { return }
+        rootViewModel.startEngineBuild(editing: spec)
     }
 
     private func deleteLayout(_ layout: TileLayout) {
@@ -280,6 +288,7 @@ struct EngineRow: View {
     let isSelected: Bool
     let isLocked: Bool
     let onSelect: () -> Void
+    let onEdit: () -> Void
     let onDelete: () -> Void
 
     @State private var hovered = false
@@ -304,19 +313,26 @@ struct EngineRow: View {
                 }
             }
         } trailing: {
-            // Hover-only on macOS; iOS has no hover state so we show the
-            // trash whenever the row belongs to a user-built engine.
+            // Edit + delete actions for user-built engines. Hover-gated on
+            // macOS; always shown on iOS, which has no hover state.
             #if os(macOS)
             if hovered && entry.isUserBuilt {
-                deleteButton(label: "Delete this engine")
+                rowActions
             }
             #else
             if entry.isUserBuilt {
-                deleteButton(label: "Delete this engine")
+                rowActions
             }
             #endif
         }
         .onHover { hovered = $0 }
+    }
+
+    private var rowActions: some View {
+        HStack(spacing: rowGutter) {
+            iconButton(systemName: "slider.horizontal.3", label: "Edit this engine", action: onEdit)
+            iconButton(systemName: "trash", label: "Delete this engine", action: onDelete)
+        }
     }
 
     @ViewBuilder
@@ -331,9 +347,9 @@ struct EngineRow: View {
         }
     }
 
-    private func deleteButton(label: String) -> some View {
-        Button(action: onDelete) {
-            Image(systemName: "trash")
+    private func iconButton(systemName: String, label: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: systemName)
                 .font(.system(size: 11))
                 .foregroundColor(mutedText)
         }

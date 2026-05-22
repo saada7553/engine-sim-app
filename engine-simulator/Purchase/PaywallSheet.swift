@@ -758,22 +758,27 @@ private struct PaywallEngineHero: _SCNViewRepresentable {
         /// Sit the camera back far enough that any built-in (Geo through LFA V10)
         /// fits the hero rect, looking *very slightly* down on the engine.
         ///
-        /// Numbers tuned for the new VStack hero (annotation row above, smaller
-        /// SCNView area below):
-        /// • distance bumped from 1.4× → 2.0× the block diagonal so the tallest
-        ///   engines (LFA V10, F1 V12) don't crowd the top of the now-shorter
-        ///   viewport.
-        /// • vertical offset reduced from 0.25× → 0.08× block height so the
-        ///   tilt-down stops pushing the cylinder heads past the frame's
-        ///   top edge.
+        /// The engine is rotated so its bore axis points world-up: the crank sits
+        /// at the local origin and the block/head extend upward from there, so the
+        /// assembly's vertical center is at `blockCenterZ` (world +Y), NOT at the
+        /// origin. The camera must aim at that centroid — aiming at the origin
+        /// (the crank) leaves the engine reading high in the frame.
+        ///
+        /// • distance is 2.0× the block diagonal so the tallest engines (LFA V10,
+        ///   F1 V12) don't crowd the viewport.
+        /// • the camera sits a touch above the centroid for a slight tilt-down,
+        ///   and looks straight at the centroid so the engine is vertically
+        ///   centered regardless of viewport aspect ratio.
         private func frameCamera(for p: EngineGeometryParams, in scene: SCNScene) {
             guard let cam = scene.rootNode.childNode(withName: "paywallCamera", recursively: false) else { return }
             let diag = sqrt(p.blockLength * p.blockLength
                           + p.blockWidth * p.blockWidth
                           + p.blockHeight * p.blockHeight)
             let distance = Float(diag * 2.0)
-            cam.position = SCNVector3(0, Float(p.blockHeight) * 0.08, distance)
-            cam.look(at: SCNVector3(0, 0, 0))
+            let centerY = Float(p.blockCenterZ)
+            let tiltLift = Float(p.blockHeight) * 0.08
+            cam.position = SCNVector3(0, centerY + tiltLift, distance)
+            cam.look(at: SCNVector3(0, centerY, 0))
         }
 
         // MARK: Animation loop

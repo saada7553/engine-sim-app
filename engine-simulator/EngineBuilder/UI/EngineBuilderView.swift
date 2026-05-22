@@ -97,15 +97,64 @@ enum BuilderStep: Int, CaseIterable, Identifiable {
     }
 }
 
+// MARK: - Builder phase
+
+/// The builder opens on a mode chooser, then either drops straight into the
+/// manual wizard or runs the AI prompt first. AI generation lands the user in
+/// the same wizard (at Review) so they can tweak before saving.
+enum BuilderPhase {
+    case chooseMode
+    case aiPrompt
+    case editing
+}
+
 // MARK: - Builder state
 
 final class EngineBuilderState: ObservableObject {
     @Published var spec: EngineSpec
     @Published var step: BuilderStep = .identity
+    @Published var phase: BuilderPhase
 
-    init(initial: EngineSpec = .defaultSpec()) { self.spec = initial }
+    /// True when the builder was opened on an existing saved engine. Editing
+    /// reuses the spec's id, so saving overwrites the original entry rather
+    /// than creating a duplicate. Also drives the "Save Changes" header label.
+    let isEditingExisting: Bool
+
+    /// Open the builder. With no `editing` spec this is a fresh build that may
+    /// start on the mode chooser; passing an existing spec drops straight into
+    /// the wizard so the user can revise the engine they already saved.
+    init(editing spec: EngineSpec? = nil) {
+        if let spec = spec {
+            self.spec = spec
+            self.isEditingExisting = true
+            // No mode chooser when revising an existing engine — the spec is
+            // already authored, so go straight into the wizard.
+            self.phase = .editing
+        } else {
+            self.spec = .defaultSpec()
+            self.isEditingExisting = false
+            // The mode chooser only earns its place when on-device AI is actually
+            // available. Otherwise there's nothing to choose — go straight into
+            // the manual wizard.
+            self.phase = AIEngineGeneration.availability.isAvailable ? .chooseMode : .editing
+        }
+    }
 
     func jump(to step: BuilderStep) { self.step = step }
+
+    /// Enter the manual wizard from scratch.
+    func startManual() {
+        step = .identity
+        phase = .editing
+    }
+
+    /// Adopt an AI-generated spec and drop into the wizard's Review step so the
+    /// user can verify and fine-tune everything before saving.
+    func adoptGenerated(_ spec: EngineSpec) {
+        self.spec = spec
+        step = .review
+        phase = .editing
+    }
 
     var nameIsValid: Bool {
         !spec.name.trimmingCharacters(in: CharacterSet.whitespaces).isEmpty
@@ -116,26 +165,52 @@ final class EngineBuilderState: ObservableObject {
 
 struct EngineBuilderView: View {
     let onClose: () -> Void
-    @StateObject private var state = EngineBuilderState()
+    @StateObject private var state: EngineBuilderState
+
+    /// `editingSpec` seeds the wizard with an existing saved engine; nil opens
+    /// a fresh build.
+    init(editingSpec: EngineSpec? = nil, onClose: @escaping () -> Void) {
+        self.onClose = onClose
+        _state = StateObject(wrappedValue: EngineBuilderState(editing: editingSpec))
+    }
 
     var body: some View {
         ZStack {
             Color.appBackground.ignoresSafeArea()
-            VStack(spacing: 0) {
-                BuilderHeader(state: state, onClose: onClose, onSave: save)
+            switch state.phase {
+            case .chooseMode:
+                BuilderModeChooser(
+                    onManual: { state.startManual() },
+                    onAI: { state.phase = .aiPrompt },
+                    onCancel: onClose
+                )
+            case .aiPrompt:
+                AIEnginePromptView(
+                    onGenerated: { state.adoptGenerated($0) },
+                    onBack: { state.phase = .chooseMode },
+                    onCancel: onClose
+                )
+            case .editing:
+                editor
+            }
+        }
+    }
+
+    private var editor: some View {
+        VStack(spacing: 0) {
+            BuilderHeader(state: state, onClose: onClose, onSave: save)
+            Divider().background(BuilderTheme.line)
+
+            HStack(spacing: 0) {
+                BuilderSectionRail(state: state)
+                    .frame(width: BuilderLayout.sectionRailWidth)
                 Divider().background(BuilderTheme.line)
 
-                HStack(spacing: 0) {
-                    BuilderSectionRail(state: state)
-                        .frame(width: BuilderLayout.sectionRailWidth)
-                    Divider().background(BuilderTheme.line)
-
-                    ScrollView {
-                        stepContent
-                            .padding(.horizontal, BuilderLayout.detailHorizontalPadding)
-                            .padding(.vertical, BuilderLayout.detailVerticalPadding)
-                            .frame(maxWidth: .infinity, alignment: .topLeading)
-                    }
+                ScrollView {
+                    stepContent
+                        .padding(.horizontal, BuilderLayout.detailHorizontalPadding)
+                        .padding(.vertical, BuilderLayout.detailVerticalPadding)
+                        .frame(maxWidth: .infinity, alignment: .topLeading)
                 }
             }
         }
@@ -202,7 +277,8 @@ private struct BuilderHeader: View {
 
             BuilderNavButton(label: "Cancel", style: .secondary,
                              action: onClose)
-            BuilderNavButton(label: "Save Engine", style: .primary,
+            BuilderNavButton(label: state.isEditingExisting ? "Save Changes" : "Save Engine",
+                             style: .primary,
                              enabled: state.nameIsValid, action: onSave)
         }
         .padding(.horizontal, BuilderLayout.headerHorizontalPadding)

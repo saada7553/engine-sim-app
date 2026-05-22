@@ -88,22 +88,24 @@ struct Engine3DProceduralView: _SCNViewRepresentable {
 #if os(macOS)
     func makeNSView(context: Context) -> SCNView { makeSCNView(context: context) }
     func updateNSView(_ nsView: SCNView, context: Context) {
-        context.coordinator.currentRPM = vm.rpm
-        context.coordinator.currentCylinderHealths = vm.cylinderHealths
-        context.coordinator.currentEngineWideHealth = vm.engineWideHealth
-        context.coordinator.currentCylinderIgnitionEnabled = vm.cylinderIgnitionEnabled
-        context.coordinator.currentAFR = vm.intakeAFR
-        context.coordinator.currentIgnitionOn = vm.isIgnitionOn
+        context.coordinator.updateLiveState(
+            rpm: vm.rpm,
+            cylinderHealths: vm.cylinderHealths,
+            engineWideHealth: vm.engineWideHealth,
+            cylinderIgnitionEnabled: vm.cylinderIgnitionEnabled,
+            afr: vm.intakeAFR,
+            ignitionOn: vm.isIgnitionOn)
     }
 #else
     func makeUIView(context: Context) -> SCNView { makeSCNView(context: context) }
     func updateUIView(_ uiView: SCNView, context: Context) {
-        context.coordinator.currentRPM = vm.rpm
-        context.coordinator.currentCylinderHealths = vm.cylinderHealths
-        context.coordinator.currentEngineWideHealth = vm.engineWideHealth
-        context.coordinator.currentCylinderIgnitionEnabled = vm.cylinderIgnitionEnabled
-        context.coordinator.currentAFR = vm.intakeAFR
-        context.coordinator.currentIgnitionOn = vm.isIgnitionOn
+        context.coordinator.updateLiveState(
+            rpm: vm.rpm,
+            cylinderHealths: vm.cylinderHealths,
+            engineWideHealth: vm.engineWideHealth,
+            cylinderIgnitionEnabled: vm.cylinderIgnitionEnabled,
+            afr: vm.intakeAFR,
+            ignitionOn: vm.isIgnitionOn)
     }
 #endif
 
@@ -208,18 +210,21 @@ struct Engine3DProceduralView: _SCNViewRepresentable {
 
     final class Coordinator: NSObject, SCNSceneRendererDelegate {
         var wireframe: Bool = false
-        var currentRPM: Double = 0.0
-        // Pushed by updateNSView each tick — used by the render loop to
-        // recolour parts based on their damage state. Default to pristine
-        // (health = 1.0) so we don't render an engine with all-red parts in
-        // the brief moment before the first poll lands.
-        var currentCylinderHealths: [CylinderHealthState] = []
-        // Combustion inputs, pushed each tick: per-cylinder ignition enable,
-        // live AFR (drives the flame colour), and whether ignition is on.
-        var currentCylinderIgnitionEnabled: [Bool] = []
-        var currentAFR: Double = 0.0
-        var currentIgnitionOn: Bool = false
-        var currentEngineWideHealth: EngineWideHealthState = {
+
+        // ---- Live state shared with the SceneKit rendering queue ----
+        //
+        // `updateLiveState` (main thread) writes these; `renderer` (render
+        // queue) snapshots them. EVERY access goes through `stateLock` — see
+        // its declaration below for why. Defaults are pristine (health = 1.0)
+        // so the engine never flashes all-red before the first poll lands.
+        private var currentRPM: Double = 0.0
+        private var currentCylinderHealths: [CylinderHealthState] = []
+        // Combustion inputs: per-cylinder ignition enable, live AFR (drives the
+        // flame colour), and whether ignition is on.
+        private var currentCylinderIgnitionEnabled: [Bool] = []
+        private var currentAFR: Double = 0.0
+        private var currentIgnitionOn: Bool = false
+        private var currentEngineWideHealth: EngineWideHealthState = {
             let s = EngineWideHealthState()
             s.cylinderHead = 1.0
             s.camshaft     = 1.0
@@ -229,13 +234,57 @@ struct Engine3DProceduralView: _SCNViewRepresentable {
             s.oilPump      = 1.0
             return s
         }()
+
+        // Render-thread-owned animation clock. A reset is *requested* from the
+        // main thread (rebuild) via `pendingClockReset` under `stateLock` and
+        // *performed* on the render thread, so these two are only ever mutated
+        // on the render queue and never race.
         private var accumulatedAngle: Double = 0.0
         private var lastUpdateTime: TimeInterval = 0.0
+        private var pendingClockReset = false
 
         private weak var scnView: SCNView?
         private var parts: ProceduralEngineParts?
         private var currentSpecId: UUID?
         private var currentSpecFingerprint: Int = 0
+
+        /// Serializes all state shared between the main thread (SwiftUI
+        /// `updateNSView`/`updateUIView` and the Combine-driven `rebuild`) and
+        /// the SceneKit rendering queue running `renderer(_:updateAtTime:)`:
+        /// `parts`, the live health/AFR snapshot, and `pendingClockReset`.
+        ///
+        /// Reassigning the `[CylinderHealthState]` arrays or the `parts`
+        /// reference while the render thread reads them races on their storage's
+        /// reference count. The buffer gets freed early, its memory is reused
+        /// (commonly as an `__NSArrayI`), and the next message the render thread
+        /// sends to that stale pointer aborts the app with "unrecognized
+        /// selector". The lock guarantees each render pass sees a whole,
+        /// retained snapshot that stays alive for the entire frame.
+        private let stateLock = NSLock()
+
+        private func withStateLock<T>(_ body: () -> T) -> T {
+            stateLock.lock()
+            defer { stateLock.unlock() }
+            return body()
+        }
+
+        /// Push the latest view-model state for the next frame. Called on the
+        /// main thread from `updateNSView`/`updateUIView`.
+        func updateLiveState(rpm: Double,
+                             cylinderHealths: [CylinderHealthState],
+                             engineWideHealth: EngineWideHealthState,
+                             cylinderIgnitionEnabled: [Bool],
+                             afr: Double,
+                             ignitionOn: Bool) {
+            withStateLock {
+                currentRPM = rpm
+                currentCylinderHealths = cylinderHealths
+                currentEngineWideHealth = engineWideHealth
+                currentCylinderIgnitionEnabled = cylinderIgnitionEnabled
+                currentAFR = afr
+                currentIgnitionOn = ignitionOn
+            }
+        }
 
         private var libraryCancellables = Set<AnyCancellable>()
 
@@ -268,15 +317,19 @@ struct Engine3DProceduralView: _SCNViewRepresentable {
         private func rebuild(with spec: EngineSpec?) {
             guard let scnView = scnView, let scene = scnView.scene else { return }
 
-            // Remove any existing assembly + reset references.
+            // Detach the old assembly and drop our reference under the lock so
+            // the render thread never observes a half-swapped state. Any
+            // in-flight render pass already holds its own strong ref to the old
+            // `parts`, so that node tree stays alive until the pass finishes.
             scene.rootNode.childNode(withName: "proceduralEngineRoot", recursively: false)?.removeFromParentNode()
-            parts = nil
-
-            // Reset the animation clock so the new engine starts at crank=0
-            // (rather than wherever the previous one was spinning), and so the
-            // first dt is bounded.
-            accumulatedAngle = 0.0
-            lastUpdateTime = 0.0
+            withStateLock {
+                parts = nil
+                // Reset the animation clock so the new engine starts at crank=0
+                // (not wherever the previous one was spinning) and the first dt
+                // is bounded. Performed on the render thread, which owns the
+                // clock fields; here we only request it.
+                pendingClockReset = true
+            }
 
             guard let spec = spec else {
                 currentSpecId = nil
@@ -295,11 +348,14 @@ struct Engine3DProceduralView: _SCNViewRepresentable {
             root.name = "proceduralEngineRoot"
             root.addChildNode(built.assemblyNode)
             scene.rootNode.addChildNode(root)
-            self.parts = built
 
             if wireframe {
                 ProceduralEngineAssembly.applyWireframeStyle(parts: built)
             }
+
+            // Publish the finished assembly last, under the lock, so the render
+            // thread only ever sees a fully-built tree.
+            withStateLock { self.parts = built }
 
             currentSpecId = spec.id
             currentSpecFingerprint = Coordinator.geometryFingerprint(of: spec)
@@ -337,6 +393,30 @@ struct Engine3DProceduralView: _SCNViewRepresentable {
         // MARK: SCNSceneRendererDelegate
 
         func renderer(_ renderer: SCNSceneRenderer, updateAtTime time: TimeInterval) {
+            // One critical section: take a strong-ref snapshot of `parts` plus
+            // the live inputs, and consume any pending clock reset. The strong
+            // ref keeps the whole node tree alive for the rest of this frame
+            // even if the main thread rebuilds and tears down the old assembly
+            // midway — so the traversal below never touches freed memory.
+            let snap = withStateLock { () -> (parts: ProceduralEngineParts?,
+                                              rpm: Double,
+                                              healths: [CylinderHealthState],
+                                              wide: EngineWideHealthState,
+                                              ignitionEnabled: [Bool],
+                                              afr: Double,
+                                              ignitionOn: Bool) in
+                if pendingClockReset {
+                    accumulatedAngle = 0.0
+                    lastUpdateTime = 0.0
+                    pendingClockReset = false
+                }
+                return (self.parts, currentRPM, currentCylinderHealths,
+                        currentEngineWideHealth, currentCylinderIgnitionEnabled,
+                        currentAFR, currentIgnitionOn)
+            }
+
+            guard let parts = snap.parts else { return }
+
             let dt: Double
             if lastUpdateTime > 0 {
                 dt = min(time - lastUpdateTime, maxDtSeconds)
@@ -345,24 +425,23 @@ struct Engine3DProceduralView: _SCNViewRepresentable {
             }
             lastUpdateTime = time
 
-            let angularVelocity = (currentRPM / 60.0) * 2.0 * .pi
+            let angularVelocity = (snap.rpm / 60.0) * 2.0 * .pi
             accumulatedAngle += angularVelocity * dt
             if accumulatedAngle > 100.0 * .pi {
                 accumulatedAngle = accumulatedAngle.truncatingRemainder(dividingBy: 4.0 * .pi)
             }
 
-            guard let parts = parts else { return }
             ProceduralEngineAssembly.animate(parts: parts, crankAngle: accumulatedAngle)
 
             // Combustion glow — locked to the same crank angle as the pistons.
             ProceduralEngineAssembly.updateCombustion(
                 parts: parts,
                 crankAngle: accumulatedAngle,
-                ignitionEnabled: currentCylinderIgnitionEnabled,
-                afr: currentAFR,
-                cylinderHealths: currentCylinderHealths,
-                running: ProceduralEngineAssembly.isCombusting(rpm: currentRPM,
-                                                               ignitionOn: currentIgnitionOn),
+                ignitionEnabled: snap.ignitionEnabled,
+                afr: snap.afr,
+                cylinderHealths: snap.healths,
+                running: ProceduralEngineAssembly.isCombusting(rpm: snap.rpm,
+                                                               ignitionOn: snap.ignitionOn),
                 wireframe: wireframe
             )
 
@@ -371,14 +450,14 @@ struct Engine3DProceduralView: _SCNViewRepresentable {
             if wireframe {
                 ProceduralEngineAssembly.applyWireframeHealthColors(
                     parts: parts,
-                    cylinderHealths: currentCylinderHealths,
-                    engineWide: currentEngineWideHealth
+                    cylinderHealths: snap.healths,
+                    engineWide: snap.wide
                 )
             } else {
                 ProceduralEngineAssembly.applyDamageTints(
                     parts: parts,
-                    cylinderHealths: currentCylinderHealths,
-                    engineWide: currentEngineWideHealth
+                    cylinderHealths: snap.healths,
+                    engineWide: snap.wide
                 )
             }
         }

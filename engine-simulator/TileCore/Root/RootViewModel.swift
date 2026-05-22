@@ -21,6 +21,11 @@ class RootViewModel: ObservableObject, Observable {
     /// While true, the detail area shows the engine builder instead of the tile layout.
     @Published var isBuildingEngine: Bool = false
 
+    /// The saved engine being edited, if the builder was opened from an
+    /// existing user engine. Nil for a fresh build. Cleared when the builder
+    /// closes so the next "Build New Engine" starts blank.
+    @Published var editingEngineSpec: EngineSpec?
+
     /// Save-layout dialog state. Lives on the root VM so both the top-bar
     /// save button and the sidebar's save action open the same dialog.
     @Published var isPresentingSaveLayout: Bool = false
@@ -53,13 +58,17 @@ class RootViewModel: ObservableObject, Observable {
     /// Used for window management only.
     let id = UUID()
 
-    func startEngineBuild() {
+    /// Open the builder. Pass `editing:` to revise an existing saved engine;
+    /// omit it for a fresh build.
+    func startEngineBuild(editing spec: EngineSpec? = nil) {
         browserMode = .operational
+        editingEngineSpec = spec
         isBuildingEngine = true
     }
 
     func finishEngineBuild() {
         isBuildingEngine = false
+        editingEngineSpec = nil
     }
 
     /// Open the save-layout dialog from anywhere in the UI.

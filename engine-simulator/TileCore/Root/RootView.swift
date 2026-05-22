@@ -33,7 +33,8 @@ struct RootView: View {
 
                 Group {
                     if vm.isBuildingEngine {
-                        EngineBuilderView(onClose: { vm.finishEngineBuild() })
+                        EngineBuilderView(editingSpec: vm.editingEngineSpec,
+                                          onClose: { vm.finishEngineBuild() })
                             #if !os(macOS)
                             // The builder needs the full screen width on
                             // iOS. Auto-fold the sidebar on entry, restore
