@@ -104,6 +104,10 @@ class EngineViewModel: ObservableObject {
     // ECU Tuning Data
     @Published var ignitionOffset: Double = 0.0
     @Published var fuelTrim: Double = 1.0
+    /// Live tune-chaos level (0 = stable, 1 = maximally jagged) currently being
+    /// applied. Drives the ECU map's live-cell jitter so a bad tune is visible
+    /// on the grid, not just in the readouts. Zero whenever the engine is off.
+    @Published var tuneChaosLevel: Double = 0.0
     @Published var ignitionMap: [ScopePoint] = []
 
     // Thermal + damage state
@@ -333,13 +337,18 @@ class EngineViewModel: ObservableObject {
         // kills torque and the rpm sags, then it snaps back, so the engine
         // bucks and hunts and you fight to keep it lit. The fuel trim is surged
         // in parallel (out of phase) so the mixture lurches too.
-        let chaos = tuneChaos()
+        //
+        // Only while the engine is actually running: the surge is time-based,
+        // so applying it with the engine off would leave ADV / Δ / trim (and the
+        // spark chart) oscillating on a dead, stationary car.
+        let chaos = (runningSince != nil) ? tuneChaos() : 0.0
         if chaos > 0 {
             let t = Date().timeIntervalSinceReferenceDate
             delta += chaosWave(t, phase: 0.0) * chaos * ignitionChaosAmplitudeDeg
             trim += chaosWave(t, phase: 2.3) * chaos * fuelChaosAmplitude
             trim = min(chaosTrimMax, max(chaosTrimMin, trim))
         }
+        if tuneChaosLevel != chaos { tuneChaosLevel = chaos }
 
         engine.setIgnitionOffset(delta)
         engine.setFuelTrim(trim)

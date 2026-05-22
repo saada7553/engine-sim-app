@@ -282,6 +282,9 @@ final class EcuTuneModel: ObservableObject {
     static var fuelRange: ClosedRange<Double> { afrMin ... afrMax }
     static var ignitionBumpStep: Double { ignitionStep }
     static var fuelBumpStep: Double { fuelStep }
+    /// Target AFR that maps to a 1.0 trim. Lets the UI convert a live applied
+    /// fuel-trim back into an AFR for display (inverse of `fuelTrim`).
+    static var stoichReferenceAfr: Double { stoichAfr }
 
     func value(in kind: EcuMapKind, at coord: EcuCellCoord) -> Double {
         let safe = clampToBounds(coord)

@@ -214,8 +214,15 @@ private struct EcuTuningEditor: View {
 
     private func cellView(rowIdx: Int, colIdx: Int) -> some View {
         let coord = EcuCellCoord(loadIndex: rowIdx, rpmIndex: colIdx)
-        let value = ecu.value(in: activeMap, at: coord)
         let isLive = (liveCell == coord)
+        // The live cell shows the value the engine is ACTUALLY applying. On a
+        // bad tune that includes the runtime chaos surge, so the live cell's
+        // number and colour jitter in lock-step with ADV / TRIM instead of
+        // sitting frozen at the stored value. Every other cell shows its
+        // stored tune value as before.
+        let chaos = isLive ? vm.tuneChaosLevel : 0.0
+        let value = (chaos > 0 ? liveAppliedValue() : nil)
+            ?? ecu.value(in: activeMap, at: coord)
         // iOS doesn't render a yellow "selected cell" outline — selection
         // would fight with the paint-mode drag (the per-cell Button consumed
         // gestures, and dragging would leave a yellow trail across cells
@@ -227,24 +234,41 @@ private struct EcuTuningEditor: View {
         return Button {
             selectedCell = coord
         } label: {
-            cellFace(value: value, isLive: isLive, isSelected: isSelected)
+            cellFace(value: value, isLive: isLive, isSelected: isSelected, chaos: chaos)
         }
         .buttonStyle(.plain)
         #else
-        return cellFace(value: value, isLive: isLive, isSelected: false)
+        return cellFace(value: value, isLive: isLive, isSelected: false, chaos: chaos)
         #endif
     }
 
-    private func cellFace(value: Double, isLive: Bool, isSelected: Bool) -> some View {
+    /// The value the engine is applying at the live operating point right now,
+    /// chaos surge included — ignition as absolute advance, fuel as the AFR the
+    /// applied trim corresponds to. nil when the trim is degenerate.
+    private func liveAppliedValue() -> Double? {
+        switch activeMap {
+        case .ignition:
+            return ecu.baseTiming(at: vm.rpm) + vm.ignitionOffset
+        case .fuel:
+            guard vm.fuelTrim > 0.01 else { return nil }
+            return EcuTuneModel.stoichReferenceAfr / vm.fuelTrim
+        }
+    }
+
+    private func cellFace(value: Double, isLive: Bool, isSelected: Bool, chaos: Double) -> some View {
         ZStack {
             RoundedRectangle(cornerRadius: cellCornerRadius)
                 .fill(heatColor(for: value))
-            // Always-on green border on the cell the engine is currently
-            // operating in — edits to THIS cell take effect immediately.
+            // Border on the cell the engine is operating in. Normally green;
+            // as the tune turns chaotic it shifts toward red and the glow swells
+            // so the unstable operating point reads as a flashing alarm.
             if isLive {
+                let borderColor = Color(hue: 0.33 * (1.0 - chaos),
+                                        saturation: 0.9, brightness: 1.0)
                 RoundedRectangle(cornerRadius: cellCornerRadius)
-                    .stroke(Color.green, lineWidth: 2)
-                    .shadow(color: .green.opacity(0.5), radius: 3)
+                    .stroke(borderColor, lineWidth: 2 + chaos * 1.5)
+                    .shadow(color: borderColor.opacity(0.5 + chaos * 0.4),
+                            radius: 3 + chaos * 5)
             }
             if isSelected {
                 RoundedRectangle(cornerRadius: cellCornerRadius)
