@@ -380,7 +380,9 @@ struct ZeroToSixtyView: View {
             handleArmedSpeed(mph)
         case .running(let start):
             if mph >= target.endMph {
-                phase = .complete(elapsed: Date().timeIntervalSinceReferenceDate - start)
+                let elapsed = Date().timeIntervalSinceReferenceDate - start
+                phase = .complete(elapsed: elapsed)
+                vm.runResults.recordLaunch(targetId: target.id, seconds: elapsed)
             }
         default:
             break

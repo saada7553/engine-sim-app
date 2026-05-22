@@ -35,6 +35,7 @@ struct TileSurfApp: App {
     @StateObject private var rootViewModel: RootViewModel
     @StateObject private var engineViewModel: EngineViewModel
     @StateObject private var purchaseManager: PurchaseManager
+    @StateObject private var playerIdentity: PlayerIdentity
     @State private var keyboardController: KeyboardController
     // Pinned to .all so iOS doesn't hide the detail column behind the
     // sidebar (the default on compact widths and iPad portrait). With the
@@ -53,6 +54,7 @@ struct TileSurfApp: App {
         let engineViewModelInst = EngineViewModel(oscillioscopeManager: oscilloscopeManager)
         self._engineViewModel = StateObject(wrappedValue: engineViewModelInst)
         self._purchaseManager = StateObject(wrappedValue: PurchaseManager.shared)
+        self._playerIdentity = StateObject(wrappedValue: PlayerIdentity.shared)
         // Resolve the layout to boot into. Order: last-used (per UserDefaults)
         // → Default. The lookup goes through TileStore.shared.layouts, which
         // already merges built-ins with user-saved layouts, so a custom one
@@ -87,6 +89,18 @@ struct TileSurfApp: App {
                 .onKeyPress { press in
                     handleKeyPress(press: press)
                 }
+            
+                // First-launch onboarding sits above everything at true window
+                // size (outside the iOS content scaleEffect) so its prose and
+                // the real dash controls it renders stay comfortably readable.
+                .overlay {
+                    if !playerIdentity.hasCompletedOnboarding {
+                        OnboardingView(identity: playerIdentity)
+                            .transition(.opacity)
+                    }
+                }
+                .animation(.easeInOut(duration: 0.3),
+                           value: playerIdentity.hasCompletedOnboarding)
         }
         #if os(macOS)
         .commands {

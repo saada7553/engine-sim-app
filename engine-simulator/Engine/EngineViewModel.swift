@@ -86,6 +86,10 @@ class EngineViewModel: ObservableObject {
     // Dynamometer sweep
     @Published var dynoEnabled: Bool = false
 
+    /// Captured best results (dyno peaks + launch times) for the active engine,
+    /// used to post to the leaderboard. Reset whenever the engine changes.
+    let runResults = RunResultsStore()
+
     // Throttle hold: latches the throttle so it stops decaying back to idle
     @Published var throttleHeld: Bool = false
 
@@ -295,6 +299,13 @@ class EngineViewModel: ObservableObject {
                 // Pass engine wrapper to oscilloscope manager for sampling
                 self.oscilloscopeManager.sample(from: engine)
 
+                // Track dyno-sweep peaks for the leaderboard. The power/torque
+                // scopes only carry data while sweeping, so this is a no-op
+                // outside a dyno run.
+                self.runResults.ingestDyno(power: self.oscilloscopeManager.power,
+                                           torque: self.oscilloscopeManager.torque,
+                                           dynoActive: state.dynoEnabled)
+
                 // Sample the user's ECU maps at the live operating point and
                 // push the resulting offset/trim into the engine.
                 self.applyEcuTune(engine: engine)
@@ -400,6 +411,9 @@ class EngineViewModel: ObservableObject {
     private func swapEngine(to entry: EngineEntry) {
         engine?.shutdown()
         engine = nil
+
+        // Captured leaderboard results belong to the outgoing engine.
+        runResults.resetForEngineChange()
 
         // Reset transient state so old values don't bleed through during the swap.
         rpm = 0

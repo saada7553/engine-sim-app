@@ -32,6 +32,7 @@ private enum BuiltInLayoutId {
     // different so persisted state pointing at the old layout still falls
     // back to Default instead of silently mapping into the new one.
     static let diagnostic = UUID(uuidString: "0F1E1100-0000-0000-0000-000000000006")!
+    static let leaderboard = UUID(uuidString: "0F1E1100-0000-0000-0000-000000000007")!
 }
 
 // MARK: - Construction helpers
@@ -69,6 +70,7 @@ enum BuiltInLayouts {
         tuner,
         track,
         diagnostic,
+        leaderboard,
     ]
 
     /// Loads on app launch. Engine 3D dominates with a slim right column
@@ -336,6 +338,51 @@ enum BuiltInLayouts {
                                         size: CGSize(width: 800, height: 400)),
                 ], size: CGSize(width: 800, height: 1000)),
             ], size: CGSize(width: 960, height: 1000)),
+        ])
+        #endif
+    }
+
+    /// The full competitive loop on one screen: drive + dyno the engine, time a
+    /// launch, then post the result to the global board — no layout switching.
+    static let leaderboard: TileLayout = TileLayout(
+        id: BuiltInLayoutId.leaderboard,
+        name: "Leaderboard",
+        rootData: leaderboardRoot,
+        isBuiltIn: true
+    )
+
+    /// macOS: three columns — the rankings on the left, the dyno sweep chart in
+    /// the middle, controls+timer on the right (each gets full window height).
+    /// iOS / iPad: no H-shifter (gear changes use the top-bar shift buttons), so
+    /// the screen splits in two halves — the board on one side, the 0-60 timer
+    /// over the dyno sweep on the other.
+    private static var leaderboardRoot: TileData {
+        #if os(macOS)
+        return BuiltInBuilder.split(.horizontal, [
+            BuiltInBuilder.leaf(.leaderboard,
+                                size: CGSize(width: 560, height: 1000)),
+            BuiltInBuilder.leaf(.dynoOscilloscope,
+                                size: CGSize(width: 600, height: 1000)),
+            BuiltInBuilder.split(.vertical, [
+                BuiltInBuilder.leaf(.engineControls,
+                                    size: CGSize(width: 440, height: 620)),
+                BuiltInBuilder.leaf(.zeroToSixtyTimer,
+                                    size: CGSize(width: 440, height: 380)),
+            ], size: CGSize(width: 440, height: 1000)),
+        ])
+        #else
+        return BuiltInBuilder.split(.horizontal, [
+            // Left half: the board, full height.
+            BuiltInBuilder.leaf(.leaderboard,
+                                size: CGSize(width: 800, height: 1000)),
+            // Right half: 0-60 timer over the dyno sweep. The shifter tile is
+            // dropped on mobile — shifting lives on the top bar there.
+            BuiltInBuilder.split(.vertical, [
+                BuiltInBuilder.leaf(.zeroToSixtyTimer,
+                                    size: CGSize(width: 800, height: 460)),
+                BuiltInBuilder.leaf(.dynoOscilloscope,
+                                    size: CGSize(width: 800, height: 540)),
+            ], size: CGSize(width: 800, height: 1000)),
         ])
         #endif
     }

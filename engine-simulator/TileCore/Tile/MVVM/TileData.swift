@@ -77,6 +77,9 @@ enum TileType: String, Codable, CaseIterable, Identifiable {
     case shiftLight = "Shift Light"
     case zeroToSixtyTimer = "0-60 Timer"
 
+    // Compete
+    case leaderboard = "Leaderboard"
+
     // Oscilloscopes
     case torqueOscilloscope = "Torque Scope"
     case powerOscilloscope = "Power Scope"

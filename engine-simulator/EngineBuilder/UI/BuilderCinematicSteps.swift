@@ -213,6 +213,10 @@ struct LayoutStep: View {
         if cylinderCountChanged || !state.spec.firingOrderIsValid {
             state.spec.resyncFiringOrderForLayout()
         }
+        // Keep cranking effort matched to the new engine's size/cylinder count.
+        if cylinderCountChanged {
+            state.spec.resyncStarterForLayout()
+        }
     }
 }
 
@@ -717,6 +721,7 @@ struct CamStep: View {
     @ObservedObject var state: EngineBuilderState
 
     var body: some View {
+        VStack(alignment: .leading, spacing: 28) {
         HStack(alignment: .top, spacing: 40) {
             VStack(alignment: .leading, spacing: 22) {
                 BuilderSectionHeading(title: "Step 4 · Camshaft")
@@ -764,6 +769,11 @@ struct CamStep: View {
                     .frame(width: 360)
             }
             Spacer()
+        }
+
+        Divider().background(BuilderTheme.line)
+        VtecSection(state: state)
+            .frame(maxWidth: 660, alignment: .leading)
         }
     }
 

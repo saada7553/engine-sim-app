@@ -275,6 +275,8 @@ private struct BuilderHeader: View {
 
             Spacer()
 
+            BuildCostChip(spec: state.spec)
+
             BuilderNavButton(label: "Cancel", style: .secondary,
                              action: onClose)
             BuilderNavButton(label: state.isEditingExisting ? "Save Changes" : "Save Engine",
@@ -283,6 +285,37 @@ private struct BuilderHeader: View {
         }
         .padding(.horizontal, BuilderLayout.headerHorizontalPadding)
         .padding(.vertical, BuilderLayout.headerVerticalPadding)
+    }
+}
+
+// MARK: - Build cost chip
+
+/// Live whole-build price, recomputed from the spec on every edit. Sits in the
+/// header so the cost of a change is always visible while tuning — the same
+/// number the leaderboard's value/budget metrics use.
+private struct BuildCostChip: View {
+    let spec: EngineSpec
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Text("BUILD")
+                .font(.system(size: Theme.FontSize.footnote, weight: .bold, design: .monospaced))
+                .tracking(2)
+                .foregroundColor(BuilderTheme.label)
+            Text(EnginePricing.formatted(EnginePricing.buildCost(for: spec)))
+                .font(.system(size: Theme.FontSize.control, weight: .bold, design: .monospaced))
+                .foregroundColor(.white)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
+        .background(
+            RoundedRectangle(cornerRadius: Theme.Radius.control)
+                .fill(Color.surfaceLow)
+                .overlay(
+                    RoundedRectangle(cornerRadius: Theme.Radius.control)
+                        .stroke(BuilderTheme.accent.opacity(0.4), lineWidth: Theme.Stroke.thin)
+                )
+        )
     }
 }
 
@@ -333,11 +366,14 @@ private struct BuilderSectionRail: View {
                 Spacer()
             }
             .padding(.horizontal, 10)
+            .frame(maxWidth: .infinity, alignment: .leading)
             .frame(height: BuilderLayout.sectionRowHeight)
             .background(
                 RoundedRectangle(cornerRadius: Theme.Radius.control)
                     .fill(selected ? Color.accentLive.opacity(0.14) : Color.clear)
             )
+            // Make the entire row a hit target, not just the label glyphs.
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .padding(.horizontal, 8)

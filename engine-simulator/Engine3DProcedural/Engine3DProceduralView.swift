@@ -248,6 +248,18 @@ struct Engine3DProceduralView: _SCNViewRepresentable {
         private var currentSpecId: UUID?
         private var currentSpecFingerprint: Int = 0
 
+        /// A finished engine assembly, built off-screen on the main thread and
+        /// waiting to be swapped into the live scene. The swap itself (detach the
+        /// old assembly, attach the new one) is performed on the SceneKit render
+        /// queue inside `renderer(_:updateAtTime:)` — never on the main thread —
+        /// so it can't run concurrently with that same callback's traversal of
+        /// the node tree. See `applyPendingSwapLocked()`. Guarded by `stateLock`.
+        private enum PendingSwap {
+            case install(root: SCNNode, parts: ProceduralEngineParts)
+            case clear
+        }
+        private var pendingSwap: PendingSwap?
+
         /// Serializes all state shared between the main thread (SwiftUI
         /// `updateNSView`/`updateUIView` and the Combine-driven `rebuild`) and
         /// the SceneKit rendering queue running `renderer(_:updateAtTime:)`:
@@ -260,6 +272,16 @@ struct Engine3DProceduralView: _SCNViewRepresentable {
         /// sends to that stale pointer aborts the app with "unrecognized
         /// selector". The lock guarantees each render pass sees a whole,
         /// retained snapshot that stays alive for the entire frame.
+        ///
+        /// Retaining the objects is necessary but not sufficient: detaching the
+        /// old assembly and attaching the new one is a structural mutation of
+        /// SceneKit's (non-thread-safe) node graph, and doing it on the main
+        /// thread raced with this queue's traversal of that same graph — the same
+        /// "__NSArrayI unrecognized selector" abort, this time from corrupted node
+        /// structures rather than a freed Swift buffer. So rebuilds now only
+        /// *stage* the finished assembly (`pendingSwap`); the swap is performed on
+        /// this queue in `applyPendingSwapLocked()`, keeping every scene-graph
+        /// structure change on the same thread that walks it.
         private let stateLock = NSLock()
 
         private func withStateLock<T>(_ body: () -> T) -> T {
@@ -315,23 +337,15 @@ struct Engine3DProceduralView: _SCNViewRepresentable {
         }
 
         private func rebuild(with spec: EngineSpec?) {
-            guard let scnView = scnView, let scene = scnView.scene else { return }
-
-            // Detach the old assembly and drop our reference under the lock so
-            // the render thread never observes a half-swapped state. Any
-            // in-flight render pass already holds its own strong ref to the old
-            // `parts`, so that node tree stays alive until the pass finishes.
-            scene.rootNode.childNode(withName: "proceduralEngineRoot", recursively: false)?.removeFromParentNode()
-            withStateLock {
-                parts = nil
-                // Reset the animation clock so the new engine starts at crank=0
-                // (not wherever the previous one was spinning) and the first dt
-                // is bounded. Performed on the render thread, which owns the
-                // clock fields; here we only request it.
-                pendingClockReset = true
-            }
-
+            // Build entirely off-screen on the main thread (these nodes aren't in
+            // the live scene yet, so mutating them here can't race the renderer),
+            // then hand the finished tree to the render queue to swap in. Nothing
+            // here touches `scnView.scene` — see `applyPendingSwapLocked()`.
             guard let spec = spec else {
+                withStateLock {
+                    pendingSwap = .clear
+                    pendingClockReset = true
+                }
                 currentSpecId = nil
                 currentSpecFingerprint = 0
                 return
@@ -347,22 +361,46 @@ struct Engine3DProceduralView: _SCNViewRepresentable {
             let root = SCNNode()
             root.name = "proceduralEngineRoot"
             root.addChildNode(built.assemblyNode)
-            scene.rootNode.addChildNode(root)
 
             if wireframe {
                 ProceduralEngineAssembly.applyWireframeStyle(parts: built)
             }
 
-            // Publish the finished assembly last, under the lock, so the render
-            // thread only ever sees a fully-built tree.
-            withStateLock { self.parts = built }
+            // Stage the swap. The render queue installs it (and reframes the
+            // camera) at the top of the next frame, before it walks the tree, so
+            // the structural change and the traversal never overlap. Resetting
+            // the clock makes the new engine start at crank=0 with a bounded dt.
+            withStateLock {
+                pendingSwap = .install(root: root, parts: built)
+                pendingClockReset = true
+            }
 
             currentSpecId = spec.id
             currentSpecFingerprint = Coordinator.geometryFingerprint(of: spec)
+        }
 
-            // Re-frame the camera around the new engine size (identical framing
-            // to the solid view).
-            adjustCamera(for: built.params)
+        /// Install a staged assembly into the live scene. MUST run on the render
+        /// queue (called from `renderer`) while holding `stateLock`: detaching the
+        /// old assembly and attaching the new one are structural scene-graph
+        /// mutations, and keeping them on the same queue that traverses the graph
+        /// is what prevents the concurrent-access corruption described on
+        /// `stateLock`. Reframes the camera here too, so this queue is the only
+        /// thread that ever touches `rootNode`'s children.
+        private func applyPendingSwapLocked() {
+            guard let swap = pendingSwap, let scene = scnView?.scene else { return }
+            pendingSwap = nil
+
+            scene.rootNode.childNode(withName: "proceduralEngineRoot", recursively: false)?
+                .removeFromParentNode()
+
+            switch swap {
+            case .clear:
+                parts = nil
+            case let .install(root, built):
+                scene.rootNode.addChildNode(root)
+                parts = built
+                adjustCamera(for: built.params)
+            }
         }
 
         private func adjustCamera(for p: EngineGeometryParams) {
@@ -393,11 +431,13 @@ struct Engine3DProceduralView: _SCNViewRepresentable {
         // MARK: SCNSceneRendererDelegate
 
         func renderer(_ renderer: SCNSceneRenderer, updateAtTime time: TimeInterval) {
-            // One critical section: take a strong-ref snapshot of `parts` plus
-            // the live inputs, and consume any pending clock reset. The strong
-            // ref keeps the whole node tree alive for the rest of this frame
-            // even if the main thread rebuilds and tears down the old assembly
-            // midway — so the traversal below never touches freed memory.
+            // One critical section, run before any traversal: install a staged
+            // rebuild (if any) so the scene-graph swap happens on THIS queue, take
+            // a strong-ref snapshot of `parts` plus the live inputs, and consume
+            // any pending clock reset. The strong ref keeps the whole node tree
+            // alive for the rest of this frame, and because the only thread that
+            // ever mutates the assembly's structure is this one, the traversal
+            // below can't race a teardown.
             let snap = withStateLock { () -> (parts: ProceduralEngineParts?,
                                               rpm: Double,
                                               healths: [CylinderHealthState],
@@ -405,6 +445,7 @@ struct Engine3DProceduralView: _SCNViewRepresentable {
                                               ignitionEnabled: [Bool],
                                               afr: Double,
                                               ignitionOn: Bool) in
+                applyPendingSwapLocked()
                 if pendingClockReset {
                     accumulatedAngle = 0.0
                     lastUpdateTime = 0.0

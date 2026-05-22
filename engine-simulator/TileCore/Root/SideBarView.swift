@@ -437,22 +437,29 @@ struct UnsavedLayoutRow: View {
 // MARK: - Footer
 
 struct SidebarFooter: View {
+    @ObservedObject private var identity = PlayerIdentity.shared
     @State private var showingControls = false
+    @State private var showingProfile = false
 
     var body: some View {
         VStack(spacing: 0) {
             Rectangle().fill(dividerColor).frame(height: 1)
             HStack(spacing: 16) {
-                Button(action: {}) {
+                Button(action: { showingProfile = true }) {
                     HStack(spacing: 6) {
-                        Image(systemName: "gearshape")
-                        Text("SETTINGS")
+                        Image(systemName: "person.crop.circle")
+                        Text(identity.username.isEmpty ? "SETTINGS" : identity.username.uppercased())
                             .font(.system(size: 10, weight: .bold, design: .monospaced))
                             .tracking(1.0)
+                            .lineLimit(1)
                     }
                     .foregroundColor(.white.opacity(0.75))
                 }
                 .buttonStyle(.plain)
+                .help("Edit your leaderboard name")
+                .popover(isPresented: $showingProfile, arrowEdge: .bottom) {
+                    UsernameEditorSheet(identity: identity)
+                }
 
                 // The keyboard-shortcuts popover only makes sense on macOS
                 // where the keyboard drives the dashboard; on iOS the

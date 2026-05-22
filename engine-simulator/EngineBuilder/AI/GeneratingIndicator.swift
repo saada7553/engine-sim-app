@@ -19,20 +19,23 @@ private enum IndicatorMetrics {
     static let waveSpeed = 2.0           // radians/sec the pulse travels
     static let waveSpacing = 0.55        // phase offset between adjacent segments
     static let minBrightness = 0.16
-    static let phraseInterval = 1.15     // seconds each status line is shown
+    static let phraseInterval = 1.6      // seconds each status line is shown
     static let phraseFadeFraction = 0.2  // fraction of the window spent fading in/out
     static let stackSpacing: CGFloat = 22
 }
 
 private let buildPhrases: [String] = [
-    "Choosing the layout",
-    "Sizing bore & stroke",
+    "Reading your description",
+    "Choosing the cylinder layout",
+    "Sizing the displacement",
+    "Reading forced induction",
     "Grinding the camshaft",
     "Balancing the crankshaft",
     "Porting the cylinder heads",
     "Tuning the intake tract",
     "Routing the headers",
     "Mapping the ignition",
+    "Selecting the transmission",
     "Setting the gear ratios",
     "Torquing it all down",
 ]

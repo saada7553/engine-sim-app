@@ -11,10 +11,13 @@ import Foundation
 // MARK: - Layout
 
 enum EngineLayout: String, Codable, CaseIterable, Identifiable {
+    case inline1
+    case inline2
     case inline3
     case inline4
     case inline5
     case inline6
+    case inline7
     case v6_60
     case v6_90
     case v8_90
@@ -28,7 +31,10 @@ enum EngineLayout: String, Codable, CaseIterable, Identifiable {
 
     var displayName: String {
         switch self {
+        case .inline1: return "Single"
+        case .inline2: return "Inline 2 (Twin)"
         case .inline3: return "Inline 3"
+        case .inline7: return "Inline 7"
         case .inline4: return "Inline 4"
         case .inline5: return "Inline 5"
         case .inline6: return "Inline 6"
@@ -45,6 +51,9 @@ enum EngineLayout: String, Codable, CaseIterable, Identifiable {
 
     var shortLabel: String {
         switch self {
+        case .inline1: return "1"
+        case .inline2: return "I2"
+        case .inline7: return "I7"
         case .inline3: return "I3"
         case .inline4: return "I4"
         case .inline5: return "I5"
@@ -60,10 +69,13 @@ enum EngineLayout: String, Codable, CaseIterable, Identifiable {
 
     var cylinderCount: Int {
         switch self {
+        case .inline1:                  return 1
+        case .inline2:                  return 2
         case .inline3:                  return 3
         case .inline4, .flat4:          return 4
         case .inline5:                  return 5
         case .inline6, .v6_60, .v6_90, .flat6: return 6
+        case .inline7:                  return 7
         case .v8_90:                    return 8
         case .v10_72:                   return 10
         case .v12_60, .v12_75:          return 12
@@ -72,7 +84,7 @@ enum EngineLayout: String, Codable, CaseIterable, Identifiable {
 
     var bankCount: Int {
         switch self {
-        case .inline3, .inline4, .inline5, .inline6: return 1
+        case .inline1, .inline2, .inline3, .inline4, .inline5, .inline6, .inline7: return 1
         case .v6_60, .v6_90, .v8_90, .v10_72, .v12_60, .v12_75: return 2
         case .flat4, .flat6: return 2
         }
@@ -81,7 +93,7 @@ enum EngineLayout: String, Codable, CaseIterable, Identifiable {
     // Half-angle from vertical: bank0 sits at +angle, bank1 at -angle.
     var bankHalfAngleDeg: Double {
         switch self {
-        case .inline3, .inline4, .inline5, .inline6: return 0
+        case .inline1, .inline2, .inline3, .inline4, .inline5, .inline6, .inline7: return 0
         case .v6_60, .v12_60: return 30
         case .v8_90, .v6_90:  return 45
         case .v10_72:         return 36
@@ -93,7 +105,10 @@ enum EngineLayout: String, Codable, CaseIterable, Identifiable {
     /// 1-indexed firing order across all cylinders (interpreted as bank0 cyl1..N then bank1 cyl1..N).
     var firingOrder: [Int] {
         switch self {
+        case .inline1:  return [1]
+        case .inline2:  return [1, 2]
         case .inline3:  return [1, 2, 3]
+        case .inline7:  return [1, 3, 5, 7, 2, 4, 6]
         case .inline4:  return [1, 3, 4, 2]
         case .inline5:  return [1, 2, 4, 5, 3]
         case .inline6:  return [1, 5, 3, 6, 2, 4]
@@ -202,12 +217,25 @@ struct EngineSpec: Codable, Identifiable, Equatable {
     var flywheelRadiusIn: Double
     var crankFrictionLbFt: Double
 
+    // Starter motor + cylinder sealing
+    var starterTorqueLbFt: Double
+    var starterSpeedRpm: Double
+    var blowby: Double                 // k_28inH2O value; 0 = perfect seal, higher = worn
+
     // Cam
     var camDurationDeg: Double         // duration_at_50_thou
     var camLiftMm: Double
     var camLobeSeparationDeg: Double
     var camAdvanceDeg: Double
     var camBaseRadiusIn: Double
+
+    // VTEC / variable valvetrain — a second, high-lift cam profile that engages
+    // above the crossover RPM. Only emitted when vtecEnabled.
+    var vtecEnabled: Bool
+    var vtecCrossoverRpm: Double
+    var vtecCamDurationDeg: Double
+    var vtecCamLiftMm: Double
+    var vtecCamLobeSeparationDeg: Double
 
     // Head
     var chamberVolumeCc: Double
@@ -277,7 +305,7 @@ struct EngineSpec: Codable, Identifiable, Equatable {
 
     static func defaultSpec(name: String = "New Engine",
                             layout: EngineLayout = .inline4) -> EngineSpec {
-        EngineSpec(
+        var spec = EngineSpec(
             id: UUID(),
             name: name,
             redlineRpm: 7000,
@@ -295,11 +323,21 @@ struct EngineSpec: Codable, Identifiable, Equatable {
             flywheelRadiusIn: 7,
             crankFrictionLbFt: 5,
 
+            starterTorqueLbFt: 200,
+            starterSpeedRpm: 200,
+            blowby: 0.1,
+
             camDurationDeg: 220,
             camLiftMm: 9.5,
             camLobeSeparationDeg: 114,
             camAdvanceDeg: 0,
             camBaseRadiusIn: 0.67,
+
+            vtecEnabled: false,
+            vtecCrossoverRpm: 5800,
+            vtecCamDurationDeg: 248,
+            vtecCamLiftMm: 11.5,
+            vtecCamLobeSeparationDeg: 105,
 
             chamberVolumeCc: 50,
             intakeRunnerVolumeCc: 150,
@@ -339,6 +377,9 @@ struct EngineSpec: Codable, Identifiable, Equatable {
             tireRadiusIn: 10,
             rollingResistanceN: 500
         )
+        // Size-appropriate starter (the literal 200/200 above is a placeholder).
+        spec.resyncStarterForLayout()
+        return spec
     }
 
     /// True when firingOrder is a valid permutation of 1...cylinderCount.
@@ -350,6 +391,23 @@ struct EngineSpec: Codable, Identifiable, Equatable {
     /// Reset firingOrder to the layout's default. Call when layout changes.
     mutating func resyncFiringOrderForLayout() {
         firingOrder = layout.firingOrder
+    }
+
+    /// Cranking effort matched to engine size + cylinder count: bigger engines
+    /// need more starter torque and spin over more slowly. Clamped to sane
+    /// ranges so it never produces a runaway/absurd starter.
+    var recommendedStarterTorqueLbFt: Double {
+        min(600, max(120, 60 + displacementLitres * 55 + Double(layout.cylinderCount) * 8))
+    }
+    var recommendedStarterSpeedRpm: Double {
+        // Be generous on big engines: a gentle displacement/cylinder penalty and
+        // a healthy floor so a large V8/V12 still cranks at a decent speed.
+        min(300, max(180, 260 - displacementLitres * 5 - Double(layout.cylinderCount)))
+    }
+    /// Reset the starter to the size-appropriate recommendation. Call on layout change.
+    mutating func resyncStarterForLayout() {
+        starterTorqueLbFt = recommendedStarterTorqueLbFt
+        starterSpeedRpm = recommendedStarterSpeedRpm
     }
 
     static func defaultTimingCurve() -> [TimingPoint] {

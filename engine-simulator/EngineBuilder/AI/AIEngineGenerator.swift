@@ -2,22 +2,16 @@
 //  AIEngineGenerator.swift
 //  engine-simulator
 //
-//  Multi-stage, on-device engine generation via Apple's Foundation Models.
-//  A 3B model is unreliable when asked to pull many fields at once (it would
-//  drop an explicit "inline six" while juggling displacement, fuel, etc.), so
-//  each stage asks ONE narrow question with an explicit "unspecified" answer:
+//  Many-stage, on-device engine generation via Apple's Foundation Models.
+//  A 3B model is unreliable when asked to pull several fields at once, so each
+//  subsystem gets its OWN focused call with a single, narrow job and an
+//  explicit "unspecified" answer. Stages run concurrently and merge into an
+//  EngineIntent; EngineDesignExpander does all the heavy procedural work.
 //
-//    1. Layout      — the cylinder configuration, or unspecified.
-//    2. Size        — displacement in litres, or "not stated".
-//    3. Induction   — aspiration + fuel, each or unspecified.
-//    4. Tune        — redline + compression, each or "not stated".
-//    5. Features    — specific parts the user named (tags).
-//    6. Vibe        — the feel (cam/power band/idle/class/sound/gearing) + name.
-//
-//  Stages 1-5 are pure extraction (resilient: a failed/empty stage just means
-//  "user didn't say"). The results merge into an EngineIntent and
-//  EngineDesignExpander does all the heavy procedural work. The model never
-//  fills coupled numbers, so it can't make duds.
+//  Stages: layout, displacement, aspiration, fuel, redline, compression, cam
+//  character, power band, idle character, vehicle class, sound, gearing,
+//  feature tags, and name. Extraction stages are resilient — a failed/empty
+//  stage just means "the user didn't say", and the expander fills it.
 //
 //  Foundation Models requires macOS 26 / iOS 26; all framework use is gated.
 //
@@ -66,21 +60,23 @@ enum AIEngineGeneration {
     }
 }
 
-// MARK: - Stage 1: Layout
+// MARK: - Extraction enums (each generated directly; "unspecified" = not stated)
 
 @available(macOS 26.0, iOS 26.0, *)
 @Generable
 enum GenLayoutChoice: String {
     case unspecified
-    case inline3, inline4, inline5, inline6
+    case single, inline2, inline3, inline4, inline5, inline6, inline7
     case v6_60, v6_90, v8_90, v10_72, v12_60, v12_75
     case flat4, flat6
 
     var engineLayout: EngineLayout? {
         switch self {
         case .unspecified: return nil
+        case .single: return .inline1;  case .inline2: return .inline2
         case .inline3: return .inline3;  case .inline4: return .inline4
         case .inline5: return .inline5;  case .inline6: return .inline6
+        case .inline7: return .inline7
         case .v6_60: return .v6_60;      case .v6_90: return .v6_90
         case .v8_90: return .v8_90;      case .v10_72: return .v10_72
         case .v12_60: return .v12_60;    case .v12_75: return .v12_75
@@ -88,26 +84,6 @@ enum GenLayoutChoice: String {
         }
     }
 }
-
-@available(macOS 26.0, iOS 26.0, *)
-@Generable
-struct GenLayoutStage {
-    @Guide(description: "The cylinder layout the user explicitly asked for. 'inline six'/'straight six'/'I6'/'six-cylinder' = inline6; 'inline four'/'I4' = inline4; 'straight five'/'I5' = inline5; 'V6' = v6_60; 'V8' = v8_90; 'V10' = v10_72; 'V12' = v12_60; 'boxer'/'flat four' = flat4; 'flat six' = flat6. If the user did NOT name a cylinder layout, answer unspecified.")
-    var layout: GenLayoutChoice
-}
-
-// MARK: - Stage 2: Size
-
-@available(macOS 26.0, iOS 26.0, *)
-@Generable
-struct GenSizeStage {
-    @Guide(description: "true only if the user stated a displacement or named an engine that fixes it (e.g. 2JZ, LS, Coyote); false otherwise.")
-    var stated: Bool
-    @Guide(description: "Displacement in litres (used only when stated is true). 2JZ=3.0, LS=5.7, Coyote=5.0, Hayabusa=1.3.", .range(0.5...30.0))
-    var litres: Double
-}
-
-// MARK: - Stage 3: Induction (aspiration + fuel)
 
 @available(macOS 26.0, iOS 26.0, *)
 @Generable
@@ -138,72 +114,32 @@ enum GenFuelChoice: String {
 
 @available(macOS 26.0, iOS 26.0, *)
 @Generable
-struct GenInductionStage {
-    @Guide(description: "Aspiration only if the user mentions it (turbo, supercharger, or naturally aspirated/NA); else unspecified.")
-    var aspiration: GenAspirationChoice
-    @Guide(description: "Fuel only if the user mentions E85, methanol, or diesel; else unspecified.")
-    var fuel: GenFuelChoice
+struct GenSizeStage {
+    @Guide(description: "true only if the user stated a displacement or named an engine that fixes it; false otherwise.")
+    var stated: Bool
+    @Guide(description: "Displacement in litres (used only when stated). 2JZ=3.0, LS=5.7, Coyote=5.0, Hayabusa=1.3.", .range(0.5...30.0))
+    var litres: Double
 }
-
-// MARK: - Stage 4: Tune (redline + compression)
 
 @available(macOS 26.0, iOS 26.0, *)
 @Generable
-struct GenTuneStage {
+struct GenRedlineStage {
     @Guide(description: "true only if the user gave an explicit redline / max RPM; false otherwise.")
-    var redlineStated: Bool
-    @Guide(description: "Redline RPM (used only when redlineStated is true).", .range(3000.0...12000.0))
-    var redlineRpm: Double
+    var stated: Bool
+    @Guide(description: "Redline RPM (used only when stated).", .range(3000.0...12000.0))
+    var rpm: Double
+}
+
+@available(macOS 26.0, iOS 26.0, *)
+@Generable
+struct GenCompressionStage {
     @Guide(description: "true only if the user gave an explicit compression ratio; false otherwise.")
-    var compressionStated: Bool
-    @Guide(description: "Compression ratio (used only when compressionStated is true).", .range(7.0...14.0))
-    var compressionRatio: Double
+    var stated: Bool
+    @Guide(description: "Compression ratio (used only when stated).", .range(7.0...14.0))
+    var ratio: Double
 }
 
-// MARK: - Stage 5: Features
-
-@available(macOS 26.0, iOS 26.0, *)
-@Generable
-enum GenFeature: String {
-    case highCompression, lowCompression
-    case heavyFlywheel, lightFlywheel
-    case bigCam, mildCam
-    case tightLSA, wideLSA
-    case longHeaders, shortHeaders
-    case longRunners, shortRunners
-    case bigPlenum, smallPlenum
-    case shortGears, tallGears
-    case bigBore, longStroke
-    case highRedline
-    case lightweightInternals
-    case highBoost
-
-    var design: DesignFeature {
-        switch self {
-        case .highCompression: return .highCompression; case .lowCompression: return .lowCompression
-        case .heavyFlywheel: return .heavyFlywheel;      case .lightFlywheel: return .lightFlywheel
-        case .bigCam: return .bigCam;                    case .mildCam: return .mildCam
-        case .tightLSA: return .tightLSA;                case .wideLSA: return .wideLSA
-        case .longHeaders: return .longHeaders;          case .shortHeaders: return .shortHeaders
-        case .longRunners: return .longRunners;          case .shortRunners: return .shortRunners
-        case .bigPlenum: return .bigPlenum;              case .smallPlenum: return .smallPlenum
-        case .shortGears: return .shortGears;            case .tallGears: return .tallGears
-        case .bigBore: return .bigBore;                  case .longStroke: return .longStroke
-        case .highRedline: return .highRedline
-        case .lightweightInternals: return .lightweightInternals
-        case .highBoost: return .highBoost
-        }
-    }
-}
-
-@available(macOS 26.0, iOS 26.0, *)
-@Generable
-struct GenFeatureStage {
-    @Guide(description: "Tags for specific parts the user explicitly mentions (e.g. 'lightweight flywheel'->lightFlywheel, 'long-tube headers'->longHeaders, 'stroker'->longStroke, 'big turbo'->highBoost). Empty list if none mentioned.")
-    var features: [GenFeature]
-}
-
-// MARK: - Stage 6: Vibe
+// MARK: - Character enums (always answered; generated directly)
 
 @available(macOS 26.0, iOS 26.0, *)
 @Generable
@@ -272,21 +208,135 @@ enum GenSound: String {
 
 @available(macOS 26.0, iOS 26.0, *)
 @Generable
-struct GenVibeStage {
-    @Guide(description: "Short evocative engine name fitting the description.")
+enum GenPerformance: String {
+    case weak, modest, strong, extreme
+    var design: DesignPerformance {
+        switch self {
+        case .weak: return .weak; case .modest: return .modest
+        case .strong: return .strong; case .extreme: return .extreme
+        }
+    }
+}
+
+@available(macOS 26.0, iOS 26.0, *)
+@Generable
+enum GenCondition: String {
+    case fresh, normal, worn
+    var design: DesignCondition {
+        switch self {
+        case .fresh: return .fresh; case .normal: return .normal; case .worn: return .worn
+        }
+    }
+}
+
+// MARK: - Features + name
+
+@available(macOS 26.0, iOS 26.0, *)
+@Generable
+enum GenFeature: String {
+    case highCompression, lowCompression
+    case heavyFlywheel, lightFlywheel
+    case bigCam, mildCam
+    case tightLSA, wideLSA
+    case longHeaders, shortHeaders
+    case longRunners, shortRunners
+    case bigPlenum, smallPlenum
+    case shortGears, tallGears
+    case bigBore, longStroke
+    case highRedline
+    case lightweightInternals
+    case highBoost
+    case worn
+    case freshBuild
+
+    var design: DesignFeature {
+        switch self {
+        case .worn: return .worn
+        case .freshBuild: return .freshBuild
+        case .highCompression: return .highCompression; case .lowCompression: return .lowCompression
+        case .heavyFlywheel: return .heavyFlywheel;      case .lightFlywheel: return .lightFlywheel
+        case .bigCam: return .bigCam;                    case .mildCam: return .mildCam
+        case .tightLSA: return .tightLSA;                case .wideLSA: return .wideLSA
+        case .longHeaders: return .longHeaders;          case .shortHeaders: return .shortHeaders
+        case .longRunners: return .longRunners;          case .shortRunners: return .shortRunners
+        case .bigPlenum: return .bigPlenum;              case .smallPlenum: return .smallPlenum
+        case .shortGears: return .shortGears;            case .tallGears: return .tallGears
+        case .bigBore: return .bigBore;                  case .longStroke: return .longStroke
+        case .highRedline: return .highRedline
+        case .lightweightInternals: return .lightweightInternals
+        case .highBoost: return .highBoost
+        }
+    }
+}
+
+@available(macOS 26.0, iOS 26.0, *)
+@Generable
+struct GenFeatureStage {
+    @Guide(description: "Tags for specific parts the user explicitly mentions (e.g. 'lightweight flywheel'->lightFlywheel, 'long-tube headers'->longHeaders, 'stroker'->longStroke, 'big turbo'->highBoost). Empty if none.")
+    var features: [GenFeature]
+}
+
+@available(macOS 26.0, iOS 26.0, *)
+@Generable
+struct GenNameStage {
+    @Guide(description: "A short, evocative engine name (2-4 words) that fits the description. No quotes, no explanation.")
     var name: String
-    @Guide(description: "Cam character: economy(smooth daily), stock, sport, race(lumpy aggressive).")
+}
+
+// MARK: - Generator
+
+// MARK: - Holistic design draft (one coherent reasoning pass)
+
+@available(macOS 26.0, iOS 26.0, *)
+@Generable
+struct EngineDesignDraft {
+    @Guide(description: "First think: in one sentence, identify what this engine/car is and its character (e.g. 'a worn-out economy commuter four', 'a Toyota 2JZ turbo inline-six', 'a supercharged Mad Max muscle V8').")
+    var analysis: String
+
+    @Guide(description: "Cylinder layout that matches the description and analysis.")
+    var layout: GenLayoutChoice
+
+    @Guide(description: "Total displacement in litres, realistic for THIS engine. economy I4 ~1.6, S2000 ~2.0, 2JZ ~3.0, inline-six ~3.0, LS V8 ~5.7, muscle/monster V8 ~6.2-7.0, V12 ~6.0, sportbike ~1.0, single thumper ~0.5, diesel truck ~6.5.", .range(0.3...30.0))
+    var displacementLitres: Double
+
+    @Guide(description: "Redline RPM. Diesel/truck 4500-5500, economy/worn 5500-6500, daily 6500-7000, sporty NA 7500-8500, race/sportbike/F1 9000-12000. A SLOW or WORN engine MUST be low; a screamer high.", .range(3000.0...12000.0))
+    var redlineRpm: Double
+
+    @Guide(description: "Intended power level. weak=slow/gutless/economy/worn; modest=ordinary daily; strong=fast/sporty; extreme=high-horsepower/race/monster.")
+    var performance: GenPerformance
+
+    @Guide(description: "Condition. fresh=new/rebuilt/blueprinted; normal=ordinary; worn=old/tired/high-mileage/beat-up/smoky. Use normal unless age/wear is implied.")
+    var condition: GenCondition
+
+    @Guide(description: "Aspiration: naturallyAspirated unless a turbo or supercharger is implied.")
+    var aspiration: GenAspirationChoice
+
+    @Guide(description: "Fuel: gasoline unless diesel / E85 / methanol is implied.")
+    var fuel: GenFuelChoice
+
+    @Guide(description: "Cam character: economy (smooth daily), stock, sport (lively), race (lumpy aggressive).")
     var camProfile: GenCamProfile
-    @Guide(description: "Where power lives: lowEnd(torquey), broad, topEnd(peaky high-rpm).")
+
+    @Guide(description: "Where power lives: lowEnd (torque, trucks/cruisers), broad, topEnd (peaky high-rpm, race/bike).")
     var powerBand: GenPowerBand
-    @Guide(description: "Idle feel: smooth, mild, lumpy.")
+
+    @Guide(description: "Idle: smooth (refined), mild, lumpy (racy/choppy).")
     var idle: GenIdle
-    @Guide(description: "Vehicle archetype this engine belongs in.")
-    var vehicleClass: GenVehicleClass
-    @Guide(description: "Exhaust tone.")
+
+    @Guide(description: "Exhaust tone: smooth, stock, aggressive, raw.")
     var sound: GenSound
-    @Guide(description: "Gearing feel: short(acceleration), balanced, tall(cruising).")
+
+    @Guide(description: "Gearing: short (acceleration/drag), balanced, tall (cruising/highway/top speed).")
     var gearing: GenGearing
+
+    @Guide(description: "Vehicle this engine belongs in: lightweight, sportsCar, sedan, muscle, supercar, truck, raceCar, motorcycle.")
+    var vehicleClass: GenVehicleClass
+
+    @Guide(description: "true only for a Honda VTEC-style variable valvetrain (Honda engines, or if VTEC/variable valve is mentioned).")
+    var vtec: Bool
+
+    @Guide(description: "A short, evocative engine name (2-4 words).")
+    var name: String
 }
 
 // MARK: - Generator
@@ -295,7 +345,26 @@ struct GenVibeStage {
 struct AIEngineGenerator {
 
     private static let extractTemp = 0.0
-    private static let vibeTemp = 0.3
+    private static let creativeTemp = 0.4
+    private static let designTemp = 0.0
+
+    private static let designInstructions = """
+    Design ONE coherent engine for the description (a named engine, a car, a \
+    movie/character vehicle, or a vibe). Every field must agree:
+    slow/economy/worn -> small, LOW redline, mild cam, tall gears, weak; \
+    race/high-horsepower/monster -> large, aggressive cam, high redline, extreme.
+
+    Use your knowledge to match real engines/cars (examples): 2JZ/Supra=turbo \
+    inline-6 ~3.0L; RB26=turbo I6 ~2.6L; LS=V8 ~5.7L; Coyote=V8 ~5.0L; \
+    Hellcat=supercharged V8 ~6.2L; Hayabusa/sportbike=high-rev I4 ~1.1L bike; \
+    K20=I4 ~2.0L vtec; Cummins/Duramax=big diesel ~6.5L truck; Merlin=~27L V12; \
+    Mad Max/Batmobile=huge V8. If unsure of a name, infer from era/country/type — \
+    do NOT default to a generic 1.6L four unless it's truly economy.
+
+    Fill `analysis` FIRST with ONE short sentence, then keep every field \
+    consistent with it.
+    """
+    private static let maxNameLength = 40
 
     static var availability: EngineGeneratorAvailability {
         switch SystemLanguageModel.default.availability {
@@ -314,72 +383,83 @@ struct AIEngineGenerator {
         }
     }
 
-    func generate(from description: String) async throws -> EngineSpec {
+    func generate(from d: String) async throws -> EngineSpec {
         guard case .available = Self.availability else {
             let reason: String = { if case .unavailable(let r) = Self.availability { return r }; return "Unavailable." }()
             throw EngineGenerationError.modelUnavailable(reason)
         }
 
-        // Extraction stages are resilient: if one fails, treat it as "unspecified".
-        let layout = (try? await extract(description,
-            "Your only job: identify the engine cylinder layout the user asked for. Do not infer it from the car's vibe — only from explicit words. If no layout is named, answer unspecified.",
-            GenLayoutStage.self))?.layout.engineLayout
+        // ONE holistic reasoning call: the model reads the whole description,
+        // thinks first (the `analysis` field, generated before the rest, acts
+        // as chain-of-thought), then produces a coherent intent where every
+        // field agrees. Its own knowledge handles named engines / movie cars /
+        // vibes — no lexicon. The keyword pass is only a light override for
+        // explicit facts the user spelled out.
+        let kw = PromptKeywords.extract(from: d)
+        let draft = try await run(d, Self.designInstructions, EngineDesignDraft.self, Self.designTemp)
 
-        let size = try? await extract(description,
-            "Your only job: find the engine displacement in litres if the user stated it or named a specific engine. Otherwise set stated=false.",
-            GenSizeStage.self)
-
-        let induction = try? await extract(description,
-            "Your only job: detect forced induction and fuel type, but ONLY if the user mentions them. Otherwise unspecified.",
-            GenInductionStage.self)
-
-        let tune = try? await extract(description,
-            "Your only job: find an explicit redline RPM and/or compression ratio if the user gave them. Otherwise set the matching stated flag false.",
-            GenTuneStage.self)
-
-        let features = (try? await extract(description,
-            "Your only job: list specific mechanical parts the user explicitly mentions, as tags. Empty list if none.",
-            GenFeatureStage.self))?.features ?? []
-
-        // Vibe is required — it supplies the name and character.
-        let vibe = try await extractVibe(description)
+        let layout = kw.layout ?? draft.layout.engineLayout
+        let camProfile = draft.camProfile.design
 
         let intent = EngineIntent(
-            name: vibe.name,
+            name: cleanName(draft.name, layout: layout, camProfile: camProfile),
             layout: layout,
-            displacementL: (size?.stated == true) ? size?.litres : nil,
-            redlineRpm: (tune?.redlineStated == true) ? tune?.redlineRpm : nil,
-            compressionRatio: (tune?.compressionStated == true) ? tune?.compressionRatio : nil,
-            aspiration: induction?.aspiration.design,
-            fuel: induction?.fuel.preset,
-            camProfile: vibe.camProfile.design,
-            powerBand: vibe.powerBand.design,
-            idle: vibe.idle.design,
-            vehicleClass: vibe.vehicleClass.design,
-            sound: vibe.sound.design,
-            gearing: vibe.gearing.design,
-            features: Set(features.map { $0.design })
+            displacementL: kw.displacementL ?? draft.displacementLitres,
+            redlineRpm: kw.redlineRpm ?? draft.redlineRpm,
+            compressionRatio: kw.compressionRatio,
+            aspiration: kw.aspiration ?? draft.aspiration.design,
+            fuel: kw.fuel ?? draft.fuel.preset,
+            vtec: kw.vtec ?? draft.vtec,
+            performance: draft.performance.design,
+            condition: kw.condition ?? .normal,   // wear is keyword-driven; model over-reports "worn"
+            camProfile: camProfile,
+            powerBand: draft.powerBand.design,
+            idle: draft.idle.design,
+            vehicleClass: kw.vehicleClass ?? draft.vehicleClass.design,
+            sound: draft.sound.design,
+            gearing: draft.gearing.design,
+            features: kw.features
         )
 
         return EngineDesignExpander.expand(intent)
     }
 
-    // MARK: Stage helpers
+    private func cleanName(_ raw: String, layout: EngineLayout?, camProfile: DesignCamProfile) -> String {
+        let trimmed = raw.trimmingCharacters(in: CharacterSet(charactersIn: " \t\n\"'"))
+        if !trimmed.isEmpty && trimmed.count <= 40 { return trimmed }
+        let adj: String
+        switch camProfile {
+        case .economy: adj = "Street"; case .stock: adj = "Custom"
+        case .sport: adj = "Sport"; case .race: adj = "Race"
+        }
+        return "\(adj) \(layout?.shortLabel ?? "Engine")"
+    }
 
-    private func extract<T: Generable>(_ description: String, _ instructions: String, _ type: T.Type) async throws -> T {
+    // MARK: Helpers
+
+    private func run<T: Generable>(_ description: String, _ instructions: String, _ type: T.Type, _ temp: Double) async throws -> T {
         let session = LanguageModelSession(instructions: instructions)
         return try await session.respond(
             to: description, generating: type,
-            options: GenerationOptions(temperature: Self.extractTemp)
+            options: GenerationOptions(temperature: temp)
         ).content
     }
 
-    private func extractVibe(_ description: String) async throws -> GenVibeStage {
-        let session = LanguageModelSession(instructions:
-            "Read the overall feel of the engine description and classify it: what car it belongs in, how it behaves. Pick the closest option for every field and invent a fitting name.")
-        return try await session.respond(
-            to: description, generating: GenVibeStage.self,
-            options: GenerationOptions(temperature: Self.vibeTemp)
-        ).content
+    /// Clean the model's name; fall back to a sensible derived name if it's
+    /// empty or junk (this is what the broken "GenVibe…" string was).
+    private func sanitizedName(_ stage: GenNameStage?, layout: EngineLayout?, camProfile: DesignCamProfile) -> String {
+        let raw = (stage?.name ?? "")
+            .trimmingCharacters(in: CharacterSet(charactersIn: " \t\n\"'"))
+        if !raw.isEmpty && raw.count <= Self.maxNameLength {
+            return raw
+        }
+        let adjective: String
+        switch camProfile {
+        case .economy: adjective = "Street"
+        case .stock:   adjective = "Custom"
+        case .sport:   adjective = "Sport"
+        case .race:    adjective = "Race"
+        }
+        return "\(adjective) \(layout?.shortLabel ?? "Engine")"
     }
 }

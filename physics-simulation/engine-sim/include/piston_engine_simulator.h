@@ -127,12 +127,21 @@ class PistonEngineSimulator : public Simulator {
         int    *m_knockBurstSamples = nullptr;
         double *m_knockBurstAmp     = nullptr;
 
-        // --- Bearing growl (continuous filtered noise) ---
-        // Worn bearings make a low rumbling growl, not a whistle. Generated
-        // by feeding white noise through two cascaded one-pole low-pass
-        // filters tuned to ~180 Hz. Modulated by main-bearing damage + RPM.
+        // --- Worn-bearing rumble (oil starvation) ---
+        // Band-limited noise (two cascaded one-pole LPFs) amplitude-modulated by
+        // crank rotation (m_bearingPhase) so it ROLLS with the engine instead of
+        // being a steady wind. Loudness scales with engine speed, not full-on.
         double m_growlLP1 = 0.0;
         double m_growlLP2 = 0.0;
+        double m_bearingPhase = 0.0;   // rotational AM phase, advances with rpm
+        // Bearing SQUEAK: a thin dry-metal whistle = a narrow resonator on noise
+        // whose pitch slowly drifts and whose level flickers in/out (randomized),
+        // so it reads as an intermittent squeak, not a steady tone or wind.
+        double m_squeakY1 = 0.0, m_squeakY2 = 0.0;     // resonator state
+        double m_squeakA1 = 0.0, m_squeakA2 = 0.0;     // resonator coeffs (re-derived as pitch drifts)
+        double m_squeakFreq = 2000.0, m_squeakTargetFreq = 2000.0;
+        double m_squeakAmp = 0.0, m_squeakTargetAmp = 0.0;   // flicker envelope
+        int    m_squeakReconfig = 0;                   // samples until next pitch/level re-roll
 
         // --- Catastrophic event (money-shift grenade) ---
         // A money shift is modelled as a STOCHASTIC CHAIN OF IMPACTS: one big

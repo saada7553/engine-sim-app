@@ -410,7 +410,14 @@ void PistonEngineSimulator::simulateStep_() {
     if (thermal != nullptr) {
         const double rpmNow  = m_engine->getRpm();
         const double redline = units::toRpm(m_engine->getRedline());
-        const double throttle = m_engine->getThrottle();
+        // Load proxy for the thermal model. The UI pedal can arrive via EITHER
+        // setThrottle (-> getThrottle) OR the governor setSpeedControl (-> get
+        // SpeedControl) — the macOS app uses the latter, so getThrottle alone is
+        // always 0 and the coolant never saw the throttle (coolant tracked only
+        // laggy wall heat-soak: it didn't heat under load and crept up on lift).
+        // Take whichever is commanded so coolant heat tracks the actual pedal.
+        const double throttle = std::max(m_engine->getThrottle(),
+                                         m_engine->getSpeedControl());
         const double clutch   = (m_transmission != nullptr)
             ? m_transmission->getClutchPressure() : 1.0;
         const double speedMps = (m_vehicle != nullptr)
@@ -466,6 +473,27 @@ void PistonEngineSimulator::simulateStep_() {
         constexpr double vehicleSeizureBrakeRate = 0.9;   // 1/s; half-life ~0.77 s
         if (engineSeized) {
             m_vehicleMass.v_theta *= std::exp(-vehicleSeizureBrakeRate * timestep);
+        }
+    }
+
+    // === Worn-bearing FRICTION (oil starvation) ===
+    // Worn / oil-starved bearings raise the engine's OWN friction. Rather than
+    // bolt on an arbitrary external torque, we scale the crankshaft's real
+    // friction parameter (getFrictionTorque) by wear: a wiped bearing can drag at
+    // many times the engine's healthy friction. The engine must fight this, so it
+    // grows progressively sluggish and the revs sag on their own — no hardcoded
+    // rev drop. Because crank friction is Coulomb, the power it eats is torque×rpm,
+    // so the loss grows with engine speed and high revs sag first. Updated every
+    // step from current bearing wear; at zero wear the factor is 1 (untouched).
+    if (thermal != nullptr && m_crankshaftFrictionConstraints != nullptr
+        && m_engine->getCrankshaftCount() > 0) {
+        const double drag = thermal->getBearingDragFactor();   // 0 .. ~1.7, linear in wear
+        constexpr double kWornBearingFrictionGain = 10.0;      // friction multiplier at full drag
+        const double frictionMul = 1.0 + kWornBearingFrictionGain * drag;
+        for (int c = 0; c < m_engine->getCrankshaftCount(); ++c) {
+            const double total = m_engine->getCrankshaft(c)->getFrictionTorque() * frictionMul;
+            m_crankshaftFrictionConstraints[c].m_maxTorque =  total;
+            m_crankshaftFrictionConstraints[c].m_minTorque = -total;
         }
     }
     for (int i = 0; i < cylinderCount; ++i) {
@@ -858,23 +886,72 @@ void PistonEngineSimulator::writeToSynthesizer() {
             }
         }
 
-        // Bearing growl — filtered white noise, NOT a sine wave. Real worn
-        // bearings make a low rumbling sound (broadband, ~50-200 Hz) from
-        // metal-on-metal rolling contact, not a pure tone. We feed white
-        // noise through two cascaded one-pole LPFs at ~180 Hz cutoff:
-        //   y[n] = a·y[n-1] + (1-a)·x[n]
-        // Two stages give a sharper cutoff and a more "throaty" feel.
-        const double growlLevel = thermal->getBearingWhineLevel();
-        if (growlLevel > 0.0) {
-            constexpr double kGrowlCutoffHz = 180.0;
-            const double a = std::exp(-kTwoPi * kGrowlCutoffHz / sampleRate);
+        // === Worn / oil-starved bearing RUMBLE ===
+        // A bad bearing makes a rough low-mid metallic rumble that ROLLS with the
+        // crank — near-silent at cranking, growing with engine speed. It is a
+        // LAYER under the engine note (the engine bogging from the added bearing
+        // FRICTION is the real damage cue), not a steady wind/whine. Band-limited
+        // noise amplitude-modulated by crank rotation so it pulses per revolution;
+        // loudness scales with (rpm/redline)² so it tracks engine speed instead of
+        // being full-volume the moment the engine turns over.
+        constexpr double kBearingCutoffHz = 220.0;   // rough low-mid texture
+        constexpr double kBearingAudioGain = 6.0;    // LPF makeup; layer, not dominant
+        const double bearingLevel = thermal->getBearingWhineLevel();   // 0..0.4
+        const double redlineRpm = units::toRpm(m_engine->getRedline());
+        if (bearingLevel > 0.0 && redlineRpm > 0.0) {
+            const double a = std::exp(-kTwoPi * kBearingCutoffHz / sampleRate);
             const double rawNoise = noise(m_audioRng);
             m_growlLP1 = a * m_growlLP1 + (1.0 - a) * rawNoise;
             m_growlLP2 = a * m_growlLP2 + (1.0 - a) * m_growlLP1;
-            // Cascaded LPFs cut signal by ~20-30 dB; multiply by 10 to bring
-            // amplitude back up to a usable range.
-            damageAudio += growlLevel * rpmFactor
-                         * kWhinePeak * 10.0 * m_growlLP2;
+            // Rotational AM: rumble "rolls" with each revolution, not a flat wind.
+            m_bearingPhase += kTwoPi * (rpm / 60.0) / sampleRate;
+            if (m_bearingPhase > kTwoPi) m_bearingPhase -= kTwoPi;
+            const double s = std::sin(m_bearingPhase);
+            const double rumbleMod = 0.3 + 0.7 * s * s;          // peaky, 2x/rev
+            // Loudness grows with engine speed (quadratic) — quiet at cranking.
+            const double speed = std::min(1.0, rpm / redlineRpm);
+            const double speedGain = speed * speed;
+            damageAudio += bearingLevel * speedGain
+                         * kWhinePeak * kBearingAudioGain * m_growlLP2 * rumbleMod;
+        }
+
+        // === Worn-bearing SQUEAK / whine (dry metal-on-metal) ===
+        // A SLIGHT, intermittent high whistle that grows with wear — the dry
+        // bearing squeal. It is a narrow resonator excited by noise (so it is
+        // breathy/unstable, NOT a clean tone or piano), with the pitch slowly
+        // DRIFTING and the level FLICKERING in and out (both re-rolled randomly
+        // every ~40-90 ms) so it reads as a randomized squeak rather than a steady
+        // tone or wind. Driven by wear (getBearingDragFactor, emerges from ~5%
+        // wear) so it comes up gradually as the bearings go.
+        constexpr double kSqueakFreqMin   = 1500.0;  // Hz
+        constexpr double kSqueakFreqRand  = 2200.0;  // -> 1.5-3.7 kHz, drifting
+        constexpr double kSqueakQ         = 22.0;    // narrow whistle (noise-excited = breathy)
+        constexpr double kSqueakGlide     = 0.0025;  // per-sample glide toward target pitch/level
+        constexpr double kSqueakFullDrag  = 0.8;     // wear-drag at which the squeak is fully in
+        constexpr double kSqueakPeak      = 4.0e4;   // VERY slight — a faint background detail (was 1.6e5)
+        const double squeakWear = thermal->getBearingDragFactor();   // 0 .. ~1.7, linear in wear
+        if (squeakWear > 0.0 && redlineRpm > 0.0) {
+            std::uniform_real_distribution<double> u01(0.0, 1.0);
+            if (--m_squeakReconfig <= 0) {
+                m_squeakTargetFreq = kSqueakFreqMin + u01(m_audioRng) * kSqueakFreqRand;
+                const double r = u01(m_audioRng);
+                m_squeakTargetAmp  = r * r * r;          // skewed low -> mostly quiet, occasional squeak
+                m_squeakReconfig   = static_cast<int>((0.04 + 0.05 * u01(m_audioRng)) * sampleRate);
+            }
+            m_squeakFreq += (m_squeakTargetFreq - m_squeakFreq) * kSqueakGlide;
+            m_squeakAmp  += (m_squeakTargetAmp  - m_squeakAmp ) * kSqueakGlide;
+            configureResonator(m_squeakFreq, kSqueakQ, m_squeakA1, m_squeakA2);
+            const double omega = kTwoPi * m_squeakFreq / sampleRate;
+            const double y = m_squeakA1 * m_squeakY1 + m_squeakA2 * m_squeakY2
+                           + noise(m_audioRng) * std::sin(omega);   // gain-comp excitation
+            m_squeakY2 = m_squeakY1;
+            m_squeakY1 = y;
+            const double wearGain = std::min(1.0, squeakWear / kSqueakFullDrag);
+            const double rpmGate  = std::min(1.0, rpm / redlineRpm);
+            // Low floor (0.1) so the squeak is especially quiet at low rpm and
+            // only fills in as revs rise.
+            damageAudio += y * m_squeakAmp * wearGain * (0.1 + 0.9 * rpmGate)
+                         * kSqueakPeak;
         }
 
         // WET damage (knock + growl) rides the exhaust path (convolution etc.),

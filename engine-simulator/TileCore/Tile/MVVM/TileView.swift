@@ -138,7 +138,11 @@ struct TileView: View {
             return AnyView(ShiftLightView(vm: tile.engineVm).id(engineResetId))
         case .zeroToSixtyTimer:
             return AnyView(ZeroToSixtyView(vm: tile.engineVm).id(engineResetId))
-            
+
+        // Compete
+        case .leaderboard:
+            return AnyView(LeaderboardTileView(engineVm: tile.engineVm))
+
         // Oscilloscopes
         case .torqueOscilloscope:
             return AnyView(TorqueOscilloscopeView(manager: tile.engineVm.oscilloscopeManager))

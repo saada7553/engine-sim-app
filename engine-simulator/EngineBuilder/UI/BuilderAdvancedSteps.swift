@@ -63,6 +63,15 @@ struct AdvancedStep: View {
                         BuilderSlider(label: "Idle CFM", value: $state.spec.idleCfm,
                                       range: 0...10, step: 0.1, unit: "", format: "%.1f")
                     }
+
+                    AdvancedSection(title: "Starter & condition") {
+                        BuilderSlider(label: "Starter torque", value: $state.spec.starterTorqueLbFt,
+                                      range: 50...600, step: 5, unit: "lb-ft", format: "%.0f")
+                        BuilderSlider(label: "Starter speed", value: $state.spec.starterSpeedRpm,
+                                      range: 80...400, step: 5, unit: "rpm", format: "%.0f")
+                        BuilderSlider(label: "Blowby (ring wear)", value: $state.spec.blowby,
+                                      range: 0...2, step: 0.05, unit: "", format: "%.2f")
+                    }
                 }
                 .padding(.bottom, 12)
             }
@@ -156,6 +165,11 @@ private struct SpecSheet: View {
                 row("REDLINE", "\(Int(spec.redlineRpm)) rpm")
                 row("REV LIMIT", "\(Int(spec.revLimitRpm)) rpm")
                 row("FUEL", spec.fuel.displayName)
+                if spec.vtecEnabled {
+                    row("VTEC", "on · \(Int(spec.vtecCrossoverRpm)) rpm crossover")
+                }
+                row("STARTER", String(format: "%.0f lb-ft · %.0f rpm", spec.starterTorqueLbFt, spec.starterSpeedRpm))
+                row("BLOWBY", String(format: "%.2f", spec.blowby))
             }
             .padding(12)
             .overlay(Rectangle().stroke(BuilderTheme.line))

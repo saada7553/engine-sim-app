@@ -14,7 +14,7 @@ private let fallbackGearRatios: [Double] = [3.0, 2.0, 1.4, 1.0]
 enum MRWriter {
 
     /// Returns the .mr file body for the given spec.
-    static func script(for spec: EngineSpec) -> String {
+    static func script(for spec:    EngineSpec) -> String {
         let nodeName = spec.nodeName
         let firingOrder = effectiveFiringOrder(for: spec)
 
@@ -50,6 +50,25 @@ enum MRWriter {
         units units()
         constants constants()
         impulse_response_library ir_lib()
+
+        // The engine_sim default flame-speed curve tops out at 1.5x turbulence,
+        // so generated engines burn slowly, make less power and need heavy
+        // ignition advance to run well (they feel sluggish on the stock tune).
+        // Every strong shipped engine uses ~2.0x — match it here.
+        private node es_flame_speed {
+        \(mrIndent)alias output __out:
+        \(mrIndent)\(mrIndent)function(5.0)
+        \(mrIndent)\(mrIndent)\(mrIndent).add_sample(0.0, 3.0)
+        \(mrIndent)\(mrIndent)\(mrIndent).add_sample(5.0, 1.5 * 5.0)
+        \(mrIndent)\(mrIndent)\(mrIndent).add_sample(10.0, 1.9 * 10.0)
+        \(mrIndent)\(mrIndent)\(mrIndent).add_sample(15.0, 2.0 * 15.0)
+        \(mrIndent)\(mrIndent)\(mrIndent).add_sample(20.0, 2.0 * 20.0)
+        \(mrIndent)\(mrIndent)\(mrIndent).add_sample(25.0, 2.0 * 25.0)
+        \(mrIndent)\(mrIndent)\(mrIndent).add_sample(30.0, 2.0 * 30.0)
+        \(mrIndent)\(mrIndent)\(mrIndent).add_sample(35.0, 2.0 * 35.0)
+        \(mrIndent)\(mrIndent)\(mrIndent).add_sample(40.0, 2.0 * 40.0)
+        \(mrIndent)\(mrIndent)\(mrIndent).add_sample(45.0, 2.0 * 45.0);
+        }
 
         """
     }
@@ -105,6 +124,8 @@ enum MRWriter {
         let bank0Cyls = bank0Cylinders(layout: layout)
         let bank1Cyls = bank1Cylinders(layout: layout)
 
+        let vtec = spec.vtecEnabled
+
         var s = "public node \(nodeName)_camshaft_builder {\n"
         s += "\(mrIndent)input intake_lobe_profile;\n"
         s += "\(mrIndent)input exhaust_lobe_profile;\n"
@@ -112,45 +133,83 @@ enum MRWriter {
         s += "\(mrIndent)input intake_lobe_center: lobe_separation;\n"
         s += "\(mrIndent)input exhaust_lobe_center: lobe_separation;\n"
         s += "\(mrIndent)input advance: \(spec.camAdvanceDeg) * units.deg;\n"
-        s += "\(mrIndent)input base_radius: \(spec.camBaseRadiusIn) * units.inch;\n\n"
-
-        s += "\(mrIndent)output intake_cam_0: _intake_cam_0;\n"
-        s += "\(mrIndent)output exhaust_cam_0: _exhaust_cam_0;\n"
-        if layout.bankCount == 2 {
-            s += "\(mrIndent)output intake_cam_1: _intake_cam_1;\n"
-            s += "\(mrIndent)output exhaust_cam_1: _exhaust_cam_1;\n"
+        s += "\(mrIndent)input base_radius: \(spec.camBaseRadiusIn) * units.inch;\n"
+        if vtec {
+            s += "\(mrIndent)input vtec_intake_lobe_profile;\n"
+            s += "\(mrIndent)input vtec_exhaust_lobe_profile;\n"
+            s += "\(mrIndent)input vtec_lobe_separation: \(spec.vtecCamLobeSeparationDeg) * units.deg;\n"
+            s += "\(mrIndent)input vtec_intake_lobe_center: vtec_lobe_separation;\n"
+            s += "\(mrIndent)input vtec_exhaust_lobe_center: vtec_lobe_separation;\n"
         }
+        s += "\n"
+
+        s += camOutputs(bankCount: layout.bankCount, vtec: vtec)
 
         s += "\n"
         s += "\(mrIndent)camshaft_parameters params(advance: advance, base_radius: base_radius)\n\n"
-        s += "\(mrIndent)camshaft _intake_cam_0(params, lobe_profile: intake_lobe_profile)\n"
-        s += "\(mrIndent)camshaft _exhaust_cam_0(params, lobe_profile: exhaust_lobe_profile)\n"
-        if layout.bankCount == 2 {
-            s += "\(mrIndent)camshaft _intake_cam_1(params, lobe_profile: intake_lobe_profile)\n"
-            s += "\(mrIndent)camshaft _exhaust_cam_1(params, lobe_profile: exhaust_lobe_profile)\n"
-        }
+        s += camDeclarations(bankCount: layout.bankCount, vtec: vtec)
         s += "\n"
         s += "\(mrIndent)label rot(\(rotPerFiring) * units.deg)\n"
         s += "\(mrIndent)label rot360(360 * units.deg)\n\n"
 
-        s += lobesBlock(camName: "_intake_cam_0", intake: true,
+        // Standard (low-lift) lobes, placed by firing order.
+        s += lobesBlock(camName: "_intake_cam_0", center: "intake_lobe_center", intake: true,
                          cylinders: bank0Cyls, firingOrder: firingOrder)
-        s += lobesBlock(camName: "_exhaust_cam_0", intake: false,
+        s += lobesBlock(camName: "_exhaust_cam_0", center: "exhaust_lobe_center", intake: false,
                          cylinders: bank0Cyls, firingOrder: firingOrder)
         if layout.bankCount == 2 {
-            s += lobesBlock(camName: "_intake_cam_1", intake: true,
+            s += lobesBlock(camName: "_intake_cam_1", center: "intake_lobe_center", intake: true,
                              cylinders: bank1Cyls, firingOrder: firingOrder)
-            s += lobesBlock(camName: "_exhaust_cam_1", intake: false,
+            s += lobesBlock(camName: "_exhaust_cam_1", center: "exhaust_lobe_center", intake: false,
                              cylinders: bank1Cyls, firingOrder: firingOrder)
+        }
+        // VTEC (high-lift) lobes, same firing order with the tighter vtec centers.
+        if vtec {
+            s += lobesBlock(camName: "_vtec_intake_cam_0", center: "vtec_intake_lobe_center", intake: true,
+                             cylinders: bank0Cyls, firingOrder: firingOrder)
+            s += lobesBlock(camName: "_vtec_exhaust_cam_0", center: "vtec_exhaust_lobe_center", intake: false,
+                             cylinders: bank0Cyls, firingOrder: firingOrder)
+            if layout.bankCount == 2 {
+                s += lobesBlock(camName: "_vtec_intake_cam_1", center: "vtec_intake_lobe_center", intake: true,
+                                 cylinders: bank1Cyls, firingOrder: firingOrder)
+                s += lobesBlock(camName: "_vtec_exhaust_cam_1", center: "vtec_exhaust_lobe_center", intake: false,
+                                 cylinders: bank1Cyls, firingOrder: firingOrder)
+            }
         }
 
         s += "}\n"
         return s
     }
 
-    private static func lobesBlock(camName: String, intake: Bool,
+    /// Output declarations for the cam builder (low-lift cams always, vtec cams when enabled).
+    private static func camOutputs(bankCount: Int, vtec: Bool) -> String {
+        var s = ""
+        for bank in 0..<bankCount {
+            s += "\(mrIndent)output intake_cam_\(bank): _intake_cam_\(bank);\n"
+            s += "\(mrIndent)output exhaust_cam_\(bank): _exhaust_cam_\(bank);\n"
+            if vtec {
+                s += "\(mrIndent)output vtec_intake_cam_\(bank): _vtec_intake_cam_\(bank);\n"
+                s += "\(mrIndent)output vtec_exhaust_cam_\(bank): _vtec_exhaust_cam_\(bank);\n"
+            }
+        }
+        return s
+    }
+
+    private static func camDeclarations(bankCount: Int, vtec: Bool) -> String {
+        var s = ""
+        for bank in 0..<bankCount {
+            s += "\(mrIndent)camshaft _intake_cam_\(bank)(params, lobe_profile: intake_lobe_profile)\n"
+            s += "\(mrIndent)camshaft _exhaust_cam_\(bank)(params, lobe_profile: exhaust_lobe_profile)\n"
+            if vtec {
+                s += "\(mrIndent)camshaft _vtec_intake_cam_\(bank)(params, lobe_profile: vtec_intake_lobe_profile)\n"
+                s += "\(mrIndent)camshaft _vtec_exhaust_cam_\(bank)(params, lobe_profile: vtec_exhaust_lobe_profile)\n"
+            }
+        }
+        return s
+    }
+
+    private static func lobesBlock(camName: String, center: String, intake: Bool,
                                     cylinders: [Int], firingOrder: [Int]) -> String {
-        let center = intake ? "intake_lobe_center" : "exhaust_lobe_center"
         let sign = intake ? "+" : "-"
         var s = "\(mrIndent)\(camName)\n"
         for cyl in cylinders {
@@ -174,11 +233,16 @@ enum MRWriter {
         ]
         let scale = spec.portFlowScale
 
+        let vtec = spec.vtecEnabled
+        let vtecInputs = vtec
+            ? "\(mrIndent)input vtec_intake_camshaft;\n\(mrIndent)input vtec_exhaust_camshaft;\n"
+            : ""
+
         var s = """
         private node \(nodeName)_head {
         \(mrIndent)input intake_camshaft;
         \(mrIndent)input exhaust_camshaft;
-        \(mrIndent)input flip_display: false;
+        \(vtecInputs)\(mrIndent)input flip_display: false;
         \(mrIndent)alias output __out: head;
 
         \(mrIndent)function intake_flow(50 * units.thou)
@@ -204,15 +268,49 @@ enum MRWriter {
 
         \(mrIndent)\(mrIndent)intake_port_flow: intake_flow,
         \(mrIndent)\(mrIndent)exhaust_port_flow: exhaust_flow,
-        \(mrIndent)\(mrIndent)valvetrain: standard_valvetrain(
-        \(mrIndent)\(mrIndent)\(mrIndent)intake_camshaft: intake_camshaft,
-        \(mrIndent)\(mrIndent)\(mrIndent)exhaust_camshaft: exhaust_camshaft
-        \(mrIndent)\(mrIndent)),
+        \(mrIndent)\(mrIndent)valvetrain: \(valvetrainBlock(spec: spec)),
         \(mrIndent)\(mrIndent)flip_display: flip_display
         \(mrIndent))
         }
 
         """
+        return s
+    }
+
+    /// The valvetrain expression for the head — a vtec_valvetrain (low + high
+    /// cam, engaging at the crossover RPM) when VTEC is on, else standard.
+    private static func valvetrainBlock(spec: EngineSpec) -> String {
+        if spec.vtecEnabled {
+            return """
+            vtec_valvetrain(
+            \(mrIndent)\(mrIndent)\(mrIndent)min_rpm: \(spec.vtecCrossoverRpm) * units.rpm,
+            \(mrIndent)\(mrIndent)\(mrIndent)intake_camshaft: intake_camshaft,
+            \(mrIndent)\(mrIndent)\(mrIndent)exhaust_camshaft: exhaust_camshaft,
+            \(mrIndent)\(mrIndent)\(mrIndent)vtec_intake_camshaft: vtec_intake_camshaft,
+            \(mrIndent)\(mrIndent)\(mrIndent)vtec_exhaust_camshaft: vtec_exhaust_camshaft
+            \(mrIndent)\(mrIndent))
+            """
+        }
+        return """
+        standard_valvetrain(
+        \(mrIndent)\(mrIndent)\(mrIndent)intake_camshaft: intake_camshaft,
+        \(mrIndent)\(mrIndent)\(mrIndent)exhaust_camshaft: exhaust_camshaft
+        \(mrIndent)\(mrIndent))
+        """
+    }
+
+    /// `set_cylinder_head` calls for each bank, passing the vtec cams too when enabled.
+    private static func headInstall(nodeName: String, spec: EngineSpec) -> String {
+        func headCall(bank: Int, flip: Bool) -> String {
+            var args = "intake_camshaft: camshaft.intake_cam_\(bank), exhaust_camshaft: camshaft.exhaust_cam_\(bank)"
+            if spec.vtecEnabled {
+                args += ", vtec_intake_camshaft: camshaft.vtec_intake_cam_\(bank), vtec_exhaust_camshaft: camshaft.vtec_exhaust_cam_\(bank)"
+            }
+            if flip { args += ", flip_display: true" }
+            return "\(mrIndent)b\(bank).set_cylinder_head(\(nodeName)_head(\(args)))\n"
+        }
+        var s = headCall(bank: 0, flip: false)
+        if spec.layout.bankCount == 2 { s += headCall(bank: 1, flip: true) }
         return s
     }
 
@@ -269,8 +367,8 @@ enum MRWriter {
         return """
         \(mrIndent)engine engine(
         \(mrIndent)\(mrIndent)name: "\(spec.name)",
-        \(mrIndent)\(mrIndent)starter_torque: 200 * units.lb_ft,
-        \(mrIndent)\(mrIndent)starter_speed: 200 * units.rpm,
+        \(mrIndent)\(mrIndent)starter_torque: \(spec.starterTorqueLbFt) * units.lb_ft,
+        \(mrIndent)\(mrIndent)starter_speed: \(spec.starterSpeedRpm) * units.rpm,
         \(mrIndent)\(mrIndent)redline: \(spec.redlineRpm) * units.rpm,
         \(mrIndent)\(mrIndent)fuel: \(fuelStr),
         \(mrIndent)\(mrIndent)hf_gain: 0.01,
@@ -284,15 +382,18 @@ enum MRWriter {
     }
 
     private static func fuelBlock(_ fuel: FuelPreset) -> String {
+        // Shared across fuels: the faster flame curve + a calmer combustion
+        // randomness than the 0.5 default so the idle settles instead of hunting.
+        let common = "burning_efficiency_randomness: 0.3, turbulence_to_flame_speed_ratio: es_flame_speed()"
         switch fuel {
         case .gasoline:
-            return "fuel(max_burning_efficiency: 1.0)"
+            return "fuel(max_burning_efficiency: 1.0, \(common))"
         case .e85:
-            return "fuel(max_burning_efficiency: 0.95, molecular_afr: 9.7, energy_density: 33.1 * units.kJ / units.g)"
+            return "fuel(max_burning_efficiency: 0.95, molecular_afr: 9.7, energy_density: 33.1 * units.kJ / units.g, \(common))"
         case .methanol:
-            return "fuel(max_burning_efficiency: 0.9, molecular_afr: 6.5, energy_density: 19.7 * units.kJ / units.g)"
+            return "fuel(max_burning_efficiency: 0.9, molecular_afr: 6.5, energy_density: 19.7 * units.kJ / units.g, \(common))"
         case .diesel:
-            return "fuel(max_burning_efficiency: 0.85, molecular_afr: 14.5, energy_density: 45.5 * units.kJ / units.g)"
+            return "fuel(max_burning_efficiency: 0.85, molecular_afr: 14.5, energy_density: 45.5 * units.kJ / units.g, \(common))"
         }
     }
 
@@ -435,7 +536,7 @@ enum MRWriter {
             let primary = Double(bankCyls.count - 1 - idx) * 2.0 + 4.0
             s += """
             \(mrIndent)\(mrIndent).add_cylinder(
-            \(mrIndent)\(mrIndent)\(mrIndent)piston: piston(piston_params, blowby: k_28inH2O(0.1)),
+            \(mrIndent)\(mrIndent)\(mrIndent)piston: piston(piston_params, blowby: k_28inH2O(\(spec.blowby))),
             \(mrIndent)\(mrIndent)\(mrIndent)connecting_rod: connecting_rod(cr_params),
             \(mrIndent)\(mrIndent)\(mrIndent)rod_journal: \(rj),
             \(mrIndent)\(mrIndent)\(mrIndent)intake: intake,
@@ -451,6 +552,8 @@ enum MRWriter {
     }
 
     private static func camAndIgnitionInstall(spec: EngineSpec, nodeName: String) -> String {
+        let vtec = spec.vtecEnabled
+
         var s = """
         \(mrIndent)harmonic_cam_lobe intake_lobe(
         \(mrIndent)\(mrIndent)duration_at_50_thou: \(spec.camDurationDeg) * units.deg,
@@ -466,23 +569,47 @@ enum MRWriter {
         \(mrIndent)\(mrIndent)steps: 100
         \(mrIndent))
 
-        \(mrIndent)\(nodeName)_camshaft_builder camshaft(
-        \(mrIndent)\(mrIndent)intake_lobe_profile: intake_lobe,
-        \(mrIndent)\(mrIndent)exhaust_lobe_profile: exhaust_lobe,
-        \(mrIndent)\(mrIndent)lobe_separation: \(spec.camLobeSeparationDeg) * units.deg,
-        \(mrIndent)\(mrIndent)intake_lobe_center: \(spec.camLobeSeparationDeg) * units.deg,
-        \(mrIndent)\(mrIndent)exhaust_lobe_center: \(spec.camLobeSeparationDeg) * units.deg,
-        \(mrIndent)\(mrIndent)advance: \(spec.camAdvanceDeg) * units.deg,
-        \(mrIndent)\(mrIndent)base_radius: \(spec.camBaseRadiusIn) * units.inch
-        \(mrIndent))
-
 
         """
 
-        s += "\(mrIndent)b0.set_cylinder_head(\(nodeName)_head(intake_camshaft: camshaft.intake_cam_0, exhaust_camshaft: camshaft.exhaust_cam_0))\n"
-        if spec.layout.bankCount == 2 {
-            s += "\(mrIndent)b1.set_cylinder_head(\(nodeName)_head(intake_camshaft: camshaft.intake_cam_1, exhaust_camshaft: camshaft.exhaust_cam_1, flip_display: true))\n"
+        if vtec {
+            s += """
+            \(mrIndent)harmonic_cam_lobe vtec_intake_lobe(
+            \(mrIndent)\(mrIndent)duration_at_50_thou: \(spec.vtecCamDurationDeg) * units.deg,
+            \(mrIndent)\(mrIndent)gamma: 1.1,
+            \(mrIndent)\(mrIndent)lift: \(spec.vtecCamLiftMm) * units.mm,
+            \(mrIndent)\(mrIndent)steps: 100
+            \(mrIndent))
+
+            \(mrIndent)harmonic_cam_lobe vtec_exhaust_lobe(
+            \(mrIndent)\(mrIndent)duration_at_50_thou: \(spec.vtecCamDurationDeg) * units.deg,
+            \(mrIndent)\(mrIndent)gamma: 1.1,
+            \(mrIndent)\(mrIndent)lift: \(spec.vtecCamLiftMm * 0.98) * units.mm,
+            \(mrIndent)\(mrIndent)steps: 100
+            \(mrIndent))
+
+
+            """
         }
+
+        s += "\(mrIndent)\(nodeName)_camshaft_builder camshaft(\n"
+        s += "\(mrIndent)\(mrIndent)intake_lobe_profile: intake_lobe,\n"
+        s += "\(mrIndent)\(mrIndent)exhaust_lobe_profile: exhaust_lobe,\n"
+        s += "\(mrIndent)\(mrIndent)lobe_separation: \(spec.camLobeSeparationDeg) * units.deg,\n"
+        s += "\(mrIndent)\(mrIndent)intake_lobe_center: \(spec.camLobeSeparationDeg) * units.deg,\n"
+        s += "\(mrIndent)\(mrIndent)exhaust_lobe_center: \(spec.camLobeSeparationDeg) * units.deg,\n"
+        s += "\(mrIndent)\(mrIndent)advance: \(spec.camAdvanceDeg) * units.deg,\n"
+        if vtec {
+            s += "\(mrIndent)\(mrIndent)vtec_intake_lobe_profile: vtec_intake_lobe,\n"
+            s += "\(mrIndent)\(mrIndent)vtec_exhaust_lobe_profile: vtec_exhaust_lobe,\n"
+            s += "\(mrIndent)\(mrIndent)vtec_lobe_separation: \(spec.vtecCamLobeSeparationDeg) * units.deg,\n"
+            s += "\(mrIndent)\(mrIndent)vtec_intake_lobe_center: \(spec.vtecCamLobeSeparationDeg) * units.deg,\n"
+            s += "\(mrIndent)\(mrIndent)vtec_exhaust_lobe_center: \(spec.vtecCamLobeSeparationDeg) * units.deg,\n"
+        }
+        s += "\(mrIndent)\(mrIndent)base_radius: \(spec.camBaseRadiusIn) * units.inch\n"
+        s += "\(mrIndent))\n\n\n"
+
+        s += headInstall(nodeName: nodeName, spec: spec)
 
         s += "\n\(mrIndent)function timing_curve(1000 * units.rpm)\n"
         s += "\(mrIndent)timing_curve\n"

@@ -26,6 +26,13 @@ enum DesignAspiration: String, CaseIterable {
 
 enum DesignCamProfile: String, CaseIterable {
     case economy, stock, sport, race
+
+    var rank: Int {
+        switch self { case .economy: return 0; case .stock: return 1; case .sport: return 2; case .race: return 3 }
+    }
+    static func from(rank: Int) -> DesignCamProfile {
+        [.economy, .stock, .sport, .race][max(0, min(3, rank))]
+    }
 }
 
 enum DesignPowerBand: String, CaseIterable {
@@ -52,6 +59,22 @@ enum DesignSound: String, CaseIterable {
     case smooth, stock, aggressive, raw
 }
 
+/// Overall intended power level — the AI reads this from the prompt's sentiment
+/// ("slow"/"gutless" → weak, "high horsepower"/"monster" → extreme). Drives
+/// redline, breathing and cam aggressiveness so the engine matches the ask.
+enum DesignPerformance: String, CaseIterable {
+    case weak, modest, strong, extreme
+
+    var rank: Int {
+        switch self { case .weak: return 0; case .modest: return 1; case .strong: return 2; case .extreme: return 3 }
+    }
+}
+
+/// Mechanical condition / age — drives blowby (ring seal).
+enum DesignCondition: String, CaseIterable {
+    case fresh, normal, worn
+}
+
 // MARK: - Feature tags (specific mechanical things the user called out)
 
 enum DesignFeature: String, CaseIterable {
@@ -67,6 +90,8 @@ enum DesignFeature: String, CaseIterable {
     case highRedline
     case lightweightInternals
     case highBoost
+    case worn          // tired/high-mileage -> more blowby
+    case freshBuild    // freshly built -> perfect ring seal
 }
 
 // MARK: - EngineIntent
@@ -81,8 +106,11 @@ struct EngineIntent {
     var compressionRatio: Double?
     var aspiration: DesignAspiration?
     var fuel: FuelPreset?
+    var vtec: Bool?              // nil = not requested; true/false = explicit or brand-inferred
 
-    // Character (the vibe pass always supplies these)
+    // Character / sentiment (the AI passes always supply these)
+    var performance: DesignPerformance
+    var condition: DesignCondition
     var camProfile: DesignCamProfile
     var powerBand: DesignPowerBand
     var idle: DesignIdle
@@ -99,7 +127,8 @@ struct EngineIntent {
         EngineIntent(
             name: name,
             layout: nil, displacementL: nil, redlineRpm: nil,
-            compressionRatio: nil, aspiration: nil, fuel: nil,
+            compressionRatio: nil, aspiration: nil, fuel: nil, vtec: nil,
+            performance: .modest, condition: .normal,
             camProfile: .stock, powerBand: .broad, idle: .mild,
             vehicleClass: .sportsCar, sound: .stock, gearing: .balanced,
             features: []

@@ -403,7 +403,9 @@ struct DashRockerSwitch: View {
     }
 }
 
-private struct ArmedIgnitionSwitch: View {
+// Internal (not private) so the onboarding tutorial can render the real
+// ignition switch the user will actually use, rather than a lookalike.
+struct ArmedIgnitionSwitch: View {
     let isOn: Bool
     let toggle: () -> Void
 
@@ -430,7 +432,8 @@ private struct ArmedIgnitionSwitch: View {
 // ignition off; it just won't fire). Lights up red whenever the starter is
 // engaged, with a pulsing halo to communicate the cranking motor.
 
-private struct StarterButton: View {
+// Internal so the onboarding tutorial reuses the real starter button.
+struct StarterButton: View {
     let running: Bool
     let action: () -> Void
 
@@ -701,7 +704,8 @@ private struct DashWarningTile<Icon: Shape>: View {
 /// template so the warning icons (check engine, oil, coolant, clutch) match
 /// the hand-drawn lights' on/off colour behaviour. `flashing` pulses the
 /// glyph while active — used for catastrophic check-engine faults.
-private struct DashImageWarningTile: View {
+// Internal so the onboarding tutorial reuses the real CLUTCH dash tile.
+struct DashImageWarningTile: View {
     let label: String
     let active: Bool
     let accent: Color
