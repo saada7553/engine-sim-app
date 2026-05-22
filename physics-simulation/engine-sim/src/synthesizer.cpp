@@ -378,8 +378,10 @@ int16_t Synthesizer::renderAudio(int inputSample) {
     // boom (cat~1)+ducked engine stays just under the int16 ceiling, i.e. it is
     // LOUD but doesn't clip; no tanh squash (that was capping the bang at engine
     // level and is why there was "no bang"). Hard clamp is only a safety net.
-    constexpr float kCatLevel = 29500.0f;   // catastrophe peak (int16 domain)
-    constexpr float kCatDuck  = 0.92f;      // engine nearly muted under the bang
+    constexpr float kCatLevel = 30200.0f;   // catastrophe peak (int16 domain)
+    constexpr float kCatDuck  = 0.96f;      // duck engine HARD so the bang dominates
+                                            // (perceived "louder" without raising the
+                                            // peak into clipping — see note below)
     const float v_out =
         v_leveled * (1.0f - kCatDuck * std::min(1.0f, aCat))
         + cat * kCatLevel * m_audioParameters.volume;

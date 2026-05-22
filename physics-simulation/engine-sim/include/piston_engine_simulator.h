@@ -153,6 +153,7 @@ class PistonEngineSimulator : public Simulator {
         double m_catastropheRodWeight    = 1.0;
         double m_catastrophePistonWeight = 1.0;
         double m_catastropheValveWeight  = 1.0;
+        double m_catastropheRateMul      = 1.0;  // per-event impact-count randomization (>=1)
 
         // --- The BOOM (initial detonation) ---
         // Audible-band (~110-170 Hz) resonator driven by a short NOISE burst

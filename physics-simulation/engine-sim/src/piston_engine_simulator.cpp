@@ -54,6 +54,7 @@ PistonEngineSimulator::PistonEngineSimulator() {
     m_catastropheRodWeight = 1.0;
     m_catastrophePistonWeight = 1.0;
     m_catastropheValveWeight = 1.0;
+    m_catastropheRateMul = 1.0;
     m_boomY1 = 0.0;
     m_boomY2 = 0.0;
     m_boomA1 = 0.0;
@@ -829,8 +830,11 @@ void PistonEngineSimulator::writeToSynthesizer() {
         constexpr int    kMiniBoomBurstMin = 4;      // short burst (slight static)
         constexpr int    kMiniBoomBurstRand = 6;
         constexpr double kMiniBoomOutPeak  = 3.0e8;  // mini-boom target output
-        constexpr double kEventDurSec      = 0.9;    // debris window base duration
-        constexpr double kEventDurRand     = 0.7;
+        // Length/timing randomness only ever EXTENDS the event (floor stays at
+        // the approved baseline) so no money shift is ever sparser/shorter than
+        // before — it just varies upward.
+        constexpr double kEventDurSec      = 0.9;    // debris window FLOOR (baseline)
+        constexpr double kEventDurRand     = 1.1;    // -> 0.9-2.0s (more varied length)
         constexpr double kEventStartMs     = 90.0;   // boom-alone delay before debris
 
         // Soft-clip ceiling for the WET damage bus (knock + growl).
@@ -940,6 +944,8 @@ void PistonEngineSimulator::writeToSynthesizer() {
                 sampleRate * (kEventDurSec + u01(m_audioRng) * kEventDurRand));
             m_clanksRemaining = m_clankTotal;
             m_clankAmp        = sevAmp;   // base amplitude scale for impacts
+            // Randomize impact density (>=1, never sparser than baseline).
+            m_catastropheRateMul = 1.0 + 0.4 * u01(m_audioRng);   // 1.0-1.4
         }
 
         // ---- Step THE BOOM (audible-band punchy detonation) ----
@@ -978,7 +984,7 @@ void PistonEngineSimulator::writeToSynthesizer() {
             m_clanksRemaining--;
             const double progress = 1.0 - static_cast<double>(m_clanksRemaining)
                                   / std::max(1, m_clankTotal);     // 0 -> 1
-            const double rate = kImpactRateStart
+            const double rate = kImpactRateStart * m_catastropheRateMul
                 * std::exp(-progress * kImpactRateDecay) * m_catastropheSizeFactor;
             std::uniform_real_distribution<double> u01(0.0, 1.0);
             if (u01(m_audioRng) < rate * timestep) {
