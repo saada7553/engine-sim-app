@@ -915,8 +915,8 @@ void PistonEngineSimulator::writeToSynthesizer() {
             // Knock level scales with a dedicated RPM ramp (NOT attenuation_3,
             // which saturates at ~382 rpm and would make knock full-volume at
             // all driving speeds). At idle it's a faint background tick; it
-            // grows with engine speed. Overall gain kept low (×0.25) so knock
-            // is a layer UNDER the engine note, never the dominant sound.
+            // grows with engine speed. Overall gain kept very low (×0.04) so
+            // knock is a faint layer UNDER the engine note, never dominant.
             double knockOut = 0.0;
             if (m_knockBurstAmp[i] > 1.0) {
                 const double rawNoise = noise(m_audioRng);
@@ -924,7 +924,7 @@ void PistonEngineSimulator::writeToSynthesizer() {
                                   + 0.26 * rawNoise;
                 const double knockRpmScale = std::min(1.0, rpm / 4000.0);
                 knockOut = m_knockResonY1[i] * m_knockBurstAmp[i]
-                         * 0.25 * knockRpmScale;
+                         * 0.01 * knockRpmScale;
                 m_knockBurstAmp[i] *= 0.96;
             }
 
