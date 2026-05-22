@@ -210,6 +210,14 @@ if(NOT ENGINE_SIM_TARGETING_IOS)
         engine-sim
         engine-sim-script-interpreter
     )
+
+    add_executable(engine-sim-capture
+        src/capture_main.cpp
+    )
+    target_link_libraries(engine-sim-capture
+        engine-sim
+        engine-sim-script-interpreter
+    )
 endif()
 
 add_subdirectory(dependencies/submodules/csv-io)

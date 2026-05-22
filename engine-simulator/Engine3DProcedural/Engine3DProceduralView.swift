@@ -91,6 +91,9 @@ struct Engine3DProceduralView: _SCNViewRepresentable {
         context.coordinator.currentRPM = vm.rpm
         context.coordinator.currentCylinderHealths = vm.cylinderHealths
         context.coordinator.currentEngineWideHealth = vm.engineWideHealth
+        context.coordinator.currentCylinderIgnitionEnabled = vm.cylinderIgnitionEnabled
+        context.coordinator.currentAFR = vm.intakeAFR
+        context.coordinator.currentIgnitionOn = vm.isIgnitionOn
     }
 #else
     func makeUIView(context: Context) -> SCNView { makeSCNView(context: context) }
@@ -98,6 +101,9 @@ struct Engine3DProceduralView: _SCNViewRepresentable {
         context.coordinator.currentRPM = vm.rpm
         context.coordinator.currentCylinderHealths = vm.cylinderHealths
         context.coordinator.currentEngineWideHealth = vm.engineWideHealth
+        context.coordinator.currentCylinderIgnitionEnabled = vm.cylinderIgnitionEnabled
+        context.coordinator.currentAFR = vm.intakeAFR
+        context.coordinator.currentIgnitionOn = vm.isIgnitionOn
     }
 #endif
 
@@ -208,6 +214,11 @@ struct Engine3DProceduralView: _SCNViewRepresentable {
         // (health = 1.0) so we don't render an engine with all-red parts in
         // the brief moment before the first poll lands.
         var currentCylinderHealths: [CylinderHealthState] = []
+        // Combustion inputs, pushed each tick: per-cylinder ignition enable,
+        // live AFR (drives the flame colour), and whether ignition is on.
+        var currentCylinderIgnitionEnabled: [Bool] = []
+        var currentAFR: Double = 0.0
+        var currentIgnitionOn: Bool = false
         var currentEngineWideHealth: EngineWideHealthState = {
             let s = EngineWideHealthState()
             s.cylinderHead = 1.0
@@ -342,6 +353,18 @@ struct Engine3DProceduralView: _SCNViewRepresentable {
 
             guard let parts = parts else { return }
             ProceduralEngineAssembly.animate(parts: parts, crankAngle: accumulatedAngle)
+
+            // Combustion glow — locked to the same crank angle as the pistons.
+            ProceduralEngineAssembly.updateCombustion(
+                parts: parts,
+                crankAngle: accumulatedAngle,
+                ignitionEnabled: currentCylinderIgnitionEnabled,
+                afr: currentAFR,
+                cylinderHealths: currentCylinderHealths,
+                running: ProceduralEngineAssembly.isCombusting(rpm: currentRPM,
+                                                               ignitionOn: currentIgnitionOn),
+                wireframe: wireframe
+            )
 
             // Both modes recolour by per-part health; wireframe maps it to a
             // green→red hue, the solid view to a red-emission tint.

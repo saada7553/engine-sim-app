@@ -24,9 +24,14 @@ import simd
 
 private let mainJournalSegmentCount: Int = 24
 private let rodPinSegmentCount: Int = 20
-private let webBigArcSamples: Int = 56
-private let webSmallArcSamples: Int = 24
-private let webTangentSamples: Int = 6
+// Counterweight (web) contour resolution. The wireframe assembly drops to a
+// much coarser contour so the big counterweight discs read as a clean outline
+// instead of a dense fan of triangle edges. This affects ONLY the webs built
+// while a wireframe assembly is being constructed — the solid view and the
+// rest of the crankshaft (journals, pins, flange) are untouched.
+private var webBigArcSamples: Int   { ProceduralWireframeBuild.active ? 8 : 56 }
+private var webSmallArcSamples: Int { ProceduralWireframeBuild.active ? 4 : 24 }
+private var webTangentSamples: Int  { ProceduralWireframeBuild.active ? 1 : 6 }
 private let snoutLengthFactorOfBore: Double = 0.5
 private let mainJournalEndPadFactorOfBore: Double = 0.4
 private let frontSnoutRadiusBoost: Double = 1.2

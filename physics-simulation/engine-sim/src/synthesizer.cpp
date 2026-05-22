@@ -57,6 +57,12 @@ void Synthesizer::initialize(const Parameters &p) {
         m_inputChannels[i].data.initialize(p.inputBufferSize);
     }
 
+    // Dry catastrophe channel (full-bandwidth, bypasses convolution).
+    m_dryChannel.initialize(p.inputBufferSize);
+    m_dryTransferBuffer = new float[p.inputBufferSize];
+    m_dryLastSample = 0.0;
+    m_dryAntialiasing.setCutoffFrequency(m_audioSampleRate * 0.45f, m_audioSampleRate);
+
     m_filters = new ProcessingFilters[p.inputChannelCount];
     for (int i = 0; i < p.inputChannelCount; ++i) {
         m_filters[i].airNoiseLowPass.setCutoffFrequency(
@@ -137,6 +143,10 @@ void Synthesizer::destroy() {
     m_inputChannels = nullptr;
     m_filters = nullptr;
 
+    m_dryChannel.destroy();
+    delete[] m_dryTransferBuffer;
+    m_dryTransferBuffer = nullptr;
+
     m_inputChannelCount = 0;
 }
 
@@ -167,7 +177,7 @@ void Synthesizer::waitProcessed() {
     }
 }
 
-void Synthesizer::writeInput(const double *data) {
+void Synthesizer::writeInput(const double *data, double dry) {
     m_inputWriteOffset += (double)m_audioSampleRate / m_inputSampleRate;
     if (m_inputWriteOffset >= (double)m_inputBufferSize) {
         m_inputWriteOffset -= (double)m_inputBufferSize;
@@ -193,6 +203,24 @@ void Synthesizer::writeInput(const double *data) {
         m_inputChannels[i].lastInputSample = data[i];
     }
 
+    // Resample the dry catastrophe signal in lockstep with the channels above
+    // (same offsets) so it stays sample-aligned. Full-bandwidth antialiasing.
+    {
+        const double lastInputSample = m_dryLastSample;
+        const size_t baseIndex = m_dryChannel.writeIndex();
+        const double distance =
+            inputDistance(m_inputWriteOffset, m_lastInputSampleOffset);
+        double s = inputDistance(baseIndex, m_lastInputSampleOffset);
+        for (; s <= distance; s += 1.0) {
+            if (s >= m_inputBufferSize) s -= m_inputBufferSize;
+            const double f = s / distance;
+            const double sample = lastInputSample * (1 - f) + dry * f;
+            m_dryChannel.write(
+                m_dryAntialiasing.fast_f(static_cast<float>(sample)));
+        }
+        m_dryLastSample = dry;
+    }
+
     m_lastInputSampleOffset = m_inputWriteOffset;
 }
 
@@ -202,6 +230,7 @@ void Synthesizer::endInputBlock() {
     for (int i = 0; i < m_inputChannelCount; ++i) {
         m_inputChannels[i].data.removeBeginning(m_inputSamplesRead);
     }
+    m_dryChannel.removeBeginning(m_inputSamplesRead);
 
     if (m_inputChannelCount != 0) {
         m_latency = m_inputChannels[0].data.size();
@@ -241,6 +270,7 @@ void Synthesizer::renderAudio() {
     for (int i = 0; i < m_inputChannelCount; ++i) {
         m_inputChannels[i].data.read(n, m_inputChannels[i].transferBuffer);
     }
+    m_dryChannel.read(n, m_dryTransferBuffer);
 
     m_inputSamplesRead = n;
     m_processed = true;
@@ -332,7 +362,29 @@ int16_t Synthesizer::renderAudio(int inputSample) {
 
     m_levelingFilter.p_target = m_audioParameters.levelerTarget;
     const float v_leveled = m_levelingFilter.f(signal) * m_audioParameters.volume;
-    int r_int = std::lround(v_leveled);
+
+    // Mix the DRY catastrophe (boom/clanks) over the leveled engine as a
+    // separate MASTER-BUS one-shot, at a KNOWN output level in the int16 domain.
+    // This is the key fix: earlier the catastrophe was scaled by the engine's
+    // INTERNAL signal magnitude (unknown, post-convolution), so it was either
+    // inaudible or wrong. Here it is independent of that scale. It bypassed the
+    // reverberant exhaust convolution (so it's dry, no echo), and we sidechain-
+    // DUCK the engine when the catastrophe is loud so the boom dominates without
+    // the sum clipping. m_dryTransferBuffer is ~[-1,1] (normalized upstream).
+    const float cat = m_dryTransferBuffer[inputSample];   // ~[-1,1], |cat|<1
+    const float aCat = std::fabs(cat);
+    // The bang must SPIKE well above the engine — so it is mixed near FULL SCALE
+    // and the engine is ducked almost to silence under it. Levels are chosen so
+    // boom (cat~1)+ducked engine stays just under the int16 ceiling, i.e. it is
+    // LOUD but doesn't clip; no tanh squash (that was capping the bang at engine
+    // level and is why there was "no bang"). Hard clamp is only a safety net.
+    constexpr float kCatLevel = 29500.0f;   // catastrophe peak (int16 domain)
+    constexpr float kCatDuck  = 0.92f;      // engine nearly muted under the bang
+    const float v_out =
+        v_leveled * (1.0f - kCatDuck * std::min(1.0f, aCat))
+        + cat * kCatLevel * m_audioParameters.volume;
+
+    int r_int = std::lround(v_out);
     if (r_int > INT16_MAX) {
         r_int = INT16_MAX;
     }

@@ -70,7 +70,13 @@ class Synthesizer {
 
         int readAudioOutput(int samples, int16_t *buffer);
 
-        void writeInput(const double *data);
+        // `dry` is an extra signal (the catastrophe boom/clanks) that BYPASSES
+        // the per-channel exhaust processing — the derivative emphasis, the
+        // air-noise multiply and especially the impulse-response CONVOLUTION
+        // (a ~200ms reverberant exhaust IR that would smear it into echo and
+        // filter out its low end). It is normalized to ~[-1,1] and added to the
+        // post-convolution signal, scaled to the exhaust loudness in renderAudio.
+        void writeInput(const double *data, double dry = 0.0);
         void endInputBlock();
 
         void waitProcessed();
@@ -106,6 +112,12 @@ class Synthesizer {
 
         RingBuffer<int16_t> m_audioBuffer;
         int m_audioBufferSize;
+
+        // Dry catastrophe path (bypasses convolution; see writeInput).
+        RingBuffer<float> m_dryChannel;
+        float *m_dryTransferBuffer = nullptr;
+        double m_dryLastSample = 0.0;
+        ButterworthLowPassFilter<double> m_dryAntialiasing;
 
         float m_inputSampleRate;
         float m_audioSampleRate;

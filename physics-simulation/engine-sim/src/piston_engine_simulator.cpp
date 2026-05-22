@@ -50,19 +50,26 @@ PistonEngineSimulator::PistonEngineSimulator() {
 
     m_growlLP1 = 0.0;
     m_growlLP2 = 0.0;
-    m_catastrophicEventTimer = 0;
     m_catastropheSizeFactor = 1.0;
     m_catastropheRodWeight = 1.0;
     m_catastrophePistonWeight = 1.0;
     m_catastropheValveWeight = 1.0;
-    m_boomDelayRemaining = 0;
     m_boomY1 = 0.0;
     m_boomY2 = 0.0;
     m_boomA1 = 0.0;
     m_boomA2 = 0.0;
+    m_boomBurst = 0;
+    m_boomBurstAmp = 0.0;
+    m_boomBlastSamples = 0;
+    m_boomBlastAmp = 0.0;
+    m_boomBlastLP = 0.0;
     m_grindLP1 = 0.0;
     m_grindLP2 = 0.0;
     m_grindLP3 = 0.0;
+    m_crashVoiceNext = 0;
+    m_clankCountdown = 0;
+    m_clanksRemaining = 0;
+    m_clankAmp = 0.0;
     m_blockHumY1 = 0.0;
     m_blockHumY2 = 0.0;
 
@@ -242,6 +249,16 @@ double PistonEngineSimulator::getAverageOutputSignal() const {
     return sum / m_engine->getExhaustSystemCount();
 }
 
+void PistonEngineSimulator::configureResonator(
+    double freq, double Q, double &a1, double &a2) const
+{
+    const double sampleRate = static_cast<double>(getSimulationFrequency());
+    const double omega = 2.0 * constants::pi * freq / sampleRate;
+    const double r = std::exp(-constants::pi * freq / (Q * sampleRate));
+    a1 =  2.0 * r * std::cos(omega);
+    a2 = -r * r;
+}
+
 void PistonEngineSimulator::placeAndInitialize() {
     const int cylinderCount = m_engine->getCylinderCount();
     for (int i = 0; i < cylinderCount; ++i) {
@@ -305,14 +322,6 @@ void PistonEngineSimulator::placeAndInitialize() {
     //   a1 =  2·r·cos(omega)
     //   a2 = -r²
     // Impulse response: r^n · sin((n+1)·omega) / sin(omega) (damped sinusoid).
-    const double sampleRate = static_cast<double>(getSimulationFrequency());
-    auto configureResonator = [&](double freq, double Q, double &a1, double &a2) {
-        const double omega = 2.0 * constants::pi * freq / sampleRate;
-        const double r = std::exp(-constants::pi * freq / (Q * sampleRate));
-        a1 =  2.0 * r * std::cos(omega);
-        a2 = -r * r;
-    };
-
     // Knock: 1.2 + 1.8 kHz with VERY low Q (2.5 / 2.0). At this Q the
     // resonator barely rings — its impulse response decays in ~2-3 ms,
     // giving a dry CLICK with no reverb tail. The engine block is a solid
@@ -701,6 +710,11 @@ void PistonEngineSimulator::writeToSynthesizer() {
     //
     // Damage audio is mixed AFTER the delay filter and exhaust attenuation
     // because it radiates from the block, not down the exhaust runner.
+    // Normalized (~[-1,1]) DRY catastrophe signal sent alongside the exhaust to
+    // the synthesizer — it bypasses the reverberant exhaust convolution so the
+    // boom/clanks stay clean and dry. Set inside the block below.
+    double dryDamage = 0.0;
+
     if (thermal != nullptr && cylinderCount > 0
         && m_engine->getCrankshaftCount() > 0 && rpmFactor > 0.0) {
 
@@ -745,25 +759,96 @@ void PistonEngineSimulator::writeToSynthesizer() {
             m_lastCylAngle[i] = cylAngle;
         }
 
-        // Catastrophic event: DISCRETE impacts at ~80/sec peak rate (each
-        // ~12ms apart, audibly distinct) with broadband fracture noise per
-        // impact. Multi-resonator excitation per impact for broadband
-        // character. Random event duration 500-850ms for variation.
+        // ====================================================================
+        // CATASTROPHE AUDIO — a money-shift grenade. Two phases:
         //
-        // Key tuning to avoid clipping / TV-static:
-        //   - Impact rate kept low so each is heard as a distinct event
-        //   - Noise burst per impact decays in ~3ms (cleanly silent between)
-        //   - Resonator drive amplitudes reduced ~4× from prior version
-        //   - All amplitudes engineered to sit below exhaust pulse peak
-        constexpr double kImpactNoisePeak = 1.5e8;
+        //   1. THE BOOM — the engine lets go: a single LOUD detonation. Made of
+        //      a sharp low-mid BLAST transient (a short noise burst — the "punch"
+        //      of the explosion) layered over a deep, punchy low resonator body.
+        //      It is the dominant event and is heard ALONE before the debris.
+        //
+        //   2. THE CLANKS — parts breaking loose and tumbling inside the block:
+        //      a randomized SEQUENCE of discrete DULL metallic clanks. Each clank
+        //      is a short noise burst through a LOW-Q resonator, so it THUNKS and
+        //      dies fast — a dead, inharmonic metal-on-metal clank, NOT a ringing
+        //      tone (high-Q resonators ring like piano strings, which is wrong).
+        //      The TIME BETWEEN clanks is irregular and randomized — clusters,
+        //      gaps, and a general thinning-out as the debris settles. Pitch,
+        //      Q, amplitude, count and timing are ALL randomized per event, so
+        //      no two grenades sound alike.
+        //
+        // No sustained noise anywhere (that just sounds like wind). Every element
+        // is a sharp transient. The whole damage bus is soft-clipped (tanh) so it
+        // can be loud without harsh digital clipping that wrecks speakers.
+        // ====================================================================
 
-        double damageAudio = 0.0;
+        // IMPORTANT — two facts drive every amplitude/frequency choice here,
+        // both VERIFIED with an offline resonator sim (see money-shift memory):
+        //  (1) A resonator's gain scales ~1/frequency (a 60 Hz hit gets ~50x the
+        //      gain of a 3 kHz hit), so to make every element come out at the
+        //      loudness we ask for, burst amplitude = targetOutput*sin(omega).
+        //  (2) Real speakers roll off below ~100 Hz. A 45-80 Hz "boom" is simply
+        //      INAUDIBLE on them (that's why earlier booms vanished), and low
+        //      clanks get lost (everything sounded "all high pitch"). So the
+        //      boom's punch lives at ~110-170 Hz and clanks are tilted to favour
+        //      the audible low-mids.
 
-        // Lambda: fire a single COMPOUND IMPACT. All three resonators get
-        // hit simultaneously (weighted by failure type) plus a direct
-        // broadband noise burst. Amplitudes are TUNED so each impact reads
-        // as a discrete event, not a contribution to a wall of noise.
-        auto fireImpact = [&](int cyl, double ampScale) {
+        // ---- BOOM (initial detonation) — the dominant event ----
+        // An explosion = a sharp BROADBAND BLAST (fast-decaying noise burst, the
+        // "crack/punch") layered over a punchy LOW BODY (resonator thump). A pure
+        // low tone alone does NOT read as a bang; the broadband blast is what
+        // makes it a BANG. The blast decays fast (~10ms) so it's a crack, not a
+        // sustained "fart"; it's lowpassed so it's a deep crack, not bright hiss.
+        constexpr double kBoomFreqMin    = 80.0;    // Hz, low body thump
+        constexpr double kBoomFreqRand   = 55.0;    // -> 80-135 Hz
+        constexpr double kBoomQMin       = 5.0;     // punchy body (longer: ~90-160ms)
+        constexpr double kBoomQRand      = 4.0;     // -> Q 5-9
+        constexpr double kBoomOutPeak    = 5.5e8;   // TARGET body output (LOUD)
+        constexpr int    kBoomBurstMin   = 2;       // body resonator excitation samples
+        constexpr int    kBoomBurstRand  = 3;       // -> 2-4
+        constexpr double kBoomBurstNorm  = 1.3;     // multi-sample energy correction
+        constexpr double kBoomBlastAmp   = 9.0e8;   // broadband blast (the crack)
+        constexpr double kBoomBlastMs    = 55.0;    // blast duration (longer)
+        constexpr double kBoomBlastMsRand = 22.0;
+        constexpr double kBoomBlastDecay = 0.9974;  // per-sample (~11ms, longer tail)
+        constexpr double kBoomBlastLPA   = 0.74;    // lowpass ~2.2 kHz (deep crack)
+
+        // ---- BREAKING DEBRIS ----
+        // Original-style metallic IMPACTS (rod/piston/valve block resonators +
+        // a short grind-noise burst) PLUS occasional quieter MINI-BOOMS (low
+        // thumps = small, cleaner versions of the main bang, with a short = less
+        // static blast). Fired by a decaying-rate event window.
+        constexpr double kImpactNoisePeak  = 1.2e8;  // grind-noise per-impact amp
+        constexpr double kImpactRateStart  = 26.0;   // hits/sec at onset
+        constexpr double kImpactRateDecay  = 2.6;    // thins out over the event
+        constexpr double kMiniBoomProb     = 0.38;   // fraction of hits = mini-booms
+        constexpr double kMiniBoomFreqMin  = 60.0;   // Hz
+        constexpr double kMiniBoomFreqRand = 120.0;  // -> 60-180 Hz
+        constexpr double kMiniBoomQMin     = 3.0;
+        constexpr double kMiniBoomQRand    = 4.0;    // -> Q 3-7
+        constexpr int    kMiniBoomBurstMin = 4;      // short burst (slight static)
+        constexpr int    kMiniBoomBurstRand = 6;
+        constexpr double kMiniBoomOutPeak  = 3.0e8;  // mini-boom target output
+        constexpr double kEventDurSec      = 0.9;    // debris window base duration
+        constexpr double kEventDurRand     = 0.7;
+        constexpr double kEventStartMs     = 90.0;   // boom-alone delay before debris
+
+        // Soft-clip ceiling for the WET damage bus (knock + growl).
+        constexpr double kDamageSoftClip = 6.5e8;
+
+        const double sampleRate = static_cast<double>(getSimulationFrequency());
+
+        double damageAudio = 0.0;   // WET: knock + growl (convolved with exhaust)
+        double boomBus     = 0.0;   // DRY: the BANG (must dominate)
+        double clankBus    = 0.0;   // DRY: breaking debris (kept below the bang)
+
+        // Fire one metallic IMPACT — a rod/piston/valve letting go (the original
+        // breaking sound): kick the per-cylinder block resonators (weighted by
+        // what actually failed) plus a short grind-noise burst for impact texture.
+        auto fireImpact = [&](double ampScale) {
+            std::uniform_real_distribution<double> u01(0.0, 1.0);
+            const int cyl =
+                static_cast<int>(u01(m_audioRng) * cylinderCount) % cylinderCount;
             m_rodBurstSamples[cyl]    = kRodBurstSamples    * 2;
             m_rodBurstAmp[cyl]        = kRodExciteMax    * ampScale
                                       * m_catastropheRodWeight    * 0.8;
@@ -773,27 +858,41 @@ void PistonEngineSimulator::writeToSynthesizer() {
             m_valveBurstSamples[cyl]  = kValveBurstSamples  * 2;
             m_valveBurstAmp[cyl]      = kValveExciteMax  * ampScale
                                       * m_catastropheValveWeight  * 0.8;
-            // Each impact = a short burst of broadband noise. Use ADDITIVE
-            // mixing so close impacts stack (but bounded by exponential
-            // decay so they don't accumulate to wall-of-noise).
-            const double newAmp = ampScale * kImpactNoisePeak
-                                * m_catastropheSizeFactor;
-            m_grindLP1 = std::min(m_grindLP1 + newAmp, 2.0 * kImpactNoisePeak);
+            m_grindLP1 = std::min(
+                m_grindLP1 + ampScale * kImpactNoisePeak * m_catastropheSizeFactor,
+                2.0 * kImpactNoisePeak);
+        };
+
+        // Fire one MINI-BOOM — a quieter, cleaner version of the main bang: a low
+        // resonator thump (random freq/Q) kicked by a SHORT noise burst (a little
+        // "static", less than the main blast). Voiced through the resonator pool
+        // so several can overlap. Gain-compensated so its loudness is predictable.
+        auto fireMiniBoom = [&](double ampScale) {
+            std::uniform_real_distribution<double> u01(0.0, 1.0);
+            const int v = m_crashVoiceNext;
+            m_crashVoiceNext = (m_crashVoiceNext + 1) % kCrashVoices;
+            const double freq = kMiniBoomFreqMin
+                              + u01(m_audioRng) * kMiniBoomFreqRand;
+            const double Q = kMiniBoomQMin + u01(m_audioRng) * kMiniBoomQRand;
+            configureResonator(freq, Q, m_crashVA1[v], m_crashVA2[v]);
+            const double omega = kTwoPi * freq / sampleRate;
+            m_crashVBurst[v]    = kMiniBoomBurstMin
+                + static_cast<int>(u01(m_audioRng) * kMiniBoomBurstRand);
+            m_crashVBurstAmp[v] = ampScale * kMiniBoomOutPeak * std::sin(omega);
+            m_crashVY1[v] = 0.0;
+            m_crashVY2[v] = 0.0;
         };
 
         if (thermal->popCatastrophicEvent()) {
             const auto counts = thermal->popCatastropheCounts();
             const double sizeFactor = std::sqrt(
                 std::max(1.0, static_cast<double>(cylinderCount) / 4.0));
-
-            // Random event duration: 420–530ms. Slightly shorter, still
-            // long enough for a sequence of impacts.
             std::uniform_real_distribution<double> u01(0.0, 1.0);
-            m_catastrophicEventTimer = 18500 + static_cast<int>(
-                u01(m_audioRng) * 5000);
+
             m_catastropheSizeFactor = sizeFactor;
 
-            // Per-failure-type weights determine which resonator dominates.
+            // Per-failure-type weights tilt the clank pitch: rod/crank failures
+            // clank LOW (deep), valve/cam failures clank HIGH (bright).
             const double rodW =
                 1.0 + counts.rods * 2.5 + (counts.crank ? 6.0 : 0.0);
             const double pistonW =
@@ -805,96 +904,121 @@ void PistonEngineSimulator::writeToSynthesizer() {
             m_catastropheRodWeight    = rodW    / total;
             m_catastrophePistonWeight = pistonW / total;
             m_catastropheValveWeight  = valveW  / total;
-
-            // Severity for impact loudness.
             const double sevScale = std::min(3.0, total / 4.0);
+            // Gentle, CLAMPED loudness factor (worse failure = a bit louder).
+            // NOT sizeFactor*sevScale — that hit ~5x and slammed the soft-clip
+            // into buzzy distortion. The synth's leveler sets overall loudness;
+            // here we only need the relative balance (boom > clanks) to hold.
+            const double sevAmp = 0.8 + 0.25 * std::min(2.0, sevScale);
 
-            // === THE BOOM ===
-            // One deep, loud, RANDOMIZED initial detonation — the moment the
-            // engine lets go. Plays alone first; the breaking clatter waits
-            // ~110ms (m_boomDelayRemaining) so the BOOM is heard distinctly.
-            // Randomized freq/Q each event so no two booms sound identical.
-            const double sampleRate =
-                static_cast<double>(getSimulationFrequency());
-            const double boomFreq = 38.0 + u01(m_audioRng) * 34.0;  // 38-72 Hz
-            const double boomQ    = 7.0  + u01(m_audioRng) * 8.0;   // 7-15
-            const double bOmega = kTwoPi * boomFreq / sampleRate;
-            const double bR = std::exp(-constants::pi * boomFreq
-                                       / (boomQ * sampleRate));
-            m_boomA1 =  2.0 * bR * std::cos(bOmega);
-            m_boomA2 = -bR * bR;
-            // Kick the boom resonator. Low-freq resonators have high gain
-            // (~1/sin(omega)); excitation amplitude is sized so the output
-            // peak is a big, deep, audible BOOM. Randomized amplitude too.
-            const double boomExcite = (2.5e6 + u01(m_audioRng) * 3.5e6)
-                                    * sizeFactor * sevScale;
-            m_boomY1 = boomExcite;
+            // ---- THE BOOM ----
+            // Audible-band (~110-170 Hz) resonator excited by a short NOISE burst
+            // (punchy thud + harmonics, gain-compensated to come out LOUD) plus a
+            // broadband CLICK for the sharp detonation crack. Frequency/Q/amp
+            // randomized each event.
+            const double boomFreq = kBoomFreqMin + u01(m_audioRng) * kBoomFreqRand;
+            const double boomQ    = kBoomQMin    + u01(m_audioRng) * kBoomQRand;
+            configureResonator(boomFreq, boomQ, m_boomA1, m_boomA2);
+            const double boomOmega = kTwoPi * boomFreq / sampleRate;
+            m_boomY1 = 0.0;
             m_boomY2 = 0.0;
-            // A short broadband crack rides ON TOP of the boom's attack —
-            // the sharp "fracture" transient. Brief, then the deep boom body.
-            m_grindLP1 = kImpactNoisePeak * sizeFactor * sevScale * 0.5;
+            m_boomBurst = kBoomBurstMin
+                        + static_cast<int>(u01(m_audioRng) * kBoomBurstRand);
+            m_boomBurstAmp = kBoomOutPeak * (0.85 + 0.3 * u01(m_audioRng))
+                           * sevAmp * std::sin(boomOmega) / kBoomBurstNorm;
+            m_boomBlastSamples = static_cast<int>(
+                (kBoomBlastMs + u01(m_audioRng) * kBoomBlastMsRand)
+                * 0.001 * sampleRate);
+            m_boomBlastAmp = kBoomBlastAmp * (0.8 + 0.4 * u01(m_audioRng)) * sevAmp;
+            m_boomBlastLP  = 0.0;
 
-            // Hold off the breaking clatter so the BOOM stands alone first.
-            m_boomDelayRemaining = static_cast<int>(0.11 * sampleRate); // ~110ms
+            // ---- Open the DEBRIS event window ----
+            // Impacts + mini-booms fire over this window at a decaying rate; it
+            // opens after a short delay so the boom is heard alone first.
+            m_clankCountdown  = static_cast<int>(kEventStartMs * 0.001 * sampleRate);
+            m_clankTotal      = static_cast<int>(
+                sampleRate * (kEventDurSec + u01(m_audioRng) * kEventDurRand));
+            m_clanksRemaining = m_clankTotal;
+            m_clankAmp        = sevAmp;   // base amplitude scale for impacts
         }
 
-        // Step the BOOM resonator every sample while it has energy. Deep
-        // sub-bass body that decays over ~150-300ms depending on the random
-        // Q. Mixed into damageAudio so it rides the same RPM/load gating.
+        // ---- Step THE BOOM (audible-band punchy detonation) ----
+        // Resonator driven by a short INPUT noise burst (gives the resonator its
+        // big low-frequency gain -> loud, punchy thud with harmonics) plus a
+        // brief broadband click for the sharp attack crack.
         {
-            const double yBoom = m_boomA1 * m_boomY1 + m_boomA2 * m_boomY2;
+            double x = 0.0;
+            if (m_boomBurst > 0) {
+                x = noise(m_audioRng) * m_boomBurstAmp;
+                m_boomBurst--;
+            }
+            const double y = m_boomA1 * m_boomY1 + m_boomA2 * m_boomY2 + x;
             m_boomY2 = m_boomY1;
-            m_boomY1 = yBoom;
-            damageAudio += yBoom;
-        }
-
-        // Count down the boom-delay before clatter starts.
-        if (m_boomDelayRemaining > 0) m_boomDelayRemaining--;
-
-        // EVENT WINDOW: sparse discrete sub-impacts at ~25/sec peak rate
-        // (impacts ~40ms apart at start — clearly distinct events). Held off
-        // until the BOOM delay expires so the deep boom plays alone first.
-        if (m_catastrophicEventTimer > 0 && cylinderCount > 0) {
-            m_catastrophicEventTimer--;
-            const double progress = 1.0 - static_cast<double>(
-                m_catastrophicEventTimer) / 23500.0;
-
-            // 25/sec peak → ~2/sec by end. Very sparse — each impact is a
-            // clearly distinct hit (~40ms apart at the start).
-            const double burstRate =
-                25.0 * std::exp(-progress * 3.0) * m_catastropheSizeFactor;
-
-            std::uniform_real_distribution<double> u01(0.0, 1.0);
-            if (m_boomDelayRemaining <= 0
-                && u01(m_audioRng) < burstRate * timestep) {
-                const int cyl =
-                    static_cast<int>(u01(m_audioRng) * cylinderCount)
-                    % cylinderCount;
-                const double ampRand = 0.5 + u01(m_audioRng) * 1.0;
-                const double envelope = 1.0 - 0.6 * progress;
-                fireImpact(cyl, ampRand * envelope);
+            m_boomY1 = y;
+            boomBus += y;
+            // Explosive broadband blast — the sharp crack of the detonation.
+            if (m_boomBlastSamples > 0) {
+                const double bn = noise(m_audioRng);
+                m_boomBlastLP = kBoomBlastLPA * m_boomBlastLP
+                              + (1.0 - kBoomBlastLPA) * bn;
+                boomBus += m_boomBlastLP * m_boomBlastAmp;
+                m_boomBlastAmp *= kBoomBlastDecay;
+                m_boomBlastSamples--;
             }
         }
 
-        // Direct broadband impact noise — LPF'd to ~1.8 kHz so the content
-        // sits in the same mid-low band as the resonators (NOT a brittle
-        // 20 kHz hiss like white noise — that's what was sounding like TV
-        // static). m_grindLP1 holds the current amplitude (decays
-        // exponentially); m_grindLP2 holds the LPF state for the noise.
-        if (m_grindLP1 > 1.0) {
-            const double rawNoise = noise(m_audioRng);
-            // Lower cutoff (~1.4 kHz) — even less brittle hiss. Cascade two
-            // poles for a steeper rolloff so virtually no high-freq static.
-            constexpr double kLpfA = 0.82;
-            m_grindLP2 = kLpfA * m_grindLP2 + (1.0 - kLpfA) * rawNoise;
-            m_grindLP3 = kLpfA * m_grindLP3 + (1.0 - kLpfA) * m_grindLP2;
-            damageAudio += m_grindLP3 * m_grindLP1 * 5.0;
-            m_grindLP1 *= 0.9955;   // ~2 ms half-life — tighter per-impact
+        // ---- DEBRIS event window: metallic impacts + mini-booms ----
+        // After a short boom-alone delay, fire hits at a rate that decays over the
+        // event (dense as it lets go, thinning as it settles). Each hit is mostly
+        // an original-style metallic IMPACT, sometimes a quieter MINI-BOOM. Every
+        // parameter (timing, which-hit, amplitude, pitch) is randomized.
+        if (m_clankCountdown > 0) {
+            m_clankCountdown--;
+        } else if (m_clanksRemaining > 0 && cylinderCount > 0) {
+            m_clanksRemaining--;
+            const double progress = 1.0 - static_cast<double>(m_clanksRemaining)
+                                  / std::max(1, m_clankTotal);     // 0 -> 1
+            const double rate = kImpactRateStart
+                * std::exp(-progress * kImpactRateDecay) * m_catastropheSizeFactor;
+            std::uniform_real_distribution<double> u01(0.0, 1.0);
+            if (u01(m_audioRng) < rate * timestep) {
+                const double amp = m_clankAmp * (0.4 + 0.8 * u01(m_audioRng))
+                                 * (1.0 - 0.5 * progress);   // settles, varied
+                if (u01(m_audioRng) < kMiniBoomProb) fireMiniBoom(amp);
+                else                                 fireImpact(amp);
+            }
         }
 
-        // Step resonators and sum.
-        // Step resonators (declared earlier so the grinding-noise layer above
-        // can also write into damageAudio).
+        // ---- Grind-noise texture under the impacts (decays per impact) ----
+        if (m_grindLP1 > 1.0) {
+            const double rawNoise = noise(m_audioRng);
+            constexpr double kLpfA = 0.82;            // ~1.4 kHz, no brittle hiss
+            m_grindLP2 = kLpfA * m_grindLP2 + (1.0 - kLpfA) * rawNoise;
+            m_grindLP3 = kLpfA * m_grindLP3 + (1.0 - kLpfA) * m_grindLP2;
+            clankBus += m_grindLP3 * m_grindLP1 * 5.0;
+            m_grindLP1 *= 0.9955;
+        }
+
+        // ---- Step the mini-boom voice pool ----
+        {
+            double clankOut = 0.0;
+            for (int v = 0; v < kCrashVoices; ++v) {
+                double x = 0.0;
+                if (m_crashVBurst[v] > 0) {
+                    x = noise(m_audioRng) * m_crashVBurstAmp[v];
+                    m_crashVBurst[v]--;
+                }
+                const double y = m_crashVA1[v] * m_crashVY1[v]
+                               + m_crashVA2[v] * m_crashVY2[v] + x;
+                m_crashVY2[v] = m_crashVY1[v];
+                m_crashVY1[v] = y;
+                clankOut += y;
+            }
+            clankBus += clankOut;
+        }
+
+        // Step the per-cylinder accent resonators (rod/piston/valve) and the
+        // per-cylinder knock click, summing into damageAudio.
         for (int i = 0; i < cylinderCount; ++i) {
             double rodIn = 0.0;
             if (m_rodBurstSamples[i] > 0) {
@@ -949,7 +1073,8 @@ void PistonEngineSimulator::writeToSynthesizer() {
                 m_knockBurstAmp[i] *= kKnockEnvDecay;
             }
 
-            damageAudio += yR + yP + yV + knockOut;
+            clankBus    += yR + yP + yV;   // dry: chunk debris (block resonators)
+            damageAudio += knockOut;       // wet: knock stays on the exhaust path
         }
 
         // Bearing growl — filtered white noise, NOT a sine wave. Real worn
@@ -960,8 +1085,6 @@ void PistonEngineSimulator::writeToSynthesizer() {
         // Two stages give a sharper cutoff and a more "throaty" feel.
         const double growlLevel = thermal->getBearingWhineLevel();
         if (growlLevel > 0.0) {
-            const double sampleRate =
-                static_cast<double>(getSimulationFrequency());
             constexpr double kGrowlCutoffHz = 180.0;
             const double a = std::exp(-kTwoPi * kGrowlCutoffHz / sampleRate);
             const double rawNoise = noise(m_audioRng);
@@ -973,20 +1096,34 @@ void PistonEngineSimulator::writeToSynthesizer() {
                          * kWhinePeak * 10.0 * m_growlLP2;
         }
 
-        // Scale the entire damage layer by attenuation_3 (engine-load factor)
-        // PLUS rpmFactor (rotation gate). The result: damage audio always
-        // sits at a fraction of the current exhaust level. At idle the
-        // exhaust pulses are small and so is the damage. Under load both
-        // grow together. Damage is heard ON the engine, never INSTEAD of it.
+        // WET damage (knock + growl) rides the exhaust path (convolution etc.),
+        // gated by load + rpm so it sits as a layer on the engine note. The
+        // tanh keeps dense moments from clipping hard.
         if (exhaustSystemCount > 0) {
             const double loadGate = attenuation_3 * rpmFactor;
-            const double perChannel = damageAudio * loadGate
-                                    / exhaustSystemCount;
+            const double wet = kDamageSoftClip
+                * std::tanh(damageAudio / kDamageSoftClip);
+            const double perChannel = wet * loadGate / exhaustSystemCount;
             for (int j = 0; j < exhaustSystemCount; ++j) {
                 m_exhaustFlowStagingBuffer[j] += perChannel;
             }
         }
+
+        // DRY catastrophe -> normalized to ~[-1,1], sent on the dry synthesizer
+        // path that BYPASSES the reverberant exhaust convolution (no echo) and is
+        // mixed at a known master-bus level. The BANG and the CLANKS are
+        // normalized SEPARATELY so the bang reliably DOMINATES: the boom bus
+        // saturates toward full scale (kBoomNorm below its peak), while the clank
+        // bus is capped at kClankCatMax (< 1) so debris is always clearly quieter
+        // than the bang. They rarely overlap; the sum is clamped for safety.
+        constexpr double kBoomNorm    = 7.0e7;   // boom saturates HARD -> dense, loud
+        constexpr double kClankNorm   = 1.8e8;
+        constexpr double kClankCatMax = 0.7;     // debris ceiling (below the bang)
+        const double catBoom  = std::tanh(boomBus / kBoomNorm);
+        const double catClank = kClankCatMax * std::tanh(clankBus / kClankNorm);
+        double cat = (catBoom + catClank) * rpmFactor;
+        dryDamage = std::max(-1.0, std::min(1.0, cat));
     }
 
-    synthesizer().writeInput(m_exhaustFlowStagingBuffer);
+    synthesizer().writeInput(m_exhaustFlowStagingBuffer, dryDamage);
 }

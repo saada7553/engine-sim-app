@@ -32,7 +32,7 @@ enum ProceduralWireframeBuild {
     static var active = false
 
     /// Cam-lobe contour points: full detail vs. coarse wireframe.
-    static let lobeContourPoints = 14
+    static let lobeContourPoints = 9
     /// Bezier flatness for the extruded fan-blade silhouette in wireframe.
     static let fanBladeFlatness: CGFloat = 0.12
 }
@@ -46,6 +46,9 @@ final class ProceduralEngineParts {
     var pistons: [SCNNode] = []          // index = cylinderNumber - 1
     var rods: [SCNNode] = []
     var wristPins: [SCNNode] = []
+    /// Per-cylinder combustion glow that fills the chamber during the power
+    /// stroke. Index = cylinderNumber - 1. Hidden until the cylinder fires.
+    var combustion: [SCNNode] = []
     /// Cylinder head per bank. Used for engine-wide head damage tinting.
     var heads: [SCNNode] = []
 
@@ -100,6 +103,7 @@ enum ProceduralEngineAssembly {
         parts.pistons = Array(repeating: SCNNode(), count: params.cylinders.count)
         parts.rods = Array(repeating: SCNNode(), count: params.cylinders.count)
         parts.wristPins = Array(repeating: SCNNode(), count: params.cylinders.count)
+        parts.combustion = Array(repeating: SCNNode(), count: params.cylinders.count)
         parts.valveSetsByCylinder = Array<ProceduralEngineParts.ValveSet?>(
             repeating: nil, count: params.cylinders.count)
         parts.intakeCams = Array(repeating: SCNNode(), count: params.bankCount)
@@ -173,6 +177,14 @@ enum ProceduralEngineAssembly {
         pin.position = SCNVector3(0, yOffset, 0)
         bankPivot.addChildNode(pin)
         parts.wristPins[idx] = pin
+
+        // Combustion glow — a bore-diameter cylinder filling the chamber. It
+        // sits along the bore axis (bank-local Z); height + position are driven
+        // per-frame in `updateCombustion`. Hidden until the cylinder fires.
+        let burn = makeCombustionNode(params: params)
+        burn.position = SCNVector3(0, yOffset, Float(params.deckHeight))
+        bankPivot.addChildNode(burn)
+        parts.combustion[idx] = burn
 
         // Valves: 2 intake + 2 exhaust per cylinder, split along Y so they sit
         // either side of the cylinder center.
@@ -318,6 +330,146 @@ enum ProceduralEngineAssembly {
         }
     }
 
+    // MARK: - Combustion glow
+    //
+    // A per-cylinder glowing cylinder that ignites at the power-stroke TDC and
+    // expands downward to fill the chamber as the piston descends, then fades
+    // out by the bottom of the stroke. Colour is orange, shifted by the live
+    // AFR (rich → deep orange, lean → pale yellow). Only fires when the engine
+    // is running, that cylinder's ignition is enabled, and it still holds
+    // enough compression to burn. The wireframe view draws the same shape as
+    // faint lines.
+
+    private static let combustionFillFactor: Double = 0.9            // of bore radius
+    private static let combustionRoofClearanceFactor: Double = 0.07  // roof above TDC crown, ×bore
+    private static let combustionMinHealth: Double = 0.18            // below this the cylinder won't burn
+    private static let combustionRunRpm: Double = 400               // engine "firing" above this rpm
+    private static let combustionSolidOpacity: Double = 0.85
+    private static let combustionWireOpacity: Double = 0.35
+    private static let combustionRadialSolid: Int = 24
+    private static let combustionRadialWire: Int = 10
+
+    /// Whether the engine should be showing combustion at all (running + lit).
+    static func isCombusting(rpm: Double, ignitionOn: Bool) -> Bool {
+        ignitionOn && rpm > combustionRunRpm
+    }
+
+    private static func makeCombustionNode(params: EngineGeometryParams) -> SCNNode {
+        let wire = ProceduralWireframeBuild.active
+        let radius = params.bore * 0.5 * combustionFillFactor
+        let geo = SCNCylinder(radius: CGFloat(radius), height: 1.0)
+        geo.radialSegmentCount = wire ? combustionRadialWire : combustionRadialSolid
+
+        let m = SCNMaterial()
+        m.lightingModel = .constant
+        m.isDoubleSided = true
+        m.writesToDepthBuffer = false
+        m.fillMode = wire ? .lines : .fill
+        m.blendMode = wire ? .alpha : .add
+        let base = combustionColor(afr: 0)
+        m.emission.contents = base
+        m.diffuse.contents = base
+        geo.materials = [m]
+
+        let node = SCNNode(geometry: geo)
+        node.name = "combustion"
+        node.eulerAngles.x = SCNFloat.pi / 2   // cylinder height (local Y) → bank-local Z
+        node.opacity = 0
+        node.isHidden = true
+        return node
+    }
+
+    /// Per-frame combustion update. Mirrors the slider-crank + cam math in
+    /// `animate` so the flame stays locked to the piston and the engine cycle.
+    static func updateCombustion(
+        parts: ProceduralEngineParts,
+        crankAngle: Double,
+        ignitionEnabled: [Bool],
+        afr: Double,
+        cylinderHealths: [CylinderHealthState],
+        running: Bool,
+        wireframe: Bool
+    ) {
+        let camAngle = crankAngle / 2.0
+        let r = parts.params.crankThrow
+        let L = parts.params.rodLength
+        let comp = parts.params.compressionHeight
+        let roofZ = parts.params.deckHeight + parts.params.bore * combustionRoofClearanceFactor
+        let color = combustionColor(afr: afr)
+        let peak = wireframe ? combustionWireOpacity : combustionSolidOpacity
+        let powerCam = Double.pi / 2.0   // power stroke = 180° crank = 90° cam
+
+        for placement in parts.placements {
+            let idx = placement.cylinderNumber - 1
+            guard idx < parts.combustion.count else { continue }
+            let node = parts.combustion[idx]
+
+            let enabled = idx < ignitionEnabled.count ? ignitionEnabled[idx] : true
+            let burnHealth = combustionHealth(idx: idx, healths: cylinderHealths)
+            let canBurn = running && enabled && burnHealth > combustionMinHealth
+
+            let camLocal = wrappedAngle(camAngle - placement.camPhaseOffsetRad)
+            guard canBurn, camLocal < powerCam else {
+                node.isHidden = true
+                continue
+            }
+            let powerProgress = min(camLocal / powerCam, 1.0)
+
+            // Chamber spans the fixed roof down to the moving piston crown.
+            let theta = crankAngle + placement.phaseOffsetRad - placement.bankAngleRad
+            let pistonZ = sliderCrankWristPinHeight(crankAngle: theta, throw: r, rodLength: L)
+            let crownZ = pistonZ + comp
+            let bottomZ = min(crownZ, roofZ - 0.001)
+            let height = roofZ - bottomZ
+            let centerZ = (roofZ + bottomZ) / 2.0
+
+            node.isHidden = false
+            node.position = SCNVector3(0, Float(placement.yOffset), Float(centerZ))
+            node.scale = SCNVector3(1, Float(height), 1)
+
+            // Bright at ignition, fading as the charge expands; dimmed further
+            // on a weak (partly damaged) cylinder.
+            let fade = pow(1.0 - powerProgress, 0.7)
+            let intensity = peak * fade * min(1.0, burnHealth + 0.2)
+            node.opacity = CGFloat(intensity)
+
+            for m in node.geometry?.materials ?? [] {
+                m.emission.contents = color
+                m.diffuse.contents = color
+            }
+        }
+    }
+
+    /// Compression-driven "can it burn": a seized cylinder can't, and a clean
+    /// burn needs the gasket, rings and both valves to hold pressure.
+    private static func combustionHealth(idx: Int, healths: [CylinderHealthState]) -> Double {
+        guard idx < healths.count else { return 1.0 }
+        let c = healths[idx]
+        if c.seized { return 0 }
+        return min(min(c.headGasket, c.pistonRings), min(c.intakeValve, c.exhaustValve))
+    }
+
+    /// Orange combustion colour shifted by AFR: rich (low AFR) burns a deep
+    /// orange, lean (high AFR) a pale yellow-orange; stoich sits between.
+    private static func combustionColor(afr: Double) -> PlatformColor {
+        let stoich = 14.7
+        let a = afr > 0 ? afr : stoich
+        let t = max(0.0, min(1.0, (a - 11.0) / (18.0 - 11.0)))   // 0 = rich, 1 = lean
+        let rich = (r: 1.00, g: 0.28, b: 0.04)
+        let lean = (r: 1.00, g: 0.82, b: 0.42)
+        return PlatformColor(red: CGFloat(rich.r + t * (lean.r - rich.r)),
+                             green: CGFloat(rich.g + t * (lean.g - rich.g)),
+                             blue: CGFloat(rich.b + t * (lean.b - rich.b)),
+                             alpha: 1.0)
+    }
+
+    /// Wrap an angle into [0, 2π).
+    private static func wrappedAngle(_ a: Double) -> Double {
+        let twoPi = 2.0 * Double.pi
+        let m = a.truncatingRemainder(dividingBy: twoPi)
+        return m < 0 ? m + twoPi : m
+    }
+
     // MARK: - Damage visualization
     //
     // Per-frame: walk over each tracked part and set its material emission
@@ -429,6 +581,13 @@ enum ProceduralEngineAssembly {
     private static let wireframeCrankCamRingSegments: Int = 6
     private static let wireframeCrankCamPipeSegments: Int = 3
 
+    // Pistons get their own tighter pass so the body/crown read as a coarse
+    // prism and the ring grooves drop to simple octagonal loops instead of
+    // dense toruses.
+    private static let wireframePistonRadialSegments: Int = 6
+    private static let wireframePistonRingSegments: Int = 8
+    private static let wireframePistonPipeSegments: Int = 3
+
     /// Switch all still-visible part materials to a constant-shaded line fill,
     /// coarsen the geometry, and hide the shells. Call once after a rebuild;
     /// colour is set per-frame via `applyWireframeHealthColors`.
@@ -451,16 +610,28 @@ enum ProceduralEngineAssembly {
         coarsenSubtree(parts.crankshaft)
         for cam in parts.intakeCams  { coarsenSubtree(cam) }
         for cam in parts.exhaustCams { coarsenSubtree(cam) }
+
+        // Pistons + their ring grooves get an even tighter budget.
+        for piston in parts.pistons {
+            coarsenSubtree(piston,
+                           maxRadial: wireframePistonRadialSegments,
+                           maxRing: wireframePistonRingSegments,
+                           maxPipe: wireframePistonPipeSegments)
+        }
     }
 
-    /// Re-coarsen an already-styled subtree to the crank/cam segment budget.
-    private static func coarsenSubtree(_ root: SCNNode?) {
+    /// Re-coarsen an already-styled subtree to a tighter segment budget
+    /// (defaults to the crank/cam budget).
+    private static func coarsenSubtree(_ root: SCNNode?,
+                                       maxRadial: Int = wireframeCrankCamRadialSegments,
+                                       maxRing: Int = wireframeCrankCamRingSegments,
+                                       maxPipe: Int = wireframeCrankCamPipeSegments) {
         guard let root = root else { return }
         forEachVisibleNode(under: root) { node in
             coarsenGeometry(node.geometry,
-                            maxRadial: wireframeCrankCamRadialSegments,
-                            maxRing: wireframeCrankCamRingSegments,
-                            maxPipe: wireframeCrankCamPipeSegments)
+                            maxRadial: maxRadial,
+                            maxRing: maxRing,
+                            maxPipe: maxPipe)
         }
     }
 

@@ -1,0 +1,2 @@
+import "test_flat4_builder.mr"
+main()

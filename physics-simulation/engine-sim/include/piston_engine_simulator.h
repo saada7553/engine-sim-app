@@ -44,7 +44,9 @@ class PistonEngineSimulator : public Simulator {
     protected:
         void placeAndInitialize();
         void placeCylinder(int i);
-        
+        // Configure a 2-pole damped-resonator: y[n]=a1·y[n-1]+a2·y[n-2]+x[n].
+        void configureResonator(double freq, double Q, double &a1, double &a2) const;
+
     protected:
         virtual void writeToSynthesizer() override;
 
@@ -144,31 +146,53 @@ class PistonEngineSimulator : public Simulator {
         double m_growlLP2 = 0.0;
 
         // --- Catastrophic event state ---
-        // When a moneyshift catastrophe fires, the audio mix stages MANY
-        // sub-bursts over ~340ms modeling the sequence of impacts as parts
-        // break free. The per-failure-type weights bias which resonator
-        // gets hit — a valve-drop event sounds different from a rod-eject.
-        int m_catastrophicEventTimer = 0;
+        // A moneyshift catastrophe fires the BOOM + CLANK synthesizer below. The
+        // per-failure-type weights tilt the clank pitch (a valve-drop clanks
+        // higher/brighter than a rod-eject).
         double m_catastropheSizeFactor = 1.0;
         double m_catastropheRodWeight    = 1.0;
         double m_catastrophePistonWeight = 1.0;
         double m_catastropheValveWeight  = 1.0;
-        // Sub-impacts wait this many samples after the event start so the
-        // initial BOOM is heard distinctly before the breaking clatter.
-        int m_boomDelayRemaining = 0;
-        // Deep BOOM resonator — runtime-configured (random freq/Q each event)
-        // for an interesting, varied initial detonation. ~40-70 Hz.
+
+        // --- The BOOM (initial detonation) ---
+        // Audible-band (~110-170 Hz) resonator driven by a short NOISE burst
+        // (m_boomBurst samples at m_boomBurstAmp) for a punchy thud + harmonics,
+        // plus a brief broadband CLICK (m_boomClickSamples at m_boomClickAmp) for
+        // the sharp detonation crack. ~110-170 Hz so it survives speaker rolloff.
         double m_boomY1 = 0.0;
         double m_boomY2 = 0.0;
         double m_boomA1 = 0.0;
         double m_boomA2 = 0.0;
-        // Impact-noise state. m_grindLP1 = current noise amplitude (decays
-        // exponentially per impact). m_grindLP2 / m_grindLP3 = two-pole LPF
-        // state that band-limits the noise to ~1.4 kHz (removes the brittle
-        // high-frequency hiss that sounded like TV static).
-        double m_grindLP1 = 0.0;
+        int    m_boomBurst       = 0;     // low-body resonator excitation samples
+        double m_boomBurstAmp    = 0.0;
+        // Explosive BLAST: a short, fast-decaying broadband noise burst (the
+        // sharp "crack" of the detonation) — this is what makes it read as a
+        // BANG rather than a pure low tone. m_boomBlastAmp decays each sample.
+        int    m_boomBlastSamples = 0;
+        double m_boomBlastAmp     = 0.0;
+        double m_boomBlastLP      = 0.0;
+
+        // --- The DEBRIS (parts breaking apart) ---
+        // Two ingredients fired by a decaying-rate event window:
+        //   1. Original-style metallic IMPACTS: the per-cylinder rod/piston/valve
+        //      block resonators + a short grind-noise burst (m_grindLP*).
+        //   2. MINI-BOOMS: occasional quieter, cleaner versions of the main bang
+        //      — low-frequency thumps voiced through the resonator pool below.
+        double m_grindLP1 = 0.0;   // grind-noise amplitude (decays per impact)
         double m_grindLP2 = 0.0;
         double m_grindLP3 = 0.0;
+        static constexpr int kCrashVoices = 14;
+        double m_crashVY1[kCrashVoices] = {};
+        double m_crashVY2[kCrashVoices] = {};
+        double m_crashVA1[kCrashVoices] = {};
+        double m_crashVA2[kCrashVoices] = {};
+        int    m_crashVBurst[kCrashVoices] = {};    // remaining excitation samples
+        double m_crashVBurstAmp[kCrashVoices] = {}; // excitation amplitude
+        int    m_crashVoiceNext = 0;                // round-robin voice index
+        int    m_clankCountdown  = 0;   // samples until the next clank
+        int    m_clanksRemaining = 0;   // clanks left to fire this event
+        int    m_clankTotal      = 1;   // total clanks this event (for settling)
+        double m_clankAmp        = 0.0; // per-event peak clank amplitude
 
         // --- Block hum (deprecated, kept to avoid header churn) ---
         double m_blockHumY1 = 0.0;
