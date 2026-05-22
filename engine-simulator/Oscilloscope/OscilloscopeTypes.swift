@@ -98,7 +98,7 @@ struct OscilloscopeConfig {
                 dynamicallyResizeX: true,
                 dynamicallyResizeY: true,
                 drawReverse: false,
-                color: .orange,
+                color: .scopeWarm,
                 lineWidth: 2.0,
                 xAxisLabel: "RPM",
                 yAxisLabel: "Nm"
@@ -113,7 +113,7 @@ struct OscilloscopeConfig {
                 dynamicallyResizeX: true,
                 dynamicallyResizeY: true,
                 drawReverse: false,
-                color: .pink,
+                color: .scopePower,
                 lineWidth: 2.0,
                 xAxisLabel: "RPM",
                 yAxisLabel: "kW"
@@ -128,7 +128,7 @@ struct OscilloscopeConfig {
                 dynamicallyResizeX: false,
                 dynamicallyResizeY: false,
                 drawReverse: false,
-                color: .orange,
+                color: .scopeWarm,
                 lineWidth: 1.5,
                 xAxisLabel: "RPM",
                 yAxisLabel: "deg",
@@ -144,7 +144,7 @@ struct OscilloscopeConfig {
                 dynamicallyResizeX: false,
                 dynamicallyResizeY: true,
                 drawReverse: false,
-                color: .orange,
+                color: .scopeWarm,
                 lineWidth: 1.0,
                 xAxisLabel: "Cycle",
                 yAxisLabel: "SCFM"
@@ -159,7 +159,7 @@ struct OscilloscopeConfig {
                 dynamicallyResizeX: false,
                 dynamicallyResizeY: false,
                 drawReverse: false,
-                color: .orange,
+                color: .scopeWarm,
                 lineWidth: 1.0,
                 xAxisLabel: "Cycle",
                 yAxisLabel: "SCFM"
@@ -174,7 +174,7 @@ struct OscilloscopeConfig {
                 dynamicallyResizeX: false,
                 dynamicallyResizeY: true,  // Auto-scales to match exhaust
                 drawReverse: false,
-                color: .blue,
+                color: .scopeCool,
                 lineWidth: 1.0,
                 xAxisLabel: "Cycle",
                 yAxisLabel: "SCFM"
@@ -189,7 +189,7 @@ struct OscilloscopeConfig {
                 dynamicallyResizeX: false,
                 dynamicallyResizeY: true,
                 drawReverse: false,
-                color: .orange,
+                color: .scopeWarm,
                 lineWidth: 1.0,
                 xAxisLabel: "Cycle",
                 yAxisLabel: "thou"
@@ -204,7 +204,7 @@ struct OscilloscopeConfig {
                 dynamicallyResizeX: false,
                 dynamicallyResizeY: true,
                 drawReverse: false,
-                color: .blue,
+                color: .scopeCool,
                 lineWidth: 1.0,
                 xAxisLabel: "Cycle",
                 yAxisLabel: "thou"
@@ -219,7 +219,7 @@ struct OscilloscopeConfig {
                 dynamicallyResizeX: false,
                 dynamicallyResizeY: true,
                 drawReverse: false,
-                color: .orange,
+                color: .scopeWarm,
                 lineWidth: 1.0,
                 xAxisLabel: "Cycle",
                 yAxisLabel: "sqrt(PSI)"
@@ -249,7 +249,7 @@ struct OscilloscopeConfig {
                 dynamicallyResizeX: true,
                 dynamicallyResizeY: true,
                 drawReverse: true,        // Draws loop in correct direction
-                color: .orange,
+                color: .scopeWarm,
                 lineWidth: 1.0,
                 xAxisLabel: "L",
                 yAxisLabel: "sqrt(PSI)"

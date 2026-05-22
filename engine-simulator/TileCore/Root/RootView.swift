@@ -107,9 +107,9 @@ private struct EngineLoadAlertHost: View {
 
 private let overlayScrimColor = Color.black.opacity(0.65)
 private let overlayCardFill = Color.appBackground
-private let overlayCardBorder = Color.white.opacity(0.18)
-private let overlayWarningColor = Color.red.opacity(0.9)
-private let overlayCornerRadius: CGFloat = 10
+private let overlayCardBorder = Color.strokeStrong
+private let overlayWarningColor = Color.accentDanger.opacity(0.9)
+private let overlayCornerRadius: CGFloat = Theme.Radius.panel
 private let overlayCardMaxWidth: CGFloat = 420
 
 struct EngineLoadErrorOverlay: View {
@@ -128,7 +128,7 @@ struct EngineLoadErrorOverlay: View {
                         .font(.system(size: 18, weight: .semibold))
                         .foregroundColor(overlayWarningColor)
                     Text("ENGINE FAILED TO LOAD")
-                        .modifier(RetroFont(size: 11, weight: .bold))
+                        .modifier(RetroFont(size: Theme.FontSize.callout, weight: .bold))
                         .foregroundColor(overlayWarningColor)
                         .tracking(2)
                     Spacer()
@@ -136,10 +136,10 @@ struct EngineLoadErrorOverlay: View {
 
                 VStack(alignment: .leading, spacing: 10) {
                     Text("\u{201C}\(engineName)\u{201D} couldn\u{2019}t be initialized.")
-                        .font(.system(size: 16, weight: .semibold))
+                        .font(.system(size: Theme.FontSize.title, weight: .semibold))
                         .foregroundColor(.white)
                     Text("The simulator couldn\u{2019}t bring this engine online — ignition and starter won\u{2019}t respond while it\u{2019}s the selected engine. Pick another engine from the sidebar to keep using the app, or edit this one in the engine builder.")
-                        .font(.system(size: 13))
+                        .font(.system(size: Theme.FontSize.headline))
                         .foregroundColor(.white.opacity(0.78))
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -148,18 +148,18 @@ struct EngineLoadErrorOverlay: View {
                     Spacer()
                     Button(action: onDismiss) {
                         Text("DISMISS")
-                            .modifier(RetroFont(size: 11, weight: .bold))
+                            .modifier(RetroFont(size: Theme.FontSize.callout, weight: .bold))
                             .tracking(1.6)
-                            .foregroundColor(.orange)
+                            .foregroundColor(.accentLive)
                             .padding(.horizontal, 18)
-                            .padding(.vertical, 10)
+                            .padding(.vertical, Theme.Space.lg)
                             .background(
-                                RoundedRectangle(cornerRadius: 5)
-                                    .fill(Color.orange.opacity(0.12))
+                                RoundedRectangle(cornerRadius: Theme.Radius.control)
+                                    .fill(Color.accentLive.opacity(0.12))
                             )
                             .overlay(
-                                RoundedRectangle(cornerRadius: 5)
-                                    .stroke(Color.orange.opacity(0.6), lineWidth: 1)
+                                RoundedRectangle(cornerRadius: Theme.Radius.control)
+                                    .stroke(Color.accentLive.opacity(0.6), lineWidth: Theme.Stroke.thin)
                             )
                     }
                     .buttonStyle(.plain)

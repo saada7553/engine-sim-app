@@ -142,6 +142,12 @@ struct TileSurfApp: App {
             detailView
         }
         .navigationSplitViewStyle(.balanced)
+        // Fold the sidebar away while the engine builder is up so it gets the
+        // full window, then restore it on exit. iOS handles this in RootView
+        // via SidebarManager; macOS drives the split-view column directly.
+        .onChange(of: rootViewModel.isBuildingEngine) { _, building in
+            splitViewVisibility = building ? .detailOnly : .all
+        }
         #else
         // iOS: NavigationSplitView collapses the detail column behind the
         // sidebar in any compact context (iPhone, iPad slide-over, smaller

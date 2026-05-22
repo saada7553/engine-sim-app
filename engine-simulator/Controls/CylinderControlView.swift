@@ -27,8 +27,8 @@ private let panelSpacingBase: CGFloat = 6
 private let cellSpacingBase: CGFloat = 12
 private let controlCaptionGapBase: CGFloat = 3
 
-private let titleFontBase: CGFloat = 11
-private let captionFontBase: CGFloat = 8
+private let titleFontBase: CGFloat = Theme.FontSize.callout
+private let captionFontBase: CGFloat = Theme.FontSize.caption
 
 private let titleFontMin: CGFloat = 9
 private let captionFontMin: CGFloat = 7
@@ -45,9 +45,9 @@ private let cellHeightBase: CGFloat = switchHeightBase + controlCaptionGapBase +
 private let switchMinScale: CGFloat = 0.65
 private let switchMaxScale: CGFloat = 1.4
 
-private let cardCorner: CGFloat = 3
-private let mutedText = Color.white.opacity(0.45)
-private let ignitionAccent = Color.green
+private let cardCorner: CGFloat = Theme.Radius.small
+private let mutedText = Color.textMuted
+private let ignitionAccent = Color.accentOk
 
 struct CylinderControlView: View {
     @ObservedObject var vm: EngineViewModel

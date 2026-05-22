@@ -55,7 +55,7 @@ struct IdentityStep: View {
             VStack(alignment: .leading, spacing: 28) {
                 BuilderSectionHeading(title: "Step 1 · Name your engine")
                 Text("Every great engine starts with a name.\nIt'll show in the sidebar once you save.")
-                    .font(.system(size: 13, weight: .regular, design: .monospaced))
+                    .font(.system(size: Theme.FontSize.headline, weight: .regular, design: .monospaced))
                     .foregroundColor(BuilderTheme.label)
                     .lineSpacing(4)
 
@@ -77,7 +77,7 @@ struct IdentityStep: View {
             }
             Spacer()
 
-            EnginePlaceholderArt(spec: state.spec)
+            IdentityBlueprintArt()
                 .frame(width: 280, height: 280)
         }
         .onAppear {
@@ -91,33 +91,92 @@ struct IdentityStep: View {
     }
 }
 
-/// Neutral identity-side art that reflects the spec the user is composing,
-/// rather than always claiming the engine is a V8. Before a layout is picked
-/// it's just a couple of concentric outlines and a build-status badge.
-private struct EnginePlaceholderArt: View {
-    let spec: EngineSpec
-
+/// Identity-side art. The user hasn't chosen anything yet, so rather than
+/// claiming a layout/displacement it shows a single clean piston-and-rod line
+/// drawing in the accent, on the same flat surface card the rest of the
+/// builder uses. No gradients, grids or callouts — it sits quietly beside the
+/// form. Purely decorative; no spec data.
+private struct IdentityBlueprintArt: View {
     var body: some View {
         ZStack {
-            ForEach(0..<3, id: \.self) { i in
-                Rectangle()
-                    .stroke(BuilderTheme.line, lineWidth: 1)
-                    .frame(width: CGFloat(220 - i * 30), height: CGFloat(220 - i * 30))
-            }
-            Rectangle()
-                .stroke(BuilderTheme.accent, lineWidth: 1.5)
-                .frame(width: 120, height: 120)
+            RoundedRectangle(cornerRadius: Theme.Radius.panel)
+                .fill(Color.surfaceFaint)
 
-            VStack(spacing: 6) {
-                Text(spec.layout.shortLabel)
-                    .font(.system(size: 24, weight: .regular, design: .monospaced))
-                    .foregroundColor(BuilderTheme.accent)
-                Text(String(format: "%.2fL", spec.displacementLitres))
-                    .font(.system(size: 11, weight: .regular, design: .monospaced))
-                    .foregroundColor(BuilderTheme.label)
-                    .tracking(1)
-            }
+            PistonSchematic()
+                .stroke(Color.accentLive,
+                        style: StrokeStyle(lineWidth: 1.6, lineCap: .round, lineJoin: .round))
+                .padding(46)
         }
+        .overlay(
+            RoundedRectangle(cornerRadius: Theme.Radius.panel)
+                .stroke(Color.strokeSubtle, lineWidth: 1)
+        )
+    }
+}
+
+/// A piston, wrist pin, connecting rod and big-end journal, drawn as a simple
+/// single-stroke line icon. No dimensions or annotations — just the part.
+private struct PistonSchematic: Shape {
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        let cx = rect.midX
+
+        // Piston crown — a rounded-top body.
+        let pistonW = rect.width * 0.44
+        let pistonTop = rect.minY + rect.height * 0.06
+        let pistonH = rect.height * 0.30
+        let left = cx - pistonW / 2
+        let right = cx + pistonW / 2
+        let pistonBottom = pistonTop + pistonH
+        let corner = pistonW * 0.16
+
+        path.move(to: CGPoint(x: left, y: pistonBottom))
+        path.addLine(to: CGPoint(x: left, y: pistonTop + corner))
+        path.addQuadCurve(to: CGPoint(x: left + corner, y: pistonTop),
+                          control: CGPoint(x: left, y: pistonTop))
+        path.addLine(to: CGPoint(x: right - corner, y: pistonTop))
+        path.addQuadCurve(to: CGPoint(x: right, y: pistonTop + corner),
+                          control: CGPoint(x: right, y: pistonTop))
+        path.addLine(to: CGPoint(x: right, y: pistonBottom))
+        path.addLine(to: CGPoint(x: left, y: pistonBottom))
+
+        // Ring grooves.
+        let ringInset = pistonW * 0.08
+        for f in [0.30, 0.42, 0.54] {
+            let y = pistonTop + pistonH * CGFloat(f)
+            path.move(to: CGPoint(x: left + ringInset, y: y))
+            path.addLine(to: CGPoint(x: right - ringInset, y: y))
+        }
+
+        // Wrist pin + rod small-end eye.
+        let pinY = pistonTop + pistonH * 0.74
+        let pinR = pistonW * 0.13
+        addCircle(&path, center: CGPoint(x: cx, y: pinY), radius: pinR)
+        addCircle(&path, center: CGPoint(x: cx, y: pinY), radius: pinR * 1.7)
+
+        // Big-end journal with two bolt holes.
+        let bigR = rect.width * 0.155
+        let bigY = rect.maxY - bigR - rect.height * 0.02
+        addCircle(&path, center: CGPoint(x: cx, y: bigY), radius: bigR)
+        addCircle(&path, center: CGPoint(x: cx, y: bigY), radius: bigR * 0.5)
+        addCircle(&path, center: CGPoint(x: cx - bigR * 0.66, y: bigY), radius: bigR * 0.13)
+        addCircle(&path, center: CGPoint(x: cx + bigR * 0.66, y: bigY), radius: bigR * 0.13)
+
+        // Rod sides from the small-end eye down to the journal.
+        let rodTopHalf = pinR * 1.5
+        let rodBotHalf = bigR * 0.5
+        let rodTopY = pinY + pinR * 1.7
+        path.move(to: CGPoint(x: cx - rodTopHalf, y: rodTopY))
+        path.addLine(to: CGPoint(x: cx - rodBotHalf, y: bigY))
+        path.move(to: CGPoint(x: cx + rodTopHalf, y: rodTopY))
+        path.addLine(to: CGPoint(x: cx + rodBotHalf, y: bigY))
+
+        return path
+    }
+
+    private func addCircle(_ path: inout Path, center: CGPoint, radius: CGFloat) {
+        path.addEllipse(in: CGRect(x: center.x - radius, y: center.y - radius,
+                                   width: radius * 2, height: radius * 2))
     }
 }
 
@@ -131,7 +190,7 @@ struct LayoutStep: View {
             BuilderSectionHeading(title: "Step 2 · Pick the architecture")
 
             Text("Each layout sets bank count, bank angle, and the firing order.\nEverything downstream — cam timing, intake routing — derives from this choice.")
-                .font(.system(size: 13, weight: .regular, design: .monospaced))
+                .font(.system(size: Theme.FontSize.headline, weight: .regular, design: .monospaced))
                 .foregroundColor(BuilderTheme.label)
                 .lineSpacing(4)
 
@@ -166,10 +225,10 @@ private struct LayoutCard: View {
             LayoutSilhouette(layout: layout, accent: selected)
                 .frame(width: 90, height: 60)
             Text(layout.shortLabel)
-                .font(.system(size: 22, weight: .regular, design: .monospaced))
+                .font(.system(size: Theme.FontSize.readout, weight: .regular, design: .monospaced))
                 .foregroundColor(selected ? BuilderTheme.accent : .white)
             Text(layout.displayName.uppercased())
-                .font(.system(size: 9, weight: .bold, design: .monospaced))
+                .font(.system(size: Theme.FontSize.footnote, weight: .bold, design: .monospaced))
                 .tracking(2)
                 .foregroundColor(BuilderTheme.label)
         }
@@ -451,20 +510,20 @@ private struct CylinderSection: View {
         // Bore label on top, stroke marker on right, rod marker on left.
         ZStack {
             Text("BORE \(Int(boreMm)) mm")
-                .font(.system(size: 8, weight: .bold, design: .monospaced))
+                .font(.system(size: Theme.FontSize.caption, weight: .bold, design: .monospaced))
                 .tracking(1)
                 .foregroundColor(BuilderTheme.label)
                 .position(x: layout.centerX, y: layout.headCenterY - layout.headHeight / 2 - 8)
 
             Text("STROKE \(Int(strokeMm))")
-                .font(.system(size: 8, weight: .bold, design: .monospaced))
+                .font(.system(size: Theme.FontSize.caption, weight: .bold, design: .monospaced))
                 .tracking(1)
                 .foregroundColor(BuilderTheme.accent)
                 .position(x: layout.boreRightX + 26,
                           y: (layout.tdcPistonCenterY + layout.bdcPistonCenterY) / 2)
 
             Text("ROD \(Int(rodLengthMm))")
-                .font(.system(size: 8, weight: .bold, design: .monospaced))
+                .font(.system(size: Theme.FontSize.caption, weight: .bold, design: .monospaced))
                 .tracking(1)
                 .foregroundColor(BuilderTheme.label)
                 .position(x: layout.boreLeftX - 22,
@@ -639,7 +698,7 @@ private struct StatBox: View {
     var body: some View {
         VStack(spacing: 4) {
             Text(label.uppercased())
-                .font(.system(size: 9, weight: .bold, design: .monospaced))
+                .font(.system(size: Theme.FontSize.footnote, weight: .bold, design: .monospaced))
                 .tracking(2)
                 .foregroundColor(BuilderTheme.label)
             Text(value)
@@ -662,7 +721,7 @@ struct CamStep: View {
             VStack(alignment: .leading, spacing: 22) {
                 BuilderSectionHeading(title: "Step 4 · Camshaft")
                 Text("The lobe on the cam shaft pushes a valve open as the cam rotates.\nA bigger lobe (more duration, more lift) lets the valve stay open\nlonger and open further — better at high RPM, worse at idle.")
-                    .font(.system(size: 12, weight: .regular, design: .monospaced))
+                    .font(.system(size: Theme.FontSize.control, weight: .regular, design: .monospaced))
                     .foregroundColor(BuilderTheme.label)
                     .lineSpacing(4)
 
@@ -730,7 +789,7 @@ private struct CamSliderRow: View {
             BuilderSlider(label: label, value: $value, range: range,
                           step: step, unit: unit)
             Text(help)
-                .font(.system(size: 10, weight: .regular, design: .monospaced))
+                .font(.system(size: Theme.FontSize.body, weight: .regular, design: .monospaced))
                 .foregroundColor(BuilderTheme.dim)
         }
     }
@@ -818,13 +877,13 @@ private struct CamLobeProfile: View {
                 .stroke(BuilderTheme.accent, style: StrokeStyle(lineWidth: 0.8, dash: [2, 2]))
 
                 Text(String(format: "%.1f mm", liftMm))
-                    .font(.system(size: 9, weight: .bold, design: .monospaced))
+                    .font(.system(size: Theme.FontSize.footnote, weight: .bold, design: .monospaced))
                     .foregroundColor(BuilderTheme.accent)
                     .position(x: center.x + 30,
                               y: center.y - baseRadius - liftPx / 2)
 
                 Text(String(format: "%.0f°", durationDeg))
-                    .font(.system(size: 9, weight: .bold, design: .monospaced))
+                    .font(.system(size: Theme.FontSize.footnote, weight: .bold, design: .monospaced))
                     .foregroundColor(BuilderTheme.label)
                     .position(x: center.x, y: center.y + baseRadius + 12)
 
@@ -905,7 +964,7 @@ private struct ValveEventTimeline: View {
             }
             .stroke(color, style: StrokeStyle(lineWidth: 0.6, dash: [2, 3]))
             Text(label)
-                .font(.system(size: 8, weight: .bold, design: .monospaced))
+                .font(.system(size: Theme.FontSize.caption, weight: .bold, design: .monospaced))
                 .tracking(1)
                 .foregroundColor(color)
                 .position(x: x, y: 10)
@@ -927,7 +986,7 @@ private struct ValveEventTimeline: View {
                     .position(x: (x0 + x1) / 2, y: 18 * yFrac + 18)
             }
             Text(label)
-                .font(.system(size: 8, weight: .bold, design: .monospaced))
+                .font(.system(size: Theme.FontSize.caption, weight: .bold, design: .monospaced))
                 .tracking(1)
                 .foregroundColor(color.opacity(1))
                 .position(x: 38, y: 18 * yFrac + 18)
@@ -970,11 +1029,11 @@ private struct CamLegend: View {
     private func legendItem(label: String, value: String, highlight: Bool = false) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(label)
-                .font(.system(size: 8, weight: .bold, design: .monospaced))
+                .font(.system(size: Theme.FontSize.caption, weight: .bold, design: .monospaced))
                 .tracking(1)
                 .foregroundColor(BuilderTheme.label)
             Text(value)
-                .font(.system(size: 11, weight: .regular, design: .monospaced))
+                .font(.system(size: Theme.FontSize.callout, weight: .regular, design: .monospaced))
                 .foregroundColor(highlight ? BuilderTheme.accent : .white)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -1005,7 +1064,7 @@ struct FiringOrderStep: View {
             VStack(alignment: .leading, spacing: 22) {
                 BuilderSectionHeading(title: "Step 5 · Firing order")
                 Text("Drag a cylinder to a new position to reorder.\nThe preview on the right cycles through your firing order.")
-                    .font(.system(size: 12, weight: .regular, design: .monospaced))
+                    .font(.system(size: Theme.FontSize.control, weight: .regular, design: .monospaced))
                     .foregroundColor(BuilderTheme.label)
                     .lineSpacing(4)
 
@@ -1016,7 +1075,7 @@ struct FiringOrderStep: View {
                     builderChip(label: "USE DEFAULT", action: useLayoutDefault)
                     Spacer()
                     Text("ORDER · \(state.spec.firingOrder.map(String.init).joined(separator: "-"))")
-                        .font(.system(size: 10, weight: .bold, design: .monospaced))
+                        .font(.system(size: Theme.FontSize.body, weight: .bold, design: .monospaced))
                         .tracking(1.2)
                         .foregroundColor(BuilderTheme.accent)
                 }
@@ -1031,7 +1090,7 @@ struct FiringOrderStep: View {
                     .frame(width: FiringOrderDiagram.diagramSize,
                            height: FiringOrderDiagram.diagramSize)
                 Text("Each cylinder pulses as it fires.\nEven spacing = smoother engine.")
-                    .font(.system(size: 11, weight: .regular, design: .monospaced))
+                    .font(.system(size: Theme.FontSize.callout, weight: .regular, design: .monospaced))
                     .foregroundColor(BuilderTheme.label)
                     .lineSpacing(3)
                     .frame(width: FiringOrderDiagram.diagramSize, alignment: .leading)
@@ -1060,7 +1119,7 @@ struct FiringOrderStep: View {
     private func builderChip(label: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Text(label)
-                .font(.system(size: 10, weight: .bold, design: .monospaced))
+                .font(.system(size: Theme.FontSize.body, weight: .bold, design: .monospaced))
                 .tracking(2)
                 .foregroundColor(BuilderTheme.label)
                 .padding(.horizontal, 14)
@@ -1075,23 +1134,32 @@ struct FiringOrderStep: View {
     }
 }
 
-/// Horizontal stack of cylinder chips. Each chip can be dragged onto another
-/// to swap its position. Built on SwiftUI's `.onDrag`/`.onDrop` for the
-/// reorder swap because the row isn't inside a `List` (where `.onMove` lives).
+/// Grid of cylinder chips reordered by dragging. Uses a direct `DragGesture`
+/// (not `.onDrag`/`.onDrop`) so the drag is smooth and reliable: the lifted
+/// chip follows the cursor, the destination slot highlights, and on release
+/// the chip is moved into that slot with a spring. The old drop-based version
+/// fought the in-flight system drag whenever the array mutated, which is what
+/// made it take several attempts.
 private struct DraggableFiringSequence: View {
     @Binding var order: [Int]
     let bankCount: Int
-    @State private var draggingCylinder: Int? = nil
+
+    @State private var dragging: Int? = nil       // cylinder id under drag
+    @State private var dragOffset: CGSize = .zero
+    @State private var targetIndex: Int? = nil
+
+    private var columnCount: Int { max(1, min(order.count, 8)) }
+    private var stride: CGFloat { FiringOrderDiagram.chipSize + FiringOrderDiagram.chipSpacing }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 6) {
                 BuilderSectionHeading(title: "Firing sequence")
                 Image(systemName: "arrow.left.and.right")
-                    .font(.system(size: 9, weight: .bold))
+                    .font(.system(size: Theme.FontSize.footnote, weight: .bold))
                     .foregroundColor(BuilderTheme.accent)
                 Text("DRAG CHIPS TO REORDER")
-                    .font(.system(size: 9, weight: .bold, design: .monospaced))
+                    .font(.system(size: Theme.FontSize.footnote, weight: .bold, design: .monospaced))
                     .tracking(1.2)
                     .foregroundColor(BuilderTheme.label)
             }
@@ -1101,14 +1169,13 @@ private struct DraggableFiringSequence: View {
                       spacing: FiringOrderDiagram.chipSpacing) {
                 ForEach(Array(order.enumerated()), id: \.element) { idx, cyl in
                     chip(position: idx + 1, cylinder: cyl)
-                        .onDrag {
-                            draggingCylinder = cyl
-                            return NSItemProvider(object: String(cyl) as NSString)
-                        }
-                        .onDrop(of: [.text],
-                                delegate: SwapDropDelegate(target: cyl,
-                                                           order: $order,
-                                                           dragging: $draggingCylinder))
+                        .overlay(targetRing(at: idx, cylinder: cyl))
+                        .scaleEffect(dragging == cyl ? 1.06 : 1.0)
+                        .shadow(color: .black.opacity(dragging == cyl ? 0.45 : 0),
+                                radius: dragging == cyl ? 8 : 0, y: dragging == cyl ? 4 : 0)
+                        .offset(dragging == cyl ? dragOffset : .zero)
+                        .zIndex(dragging == cyl ? 1 : 0)
+                        .gesture(reorderGesture(startIndex: idx, cylinder: cyl))
                 }
             }
         }
@@ -1117,25 +1184,68 @@ private struct DraggableFiringSequence: View {
     private var gridColumns: [GridItem] {
         Array(repeating: GridItem(.fixed(FiringOrderDiagram.chipSize),
                                   spacing: FiringOrderDiagram.chipSpacing),
-              count: min(order.count, 8))
+              count: columnCount)
+    }
+
+    private func reorderGesture(startIndex: Int, cylinder: Int) -> some Gesture {
+        DragGesture(minimumDistance: 4, coordinateSpace: .local)
+            .onChanged { value in
+                if dragging == nil { dragging = cylinder }
+                dragOffset = value.translation
+                targetIndex = destinationIndex(from: startIndex, translation: value.translation)
+            }
+            .onEnded { value in
+                let dest = destinationIndex(from: startIndex, translation: value.translation)
+                withAnimation(.spring(response: 0.28, dampingFraction: 0.82)) {
+                    move(from: startIndex, to: dest)
+                    dragOffset = .zero
+                }
+                dragging = nil
+                targetIndex = nil
+            }
+    }
+
+    /// Map a drag translation to a destination slot using the fixed chip
+    /// stride and the current column count.
+    private func destinationIndex(from start: Int, translation: CGSize) -> Int {
+        let cols = columnCount
+        let dCol = Int((translation.width / stride).rounded())
+        let dRow = Int((translation.height / stride).rounded())
+        let col = min(max(start % cols + dCol, 0), cols - 1)
+        let row = max(start / cols + dRow, 0)
+        return min(max(row * cols + col, 0), order.count - 1)
+    }
+
+    private func move(from: Int, to: Int) {
+        guard from != to, order.indices.contains(from) else { return }
+        let dest = min(max(to, 0), order.count - 1)
+        let item = order.remove(at: from)
+        order.insert(item, at: dest)
+    }
+
+    @ViewBuilder
+    private func targetRing(at idx: Int, cylinder: Int) -> some View {
+        if dragging != nil, dragging != cylinder, targetIndex == idx {
+            RoundedRectangle(cornerRadius: Theme.Radius.small)
+                .stroke(Color.white, lineWidth: 2)
+        }
     }
 
     /// Each chip wears a small grip glyph on top — combined with the
     /// open-hand cursor on hover, the drag affordance reads at a glance.
     private func chip(position: Int, cylinder: Int) -> some View {
-        let lifted = draggingCylinder == cylinder
-        return ZStack {
+        ZStack {
             VStack(spacing: 2) {
                 Text("\(position).")
-                    .font(.system(size: 9, weight: .bold, design: .monospaced))
+                    .font(.system(size: Theme.FontSize.footnote, weight: .bold, design: .monospaced))
                     .tracking(1)
                     .foregroundColor(.black.opacity(0.6))
                 Text("\(cylinder)")
-                    .font(.system(size: 22, weight: .regular, design: .monospaced))
+                    .font(.system(size: Theme.FontSize.readout, weight: .regular, design: .monospaced))
                     .foregroundColor(.black)
                 if bankCount > 1 {
                     Text(bankFor(cylinder: cylinder))
-                        .font(.system(size: 7, weight: .bold, design: .monospaced))
+                        .font(.system(size: Theme.FontSize.micro, weight: .bold, design: .monospaced))
                         .tracking(1)
                         .foregroundColor(.black.opacity(0.45))
                 }
@@ -1146,7 +1256,7 @@ private struct DraggableFiringSequence: View {
                 HStack {
                     Spacer()
                     Image(systemName: "line.3.horizontal")
-                        .font(.system(size: 9, weight: .bold))
+                        .font(.system(size: Theme.FontSize.footnote, weight: .bold))
                         .foregroundColor(.black.opacity(0.45))
                         .padding(.top, 4)
                         .padding(.trailing, 4)
@@ -1156,11 +1266,10 @@ private struct DraggableFiringSequence: View {
         }
         .frame(width: FiringOrderDiagram.chipSize,
                height: FiringOrderDiagram.chipSize)
-        .background(BuilderTheme.accent)
-        .overlay(Rectangle().stroke(BuilderTheme.accent, lineWidth: 1.5))
-        .opacity(lifted ? 0.4 : 1.0)
-        .scaleEffect(lifted ? 0.96 : 1.0)
-        .animation(.easeOut(duration: 0.12), value: lifted)
+        .background(
+            RoundedRectangle(cornerRadius: Theme.Radius.small).fill(BuilderTheme.accent)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.small))
         .onHover { inside in
             #if os(macOS)
             if inside { NSCursor.openHand.push() }
@@ -1171,33 +1280,6 @@ private struct DraggableFiringSequence: View {
 
     private func bankFor(cylinder: Int) -> String {
         cylinder.isMultiple(of: 2) ? "B" : "A"
-    }
-}
-
-/// Swaps the dragged cylinder with the drop target in the order array. We
-/// swap instead of insert so the array always retains every cylinder exactly
-/// once — that's the constraint of a firing order.
-private struct SwapDropDelegate: DropDelegate {
-    let target: Int
-    @Binding var order: [Int]
-    @Binding var dragging: Int?
-
-    func dropEntered(info: DropInfo) {
-        guard let src = dragging, src != target,
-              let srcIdx = order.firstIndex(of: src),
-              let dstIdx = order.firstIndex(of: target) else { return }
-        if srcIdx != dstIdx {
-            order.swapAt(srcIdx, dstIdx)
-        }
-    }
-
-    func performDrop(info: DropInfo) -> Bool {
-        dragging = nil
-        return true
-    }
-
-    func dropUpdated(info: DropInfo) -> DropProposal? {
-        DropProposal(operation: .move)
     }
 }
 
@@ -1250,7 +1332,7 @@ private struct FiringAnimation: View {
                             radius: 4 * glow)
 
                 Text("\(entry.cylinder)")
-                    .font(.system(size: 12, weight: .bold, design: .monospaced))
+                    .font(.system(size: Theme.FontSize.control, weight: .bold, design: .monospaced))
                     .foregroundColor(.white.opacity(0.6 + 0.4 * glow))
                     .position(entry.center)
             }
@@ -1391,7 +1473,7 @@ struct InductionStep: View {
         VStack(alignment: .leading, spacing: 28) {
             BuilderSectionHeading(title: "Step 6 · Induction")
             Text("How much air the engine can swallow at full throttle.\nIntake CFM is the headline number; the rest fine-tunes plenum response.")
-                .font(.system(size: 13, weight: .regular, design: .monospaced))
+                .font(.system(size: Theme.FontSize.headline, weight: .regular, design: .monospaced))
                 .foregroundColor(BuilderTheme.label)
                 .lineSpacing(4)
 
@@ -1487,7 +1569,7 @@ private struct IntakeManifoldDiagram: View {
                 ForEach(0..<cylinderCount, id: \.self) { i in
                     let portX = layout.portX(at: i)
                     Text("\(i + 1)")
-                        .font(.system(size: 8, weight: .bold, design: .monospaced))
+                        .font(.system(size: Theme.FontSize.caption, weight: .bold, design: .monospaced))
                         .foregroundColor(BuilderTheme.label)
                         .position(x: portX,
                                   y: layout.headBarY + IntakeDiagram.headBarHeight)
@@ -1551,7 +1633,7 @@ private struct IntakeManifoldDiagram: View {
                 // 7. Bank labels for V layouts.
                 if bankCount == 2 {
                     Text("BANK A  ←        →  BANK B")
-                        .font(.system(size: 8, weight: .bold, design: .monospaced))
+                        .font(.system(size: Theme.FontSize.caption, weight: .bold, design: .monospaced))
                         .tracking(1)
                         .foregroundColor(BuilderTheme.label)
                         .position(x: layout.centerX,
@@ -1626,7 +1708,7 @@ private struct IntakeManifoldDiagram: View {
     private var cfmBadge: some View {
         VStack(alignment: .trailing, spacing: 2) {
             Text("CFM")
-                .font(.system(size: 8, weight: .bold, design: .monospaced))
+                .font(.system(size: Theme.FontSize.caption, weight: .bold, design: .monospaced))
                 .tracking(1)
                 .foregroundColor(BuilderTheme.label)
             Text(String(format: "%.0f", intakeCfm))
@@ -1758,7 +1840,7 @@ struct ExhaustStep: View {
                                         .overlay(Rectangle().stroke(selected ? BuilderTheme.accent : BuilderTheme.line))
                                         .frame(width: 10, height: 10)
                                     Text(choice.displayName)
-                                        .font(.system(size: 12, weight: .regular, design: .monospaced))
+                                        .font(.system(size: Theme.FontSize.control, weight: .regular, design: .monospaced))
                                         .foregroundColor(selected ? .white : BuilderTheme.label)
                                     Spacer()
                                 }
@@ -1876,7 +1958,7 @@ private struct ExhaustHeaderDiagram: View {
             // Bank label
             if let label {
                 Text(label)
-                    .font(.system(size: 8, weight: .bold, design: .monospaced))
+                    .font(.system(size: Theme.FontSize.caption, weight: .bold, design: .monospaced))
                     .tracking(1)
                     .foregroundColor(BuilderTheme.label)
                     .position(x: rect.minX + 30, y: topY - 8)
@@ -1900,7 +1982,7 @@ private struct ExhaustHeaderDiagram: View {
                     .position(x: portX, y: headBarY + ExhaustDiagram.headBarHeight
                                                    + ExhaustDiagram.portHeight / 2)
                 Text("\(cyl)")
-                    .font(.system(size: 8, weight: .bold, design: .monospaced))
+                    .font(.system(size: Theme.FontSize.caption, weight: .bold, design: .monospaced))
                     .foregroundColor(BuilderTheme.label)
                     .position(x: portX, y: headBarY - 8)
             }
@@ -1958,13 +2040,13 @@ private struct ExhaustHeaderDiagram: View {
     private var statsBadge: some View {
         VStack(alignment: .trailing, spacing: 2) {
             Text(String(format: "PRIMARY %.0f in", primaryLengthIn))
-                .font(.system(size: 9, weight: .bold, design: .monospaced))
+                .font(.system(size: Theme.FontSize.footnote, weight: .bold, design: .monospaced))
                 .foregroundColor(BuilderTheme.label)
             Text(String(format: "COLLECTOR Ø %.1f", collectorBoreIn))
-                .font(.system(size: 9, weight: .bold, design: .monospaced))
+                .font(.system(size: Theme.FontSize.footnote, weight: .bold, design: .monospaced))
                 .foregroundColor(BuilderTheme.label)
             Text(String(format: "TOTAL %.0f in", totalLengthIn))
-                .font(.system(size: 9, weight: .bold, design: .monospaced))
+                .font(.system(size: Theme.FontSize.footnote, weight: .bold, design: .monospaced))
                 .foregroundColor(BuilderTheme.accent)
         }
     }
@@ -2009,7 +2091,7 @@ struct IgnitionFuelStep: View {
                                  onSelect: { state.spec.fuel = $0 }) { fuel, selected in
                             VStack(spacing: 6) {
                                 Text(fuel.displayName.uppercased())
-                                    .font(.system(size: 12, weight: .bold, design: .monospaced))
+                                    .font(.system(size: Theme.FontSize.control, weight: .bold, design: .monospaced))
                                     .tracking(2)
                                     .foregroundColor(selected ? BuilderTheme.accent : .white)
                             }
@@ -2114,10 +2196,10 @@ private struct TimingCurveHint: View {
     private func label(icon: String, text: String) -> some View {
         HStack(spacing: 4) {
             Image(systemName: icon)
-                .font(.system(size: 9, weight: .bold))
+                .font(.system(size: Theme.FontSize.footnote, weight: .bold))
                 .foregroundColor(BuilderTheme.accent)
             Text(text)
-                .font(.system(size: 9, weight: .bold, design: .monospaced))
+                .font(.system(size: Theme.FontSize.footnote, weight: .bold, design: .monospaced))
                 .tracking(1)
                 .foregroundColor(BuilderTheme.label)
         }
@@ -2242,11 +2324,11 @@ private struct InteractiveTimingCurve: View {
                 p.move(to: CGPoint(x: revX, y: 0))
                 p.addLine(to: CGPoint(x: revX, y: h))
             }
-            .stroke(Color.red.opacity(0.7),
+            .stroke(Color.accentDanger.opacity(0.7),
                     style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
             Text("REV \(Int(revLimitRpm))")
-                .font(.system(size: 8, weight: .bold, design: .monospaced))
-                .foregroundColor(Color.red.opacity(0.85))
+                .font(.system(size: Theme.FontSize.caption, weight: .bold, design: .monospaced))
+                .foregroundColor(Color.accentDanger.opacity(0.85))
                 .position(x: revX - 22, y: 12)
         }
     }
@@ -2254,11 +2336,11 @@ private struct InteractiveTimingCurve: View {
     private func axisLabels(h: CGFloat) -> some View {
         ZStack {
             Text("0 RPM")
-                .font(.system(size: 8, weight: .bold, design: .monospaced))
+                .font(.system(size: Theme.FontSize.caption, weight: .bold, design: .monospaced))
                 .foregroundColor(BuilderTheme.label)
                 .position(x: 20, y: h - 8)
             Text(String(format: "%.0f°", TimingDiagram.maxAdvanceDeg))
-                .font(.system(size: 8, weight: .bold, design: .monospaced))
+                .font(.system(size: Theme.FontSize.caption, weight: .bold, design: .monospaced))
                 .foregroundColor(BuilderTheme.label)
                 .position(x: 14, y: 10)
         }
@@ -2383,20 +2465,20 @@ private struct TimingCurveGraph: View {
                     p.move(to: CGPoint(x: revX, y: 0))
                     p.addLine(to: CGPoint(x: revX, y: h))
                 }
-                .stroke(Color.red.opacity(0.7),
+                .stroke(Color.accentDanger.opacity(0.7),
                         style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
                 Text("REV \(Int(revLimitRpm))")
-                    .font(.system(size: 8, weight: .bold, design: .monospaced))
-                    .foregroundColor(Color.red.opacity(0.85))
+                    .font(.system(size: Theme.FontSize.caption, weight: .bold, design: .monospaced))
+                    .foregroundColor(Color.accentDanger.opacity(0.85))
                     .position(x: revX - 22, y: 12)
 
                 // Axis labels
                 Text("0 RPM")
-                    .font(.system(size: 8, weight: .bold, design: .monospaced))
+                    .font(.system(size: Theme.FontSize.caption, weight: .bold, design: .monospaced))
                     .foregroundColor(BuilderTheme.label)
                     .position(x: 20, y: h - 8)
                 Text(String(format: "%.0f°", TimingDiagram.maxAdvanceDeg))
-                    .font(.system(size: 8, weight: .bold, design: .monospaced))
+                    .font(.system(size: Theme.FontSize.caption, weight: .bold, design: .monospaced))
                     .foregroundColor(BuilderTheme.label)
                     .position(x: 14, y: 10)
             }

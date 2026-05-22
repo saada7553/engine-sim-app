@@ -4,11 +4,12 @@
 ////
 ////  Created by Saad Ata on 12/1/25.
 ////
-////  Sidebar styled with the same palette as the rest of the app: dark
-////  appBackground, hairline white-opacity borders, orange as the live accent
-////  (matching ignition / gauges / shift buttons elsewhere). The previous
-////  iteration leaned on a peachy salmon "sidebarAccent" that ended up feeling
-////  unrelated to the dashboard surfaces.
+////  Clean, flat sidebar: a dark appBackground panel, quiet monospaced labels,
+////  hairline separators, and rows that highlight with a soft orange tint when
+////  selected. No metal bezels or recessed faces — that heavy dash chrome lives
+////  on the instrument controls (the top bar), not on navigation. The one
+////  accent is the "Build New Engine" button, which carries the blueprint blue
+////  of the app icon, kept flat and understated.
 ////
 
 import Foundation
@@ -17,17 +18,18 @@ import SwiftUI
 // MARK: - Constants
 
 private let rowPaddingH: CGFloat = 12
-private let rowPaddingV: CGFloat = 7
-private let rowCornerRadius: CGFloat = 6
+private let rowPaddingV: CGFloat = 8
+private let rowCorner: CGFloat = Theme.Radius.control
+private let rowGutter: CGFloat = 10
+private let dotSize: CGFloat = 7
+
+private let selectedFill = Color.accentLive.opacity(0.14)
 private let hoverFill = Color.white.opacity(0.05)
-private let selectedFill = Color.orange.opacity(0.12)
-private let selectedBorder = Color.orange.opacity(0.45)
-private let subtleBorder = Color.white.opacity(0.10)
-private let primaryText = Color.white
-private let dimText = Color.white.opacity(0.65)
-private let mutedText = Color.white.opacity(0.45)
-private let activeDot = Color.orange
-private let inactiveDot = Color.white.opacity(0.20)
+private let dividerColor = Color.white.opacity(0.07)
+
+private let primaryText = Color.textPrimary
+private let dimText = Color.textSecondary
+private let mutedText = Color.textMuted
 
 // MARK: - Sidebar
 
@@ -42,25 +44,29 @@ struct SideBarView: View {
             SidebarHeader()
 
             ScrollView {
-                VStack(spacing: 18) {
+                VStack(alignment: .leading, spacing: 22) {
                     layoutsSection
                     enginesSection
                 }
-                .padding(.vertical, 14)
+                .padding(.vertical, 16)
             }
+            .scrollIndicators(.never)
 
             Spacer(minLength: 0)
 
             SidebarFooter()
         }
         .background(Color.appBackground)
+        .overlay(alignment: .trailing) {
+            Rectangle().fill(dividerColor).frame(width: 1)
+        }
     }
 
     private var enginesSection: some View {
         SidebarSection(title: "ENGINES") {
             BuildEngineButton(action: { rootViewModel.startEngineBuild() })
-                .padding(.horizontal, 8)
-                .padding(.bottom, 8)
+                .padding(.horizontal, rowGutter)
+                .padding(.bottom, 6)
 
             ForEach(engineLibrary.entries) { entry in
                 EngineRow(
@@ -125,22 +131,22 @@ struct SideBarView: View {
 struct SidebarHeader: View {
     var body: some View {
         VStack(spacing: 0) {
-            // Centered branding — no trailing Spacer so the engine glyph
-            // and "engine-sim" text sit together in the middle of the
-            // sidebar header instead of hugging the leading edge.
-            HStack(spacing: 10) {
+            HStack(spacing: 9) {
+                // Brand glyph stays warm/orange — deliberately not the blue
+                // accent, so the nameplate keeps its identity.
                 Image(systemName: "engine.combustion.fill")
-                    .font(.system(size: 16))
-                    .foregroundColor(.orange)
-                Text("engine-sim")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundColor(.white)
+                    .font(.system(size: 15))
+                    .foregroundColor(.accentHeat)
+                Text("ENGINE SIM")
+                    .font(.system(size: 13, weight: .bold, design: .monospaced))
+                    .tracking(2)
+                    .foregroundColor(.white.opacity(0.92))
             }
             .frame(maxWidth: .infinity, alignment: .center)
             .padding(.horizontal, 16)
-            .padding(.vertical, 14)
+            .padding(.vertical, 16)
 
-            Rectangle().fill(subtleBorder).frame(height: 1)
+            Rectangle().fill(dividerColor).frame(height: 1)
         }
     }
 }
@@ -159,59 +165,71 @@ struct SidebarSection<Content: View>: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(title)
-                .modifier(RetroFont(size: 10, weight: .bold))
+                .font(.system(size: 10, weight: .bold, design: .monospaced))
                 .foregroundColor(mutedText)
-                .tracking(1.2)
+                .tracking(1.4)
                 .padding(.horizontal, 16)
 
-            VStack(spacing: 2) {
+            VStack(spacing: 1) {
                 content
             }
         }
     }
 }
 
+// MARK: - Indicator dot
+//
+// The clean stand-in for the dash tell-tale lamps used elsewhere: a small
+// filled dot that glows orange on the selected row, and a quiet hollow ring
+// when idle. No skeuomorphic lens — this is navigation, so it stays simple.
+
+private struct StatusDot: View {
+    let lit: Bool
+
+    var body: some View {
+        Circle()
+            .fill(lit ? Color.accentLive : Color.clear)
+            .overlay(
+                Circle().stroke(lit ? Color.clear : Color.white.opacity(0.22),
+                                lineWidth: 1)
+            )
+            .frame(width: dotSize, height: dotSize)
+            .shadow(color: lit ? Color.accentLive.opacity(0.7) : .clear, radius: 3)
+    }
+}
+
 // MARK: - Build Engine CTA
 //
-// Reads like an "empty slot you can fill" — a dashed hairline outline with
-// the same row height/padding as a regular EngineRow, but with a "+" glyph
-// and a neutral label. Distinct from the solid-bordered selection rows
-// without resorting to gradients or shadow gimmicks.
+// The single creative action — a solid, flat accent-filled button. Row
+// selection is only a faint accent wash, so a fully-filled button reads as
+// clearly clickable and stands apart, with no gradient.
 
 private struct BuildEngineButton: View {
     let action: () -> Void
     @State private var hovered = false
 
-    private let blueprintColor = Color.accentSecondary.opacity(0.8)
-
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 12) {
+            HStack(spacing: 10) {
                 Image(systemName: "plus.square.dashed")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundColor(blueprintColor)
-                
+                    .font(.system(size: 14, weight: .bold))
                 Text("Build New Engine")
-                    .font(.system(size: 13, weight: .medium, design: .monospaced))
-                    .tracking(0.2)
-                
+                    .font(.system(size: 13, weight: .bold, design: .monospaced))
                 Spacer()
             }
-            .foregroundColor(hovered ? .white : dimText)
+            .foregroundColor(.white)
             .padding(.horizontal, rowPaddingH)
-            .padding(.vertical, rowPaddingV)
+            .padding(.vertical, rowPaddingV + 2)
             .frame(maxWidth: .infinity)
+            // Solid accent fill — a clean, flat primary button. The selected
+            // rows are only a faint accent wash, so a fully-filled button reads
+            // as distinctly clickable without any gradient.
             .background(
-                RoundedRectangle(cornerRadius: rowCornerRadius)
-                    .fill(hovered ? blueprintColor.opacity(0.12) : Color.white.opacity(0.02))
+                RoundedRectangle(cornerRadius: rowCorner)
+                    .fill(Color.accentLive.opacity(hovered ? 1.0 : 0.92))
             )
-            .overlay(
-                RoundedRectangle(cornerRadius: rowCornerRadius)
-                    .stroke(
-                        hovered ? blueprintColor.opacity(0.6) : blueprintColor.opacity(0.25),
-                        style: StrokeStyle(lineWidth: 1, dash: [4, 3])
-                    )
-            )
+            .shadow(color: Color.accentLive.opacity(hovered ? 0.4 : 0.22),
+                    radius: hovered ? 6 : 3, y: 1)
         }
         .buttonStyle(.plain)
         .onHover { hovered = $0 }
@@ -228,8 +246,13 @@ private struct SidebarRow<Content: View, Trailing: View>: View {
     @ViewBuilder let content: () -> Content
     @ViewBuilder let trailing: () -> Trailing
 
+    private var background: Color {
+        if isSelected { return selectedFill }
+        return isHovered ? hoverFill : .clear
+    }
+
     var body: some View {
-        let core = HStack(spacing: 10) {
+        let core = HStack(spacing: rowGutter) {
             content()
             Spacer(minLength: 0)
             trailing()
@@ -237,14 +260,9 @@ private struct SidebarRow<Content: View, Trailing: View>: View {
         .padding(.horizontal, rowPaddingH)
         .padding(.vertical, rowPaddingV)
         .background(
-            RoundedRectangle(cornerRadius: rowCornerRadius)
-                .fill(background)
+            RoundedRectangle(cornerRadius: rowCorner).fill(background)
         )
-        .overlay(
-            RoundedRectangle(cornerRadius: rowCornerRadius)
-                .stroke(isSelected ? selectedBorder : Color.clear, lineWidth: 1)
-        )
-        .padding(.horizontal, 8)
+        .padding(.horizontal, rowGutter)
         .contentShape(Rectangle())
 
         if let onTap = onTap {
@@ -252,11 +270,6 @@ private struct SidebarRow<Content: View, Trailing: View>: View {
         } else {
             core
         }
-    }
-
-    private var background: Color {
-        if isSelected { return selectedFill }
-        return isHovered ? hoverFill : .clear
     }
 }
 
@@ -279,14 +292,14 @@ struct EngineRow: View {
 
     var body: some View {
         SidebarRow(isSelected: isSelected, isHovered: hovered, onTap: onSelect) {
-            HStack(spacing: 10) {
+            HStack(spacing: rowGutter) {
                 leadingGlyph
-                VStack(alignment: .leading, spacing: 1) {
+                VStack(alignment: .leading, spacing: 2) {
                     Text(entry.name)
-                        .font(.system(size: 13))
+                        .font(.system(size: 13, weight: .medium, design: .monospaced))
                         .foregroundColor(isSelected ? primaryText : dimText)
                     Text(subtitle)
-                        .font(.system(size: 11))
+                        .font(.system(size: 9, design: .monospaced))
                         .foregroundColor(mutedText)
                 }
             }
@@ -312,11 +325,9 @@ struct EngineRow: View {
             Image(systemName: "lock.fill")
                 .font(.system(size: 9, weight: .semibold))
                 .foregroundColor(mutedText)
-                .frame(width: 6, height: 6)
+                .frame(width: dotSize, height: dotSize)
         } else {
-            Circle()
-                .fill(isSelected ? activeDot : inactiveDot)
-                .frame(width: 6, height: 6)
+            StatusDot(lit: isSelected)
         }
     }
 
@@ -352,12 +363,10 @@ struct LayoutRow: View {
 
     var body: some View {
         SidebarRow(isSelected: isSelected, isHovered: hovered, onTap: action) {
-            HStack(spacing: 10) {
-                Circle()
-                    .fill(isSelected ? activeDot : inactiveDot)
-                    .frame(width: 6, height: 6)
+            HStack(spacing: rowGutter) {
+                StatusDot(lit: isSelected)
                 Text(layout.name)
-                    .font(.system(size: 13))
+                    .font(.system(size: 13, weight: .medium, design: .monospaced))
                     .foregroundColor(isSelected ? primaryText : dimText)
             }
         } trailing: {
@@ -390,19 +399,17 @@ struct UnsavedLayoutRow: View {
 
     var body: some View {
         SidebarRow(isSelected: true, isHovered: hovered, onTap: onSave) {
-            HStack(spacing: 10) {
-                Circle()
-                    .fill(Color.orange)
-                    .frame(width: 6, height: 6)
+            HStack(spacing: rowGutter) {
+                StatusDot(lit: true)
                 Text("Unsaved")
-                    .font(.system(size: 13, weight: .regular).italic())
+                    .font(.system(size: 13, weight: .regular, design: .monospaced).italic())
                     .foregroundColor(primaryText)
             }
         } trailing: {
             Button(action: onSave) {
                 Image(systemName: "square.and.arrow.down")
                     .font(.system(size: 12, weight: .semibold))
-                    .foregroundColor(.orange)
+                    .foregroundColor(.accentLive)
             }
             .buttonStyle(.plain)
             .help("Name and save this workspace")
@@ -418,15 +425,16 @@ struct SidebarFooter: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            Rectangle().fill(subtleBorder).frame(height: 1)
-            HStack(spacing: 14) {
+            Rectangle().fill(dividerColor).frame(height: 1)
+            HStack(spacing: 16) {
                 Button(action: {}) {
                     HStack(spacing: 6) {
                         Image(systemName: "gearshape")
-                        Text("Settings")
+                        Text("SETTINGS")
+                            .font(.system(size: 10, weight: .bold, design: .monospaced))
+                            .tracking(1.0)
                     }
-                    .font(.system(size: 12))
-                    .foregroundColor(.white.opacity(0.8))
+                    .foregroundColor(.white.opacity(0.75))
                 }
                 .buttonStyle(.plain)
 
@@ -437,7 +445,7 @@ struct SidebarFooter: View {
                 Button(action: { showingControls.toggle() }) {
                     Image(systemName: "keyboard")
                         .font(.system(size: 13))
-                        .foregroundColor(.white.opacity(0.8))
+                        .foregroundColor(.white.opacity(0.75))
                 }
                 .buttonStyle(.plain)
                 .help("Keyboard shortcuts")

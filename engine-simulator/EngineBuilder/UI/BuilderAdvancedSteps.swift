@@ -17,7 +17,7 @@ struct AdvancedStep: View {
         VStack(alignment: .leading, spacing: 18) {
             BuilderSectionHeading(title: "Step 9 · Advanced")
             Text("These knobs round out the spec. Defaults give a running engine — change them only if you want a specific behaviour.")
-                .font(.system(size: 12, weight: .regular, design: .monospaced))
+                .font(.system(size: Theme.FontSize.control, weight: .regular, design: .monospaced))
                 .foregroundColor(BuilderTheme.label)
                 .lineSpacing(4)
 
@@ -78,7 +78,7 @@ private struct AdvancedSection<Content: View>: View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(spacing: 10) {
                 Text(title.uppercased())
-                    .font(.system(size: 11, weight: .bold, design: .monospaced))
+                    .font(.system(size: Theme.FontSize.callout, weight: .bold, design: .monospaced))
                     .tracking(3)
                     .foregroundColor(.white)
                 Rectangle().fill(BuilderTheme.line).frame(height: 1)
@@ -103,21 +103,21 @@ struct ReviewStep: View {
                     .foregroundColor(.white)
 
                 Text("\(state.spec.layout.displayName) · \(String(format: "%.2f", state.spec.displacementLitres)) L · \(Int(state.spec.redlineRpm)) rpm")
-                    .font(.system(size: 13, weight: .regular, design: .monospaced))
+                    .font(.system(size: Theme.FontSize.headline, weight: .regular, design: .monospaced))
                     .foregroundColor(BuilderTheme.accent)
 
                 Spacer().frame(height: 12)
 
                 Text("When you save, this engine will join the sidebar and the simulation will swap to it automatically. The car body, transmission and gearing use the standard placeholder.")
-                    .font(.system(size: 12, weight: .regular, design: .monospaced))
+                    .font(.system(size: Theme.FontSize.control, weight: .regular, design: .monospaced))
                     .foregroundColor(BuilderTheme.label)
                     .lineSpacing(4)
                     .frame(maxWidth: 460)
 
                 if !state.nameIsValid {
                     Text("⚠ Engine needs a name before it can be saved.")
-                        .font(.system(size: 11, weight: .bold, design: .monospaced))
-                        .foregroundColor(.orange)
+                        .font(.system(size: Theme.FontSize.callout, weight: .bold, design: .monospaced))
+                        .foregroundColor(.accentWarn)
                 }
             }
             .frame(maxWidth: 520, alignment: .leading)
@@ -137,7 +137,7 @@ private struct SpecSheet: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
                 Text("SPEC SHEET")
-                    .font(.system(size: 10, weight: .bold, design: .monospaced))
+                    .font(.system(size: Theme.FontSize.body, weight: .bold, design: .monospaced))
                     .tracking(3)
                     .foregroundColor(.black)
                     .padding(.horizontal, 8).padding(.vertical, 4)
@@ -165,12 +165,12 @@ private struct SpecSheet: View {
     private func row(_ label: String, _ value: String) -> some View {
         HStack {
             Text(label)
-                .font(.system(size: 10, weight: .bold, design: .monospaced))
+                .font(.system(size: Theme.FontSize.body, weight: .bold, design: .monospaced))
                 .tracking(1.5)
                 .foregroundColor(BuilderTheme.label)
             Spacer()
             Text(value)
-                .font(.system(size: 11, weight: .regular, design: .monospaced))
+                .font(.system(size: Theme.FontSize.callout, weight: .regular, design: .monospaced))
                 .foregroundColor(.white)
         }
         .padding(.vertical, 6)

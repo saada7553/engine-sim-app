@@ -33,20 +33,20 @@ struct ControlsMenuView: View {
                 Image(systemName: "keyboard")
                     .foregroundColor(.sidebarAccent)
                 Text("KEYBOARD CONTROLS")
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(.system(size: Theme.FontSize.callout, weight: .semibold))
                     .foregroundColor(.white)
             }
             .padding(.horizontal, 14)
-            .padding(.vertical, 12)
+            .padding(.vertical, Theme.Space.xl)
 
-            Divider().background(Color.white.opacity(0.08))
+            Divider().background(Color.strokeFaint)
 
             VStack(spacing: 0) {
                 ForEach(bindings) { binding in
                     KeyBindingRow(binding: binding)
                 }
             }
-            .padding(.vertical, 6)
+            .padding(.vertical, Theme.Space.sm)
         }
         .frame(width: 240)
         .background(Color.appBackground)
@@ -59,22 +59,22 @@ private struct KeyBindingRow: View {
     var body: some View {
         HStack(spacing: 12) {
             Text(binding.key)
-                .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                .font(.system(size: Theme.FontSize.callout, weight: .semibold, design: .monospaced))
                 .foregroundColor(binding.available ? .white : .sidebarTextSecondary)
                 .frame(minWidth: 46)
-                .padding(.vertical, 4)
+                .padding(.vertical, Theme.Space.xs)
                 .background(Color.sidebarHighlight)
-                .cornerRadius(4)
+                .cornerRadius(Theme.Radius.small)
 
             Text(binding.action)
-                .font(.system(size: 12))
+                .font(.system(size: Theme.FontSize.control))
                 .foregroundColor(binding.available ? .white.opacity(0.8) : .sidebarTextSecondary)
 
             Spacer()
 
             if !binding.available {
                 Text("N/A")
-                    .font(.system(size: 9, weight: .semibold))
+                    .font(.system(size: Theme.FontSize.footnote, weight: .semibold))
                     .foregroundColor(.sidebarTextSecondary)
             }
         }

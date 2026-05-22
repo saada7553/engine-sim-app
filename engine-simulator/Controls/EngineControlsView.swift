@@ -18,10 +18,10 @@ struct EngineControlsView: View {
     @ObservedObject var vm: EngineViewModel
 
     var body: some View {
-        VStack(spacing: 10) {
+        VStack(spacing: Theme.Space.lg) {
             GeometryReader { geo in
                 let totalWeight = transmissionPanelWeight + throttlePanelWeight
-                let spacing: CGFloat = 10
+                let spacing: CGFloat = Theme.Space.lg
                 let usableHeight = max(geo.size.height - 1 * spacing, 0)
 
                 VStack(spacing: spacing) {
@@ -49,7 +49,7 @@ struct EngineControlsView: View {
                 }
             }
         }
-        .padding(10)
+        .padding(Theme.Space.lg)
         .background(Color.appBackground)
     }
 }

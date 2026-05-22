@@ -40,27 +40,27 @@ private let knobMax: CGFloat = 44
 private let resolveTargetRadiusFraction: CGFloat = 0.65
 private let neutralBandFraction: CGFloat = 0.6
 private let shiftButtonHeight: CGFloat = 36
-private let shiftButtonSpacing: CGFloat = 8
+private let shiftButtonSpacing: CGFloat = Theme.Space.md
 private let supportedGearMin: Int = 2
 private let supportedGearMax: Int = 8
 
 // Palette.
 private let plateOuterColor = Color(white: 0.15)
 private let plateInnerColor = Color(white: 0.07)
-private let plateBorderColor = Color.white.opacity(0.18)
+private let plateBorderColor = Color.strokeStrong
 private let slotShadowColor = Color.black.opacity(0.55)
-private let neutralColor = Color.green
-private let activeColor = Color.orange
+private let neutralColor = Color.accentOk
+private let activeColor = Color.accentLive
 private let knobFaceColor = Color(white: 0.16)
 private let knobFaceBorder = Color.white.opacity(0.30)
-private let knobActiveBorder = Color.orange
+private let knobActiveBorder = Color.accentLive
 private let knobNotchColor = Color.white.opacity(0.5)
-private let shiftBg = Color.white.opacity(0.05)
+private let shiftBg = Color.surfaceLow
 private let shiftBgPressed = Color.white.opacity(0.10)
 private let shiftBorder = Color.white.opacity(0.20)
-private let shiftBorderPressed = Color.orange
+private let shiftBorderPressed = Color.accentLive
 private let shiftText = Color(white: 0.65)
-private let shiftTextPressed = Color.orange
+private let shiftTextPressed = Color.accentLive
 
 // MARK: - Top-level View
 
@@ -69,7 +69,7 @@ struct GearShiftView: View {
 
     var body: some View {
         let count = clampedGearCount(vm.gearCount)
-        VStack(spacing: 10) {
+        VStack(spacing: Theme.Space.lg) {
             // GearHeader is duplicated chrome on iOS — the gear number lives
             // on the top bar there, and the RetroPanel above already has a
             // title. macOS keeps it inline.
@@ -90,7 +90,7 @@ struct GearShiftView: View {
                 .frame(height: shiftButtonHeight)
             #endif
         }
-        .padding(8)
+        .padding(Theme.Space.md)
     }
 
     private func clampedGearCount(_ raw: Int) -> Int {
@@ -105,18 +105,18 @@ private struct GearHeader: View {
     let gearCount: Int
 
     var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 8) {
-            Text("TRANSMISSION").modifier(RetroFont(size: 10)).foregroundColor(.gray)
+        HStack(alignment: .firstTextBaseline, spacing: Theme.Space.md) {
+            Text("TRANSMISSION").modifier(RetroFont(size: Theme.FontSize.body)).foregroundColor(.textMuted)
             Spacer()
             Text("\(gearCount)-SPEED")
-                .modifier(RetroFont(size: 9))
+                .modifier(RetroFont(size: Theme.FontSize.footnote))
                 .foregroundColor(Color(white: 0.42))
             Text(gear == -1 ? "N" : "\(gear + 1)")
-                .modifier(RetroFont(size: 22, weight: .black))
+                .modifier(RetroFont(size: Theme.FontSize.readout, weight: .black))
                 .foregroundColor(gear == -1 ? neutralColor : activeColor)
                 .shadow(color: (gear == -1 ? neutralColor : activeColor).opacity(0.5), radius: 4)
         }
-        .padding(.horizontal, 4)
+        .padding(.horizontal, Theme.Space.xs)
     }
 }
 
@@ -465,11 +465,11 @@ private struct ShiftButton: View {
             HStack(spacing: 6) {
                 if direction == .down {
                     Image(systemName: chevron).font(.system(size: 12, weight: .black))
-                    Text(label).modifier(RetroFont(size: 9))
+                    Text(label).modifier(RetroFont(size: Theme.FontSize.footnote))
                     Spacer(minLength: 0)
                 } else {
                     Spacer(minLength: 0)
-                    Text(label).modifier(RetroFont(size: 9))
+                    Text(label).modifier(RetroFont(size: Theme.FontSize.footnote))
                     Image(systemName: chevron).font(.system(size: 12, weight: .black))
                 }
             }

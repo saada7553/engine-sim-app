@@ -117,7 +117,7 @@ struct GaugeConfiguration {
         ticks: GaugeTickConfig = .defaultConfig,
         needle: GaugeNeedleConfig = .defaultConfig,
         bands: [GaugeBand] = [],
-        needleColor: Color = .red,
+        needleColor: Color = .accentDanger,
         tickColor: Color = .white,
         labelColor: Color = .gray,
         backgroundColor: Color = .appBackground

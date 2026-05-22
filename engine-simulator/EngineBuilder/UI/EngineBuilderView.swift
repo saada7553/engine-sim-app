@@ -180,20 +180,20 @@ private struct BuilderHeader: View {
         HStack(spacing: 24) {
             HStack(spacing: 10) {
                 Text("ENGINE BUILDER")
-                    .font(.system(size: 12, weight: .bold, design: .monospaced))
+                    .font(.system(size: Theme.FontSize.control, weight: .bold, design: .monospaced))
                     .tracking(3)
                     .foregroundColor(.white)
                 Rectangle()
                     .fill(BuilderTheme.accent)
                     .frame(width: 6, height: 6)
                 Text(state.spec.name.isEmpty ? "Untitled" : state.spec.name)
-                    .font(.system(size: 12, weight: .regular, design: .monospaced))
+                    .font(.system(size: Theme.FontSize.control, weight: .regular, design: .monospaced))
                     .foregroundColor(BuilderTheme.label)
                 if state.spec.layout.cylinderCount > 0 {
                     Text("·")
                         .foregroundColor(BuilderTheme.label)
                     Text("\(state.spec.layout.displayName) · \(String(format: "%.2fL", state.spec.displacementLitres))")
-                        .font(.system(size: 11, weight: .regular, design: .monospaced))
+                        .font(.system(size: Theme.FontSize.callout, weight: .regular, design: .monospaced))
                         .foregroundColor(BuilderTheme.label)
                 }
             }
@@ -224,13 +224,13 @@ private struct BuilderSectionRail: View {
             }
             .padding(.vertical, 20)
         }
-        .background(Color.white.opacity(0.02))
+        .background(Color.surfaceFaint)
     }
 
     private func sectionGroup(_ group: BuilderSectionGroup) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(group.label.uppercased())
-                .font(.system(size: 9, weight: .bold, design: .monospaced))
+                .font(.system(size: Theme.FontSize.footnote, weight: .bold, design: .monospaced))
                 .tracking(3)
                 .foregroundColor(BuilderTheme.label)
                 .padding(.horizontal, 16)
@@ -246,20 +246,24 @@ private struct BuilderSectionRail: View {
         let selected = state.step == step
         return Button(action: { state.jump(to: step) }) {
             HStack(spacing: 10) {
-                Rectangle()
+                Capsule()
                     .fill(selected ? BuilderTheme.accent : Color.clear)
                     .frame(width: 2, height: 14)
 
                 Text(step.title.uppercased())
-                    .font(.system(size: 11, weight: .bold, design: .monospaced))
+                    .font(.system(size: Theme.FontSize.callout, weight: .bold, design: .monospaced))
                     .tracking(1.5)
                     .foregroundColor(selected ? .white : BuilderTheme.label)
                 Spacer()
             }
-            .padding(.horizontal, 14)
+            .padding(.horizontal, 10)
             .frame(height: BuilderLayout.sectionRowHeight)
-            .background(selected ? Color.white.opacity(0.05) : Color.clear)
+            .background(
+                RoundedRectangle(cornerRadius: Theme.Radius.control)
+                    .fill(selected ? Color.accentLive.opacity(0.14) : Color.clear)
+            )
         }
         .buttonStyle(.plain)
+        .padding(.horizontal, 8)
     }
 }

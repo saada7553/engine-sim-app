@@ -10,14 +10,18 @@ import SwiftUI
 
 // MARK: - Visual constants
 
+// Builder visuals now alias the app-wide tokens (orange accent, the shared
+// text/stroke ladder, Theme corner radii) so the builder reads as the same
+// instrument app as everything else — the old salmon `sidebarAccent` and the
+// sharp 4pt boxes are gone.
 enum BuilderTheme {
-    static let cardCorner: CGFloat = 4
-    static let trackHeight: CGFloat = 2
+    static let cardCorner: CGFloat = Theme.Radius.control
+    static let trackHeight: CGFloat = 3
     static let knobSize: CGFloat = 14
-    static let accent: Color = .sidebarAccent
-    static let dim: Color = .white.opacity(0.4)
-    static let line: Color = .white.opacity(0.15)
-    static let label: Color = .white.opacity(0.55)
+    static let accent: Color = .accentLive
+    static let dim: Color = .textFaint
+    static let line: Color = .strokeSubtle
+    static let label: Color = .textMuted
 }
 
 // MARK: - Big readout
@@ -30,7 +34,7 @@ struct BigReadout: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(label.uppercased())
-                .font(.system(size: 10, weight: .bold, design: .monospaced))
+                .font(.system(size: Theme.FontSize.body, weight: .bold, design: .monospaced))
                 .foregroundColor(BuilderTheme.label)
                 .tracking(2)
 
@@ -39,7 +43,7 @@ struct BigReadout: View {
                     .font(.system(size: 56, weight: .regular, design: .monospaced))
                     .foregroundColor(.white)
                 Text(unit.uppercased())
-                    .font(.system(size: 13, weight: .regular, design: .monospaced))
+                    .font(.system(size: Theme.FontSize.headline, weight: .regular, design: .monospaced))
                     .foregroundColor(BuilderTheme.dim)
                     .tracking(2)
             }
@@ -61,12 +65,12 @@ struct BuilderSlider: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
                 Text(label.uppercased())
-                    .font(.system(size: 10, weight: .bold, design: .monospaced))
+                    .font(.system(size: Theme.FontSize.body, weight: .bold, design: .monospaced))
                     .tracking(2)
                     .foregroundColor(BuilderTheme.label)
                 Spacer()
                 Text("\(String(format: format, value))\(unit.isEmpty ? "" : " \(unit)")")
-                    .font(.system(size: 13, weight: .regular, design: .monospaced))
+                    .font(.system(size: Theme.FontSize.headline, weight: .regular, design: .monospaced))
                     .foregroundColor(.white)
             }
 
@@ -88,19 +92,21 @@ private struct ThemedTrackSlider: View {
             let knobX = normalized * width
 
             ZStack(alignment: .leading) {
-                Rectangle()
+                Capsule()
                     .fill(BuilderTheme.line)
                     .frame(height: BuilderTheme.trackHeight)
                     .frame(maxHeight: .infinity, alignment: .center)
 
-                Rectangle()
+                Capsule()
                     .fill(BuilderTheme.accent)
                     .frame(width: knobX, height: BuilderTheme.trackHeight)
                     .frame(maxHeight: .infinity, alignment: .center)
 
-                Rectangle()
+                Circle()
                     .fill(BuilderTheme.accent)
+                    .overlay(Circle().stroke(Color.white.opacity(0.25), lineWidth: 1))
                     .frame(width: BuilderTheme.knobSize, height: BuilderTheme.knobSize)
+                    .shadow(color: .black.opacity(0.4), radius: 2, y: 1)
                     .offset(x: knobX - BuilderTheme.knobSize / 2)
                     .frame(maxHeight: .infinity, alignment: .center)
             }
@@ -145,9 +151,12 @@ struct CardGrid<Item: Identifiable, Content: View>: View {
                     content(item, selected)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 18)
-                        .background(selected ? Color.white.opacity(0.08) : Color.white.opacity(0.02))
+                        .background(
+                            RoundedRectangle(cornerRadius: BuilderTheme.cardCorner)
+                                .fill(selected ? Color.surfaceRaised : Color.surfaceFaint)
+                        )
                         .overlay(
-                            Rectangle()
+                            RoundedRectangle(cornerRadius: BuilderTheme.cardCorner)
                                 .stroke(selected ? BuilderTheme.accent : BuilderTheme.line,
                                         lineWidth: selected ? 1.5 : 1)
                         )
@@ -171,14 +180,19 @@ struct BuilderNavButton: View {
     var body: some View {
         Button(action: action) {
             Text(label.uppercased())
-                .font(.system(size: 11, weight: .bold, design: .monospaced))
+                .font(.system(size: Theme.FontSize.callout, weight: .bold, design: .monospaced))
                 .tracking(2)
                 .padding(.horizontal, 22)
                 .padding(.vertical, 11)
                 .frame(minWidth: 130)
                 .foregroundColor(textColor)
-                .background(backgroundColor)
-                .overlay(Rectangle().stroke(borderColor, lineWidth: 1))
+                .background(
+                    RoundedRectangle(cornerRadius: Theme.Radius.control).fill(backgroundColor)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: Theme.Radius.control)
+                        .stroke(borderColor, lineWidth: Theme.Stroke.thin)
+                )
                 // Without this the secondary/ghost styles have a clear
                 // background — the click only registers on the text glyphs
                 // or border, making the rest of the button dead space.
@@ -189,26 +203,28 @@ struct BuilderNavButton: View {
         .opacity(enabled ? 1 : 0.35)
     }
 
+    // Tinted-accent CTA to match the rest of the app (the overlay / paywall
+    // buttons, SmallActionButton) rather than a solid fill.
     private var textColor: Color {
         switch style {
-        case .primary:   return .black
-        case .secondary: return .white
+        case .primary:   return .accentLive
+        case .secondary: return .textPrimary
         case .ghost:     return BuilderTheme.label
         }
     }
 
     private var backgroundColor: Color {
         switch style {
-        case .primary:   return BuilderTheme.accent
-        case .secondary: return .clear
+        case .primary:   return Color.accentLive.opacity(0.14)
+        case .secondary: return .surfaceLow
         case .ghost:     return .clear
         }
     }
 
     private var borderColor: Color {
         switch style {
-        case .primary:   return BuilderTheme.accent
-        case .secondary: return .white.opacity(0.5)
+        case .primary:   return Color.accentLive.opacity(0.6)
+        case .secondary: return .strokeStrong
         case .ghost:     return .clear
         }
     }
@@ -220,7 +236,7 @@ struct BuilderSectionHeading: View {
     let title: String
     var body: some View {
         Text(title.uppercased())
-            .font(.system(size: 10, weight: .bold, design: .monospaced))
+            .font(.system(size: Theme.FontSize.body, weight: .bold, design: .monospaced))
             .tracking(3)
             .foregroundColor(BuilderTheme.label)
     }

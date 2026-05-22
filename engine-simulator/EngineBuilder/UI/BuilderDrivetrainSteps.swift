@@ -46,7 +46,7 @@ struct TransmissionStep: View {
             VStack(alignment: .leading, spacing: 22) {
                 BuilderSectionHeading(title: "Step 9 · Transmission")
                 Text("Clutch capacity caps how much torque can transfer.\nGear ratios multiply engine torque before the diff — lower number = taller gear.")
-                    .font(.system(size: 12, weight: .regular, design: .monospaced))
+                    .font(.system(size: Theme.FontSize.control, weight: .regular, design: .monospaced))
                     .foregroundColor(BuilderTheme.label)
                     .lineSpacing(4)
 
@@ -89,7 +89,7 @@ private struct GearListEditor: View {
             HStack(spacing: 8) {
                 Button(action: addGear) {
                     Text("+ ADD GEAR")
-                        .font(.system(size: 10, weight: .bold, design: .monospaced))
+                        .font(.system(size: Theme.FontSize.body, weight: .bold, design: .monospaced))
                         .tracking(2)
                         .foregroundColor(BuilderTheme.label)
                         .padding(.horizontal, 12)
@@ -102,7 +102,7 @@ private struct GearListEditor: View {
 
                 Button(action: resetGears) {
                     Text("RESET")
-                        .font(.system(size: 10, weight: .bold, design: .monospaced))
+                        .font(.system(size: Theme.FontSize.body, weight: .bold, design: .monospaced))
                         .tracking(2)
                         .foregroundColor(BuilderTheme.label)
                         .padding(.horizontal, 12)
@@ -117,7 +117,7 @@ private struct GearListEditor: View {
     private func gearRow(index: Int) -> some View {
         HStack(spacing: 10) {
             Text(gearLabel(index))
-                .font(.system(size: 11, weight: .bold, design: .monospaced))
+                .font(.system(size: Theme.FontSize.callout, weight: .bold, design: .monospaced))
                 .tracking(2)
                 .foregroundColor(BuilderTheme.label)
                 .frame(width: 36, alignment: .leading)
@@ -131,7 +131,7 @@ private struct GearListEditor: View {
 
             Button(action: { removeGear(at: index) }) {
                 Image(systemName: "trash")
-                    .font(.system(size: 11))
+                    .font(.system(size: Theme.FontSize.callout))
                     .foregroundColor(BuilderTheme.label)
                     .frame(width: 22, height: 22)
                     .overlay(Rectangle().stroke(BuilderTheme.line, lineWidth: 1))
@@ -192,7 +192,7 @@ private struct GearRatioChart: View {
                 ForEach(Array(ratios.enumerated()), id: \.offset) { idx, ratio in
                     HStack(spacing: 8) {
                         Text(idx == 0 ? "1st" : (idx == 1 ? "2nd" : (idx == 2 ? "3rd" : "\(idx + 1)th")))
-                            .font(.system(size: 10, weight: .bold, design: .monospaced))
+                            .font(.system(size: Theme.FontSize.body, weight: .bold, design: .monospaced))
                             .tracking(1)
                             .foregroundColor(BuilderTheme.label)
                             .frame(width: DrivetrainDiagram.chartLeftLabelWidth, alignment: .leading)
@@ -209,7 +209,7 @@ private struct GearRatioChart: View {
                         .frame(height: DrivetrainDiagram.gearBarHeight)
 
                         Text(String(format: "%.2f", ratio))
-                            .font(.system(size: 11, weight: .regular, design: .monospaced))
+                            .font(.system(size: Theme.FontSize.callout, weight: .regular, design: .monospaced))
                             .foregroundColor(.white)
                             .frame(width: DrivetrainDiagram.chartRightValueWidth, alignment: .trailing)
                     }
@@ -229,7 +229,7 @@ struct VehicleStep: View {
             VStack(alignment: .leading, spacing: 22) {
                 BuilderSectionHeading(title: "Step 10 · Vehicle")
                 Text("How much resistance the engine has to fight to push you forward.\nHeavier + more drag = harder pull; bigger tires + lower diff = taller gearing.")
-                    .font(.system(size: 12, weight: .regular, design: .monospaced))
+                    .font(.system(size: Theme.FontSize.control, weight: .regular, design: .monospaced))
                     .foregroundColor(BuilderTheme.label)
                     .lineSpacing(4)
 
@@ -326,7 +326,7 @@ private struct VehicleSilhouette: View {
 
                     // Frontal area dimension callout
                     Text(String(format: "%.0f×%.0f in", spec.frontalAreaWidthIn, spec.frontalAreaHeightIn))
-                        .font(.system(size: 10, weight: .bold, design: .monospaced))
+                        .font(.system(size: Theme.FontSize.body, weight: .bold, design: .monospaced))
                         .foregroundColor(BuilderTheme.accent)
                         .position(x: centerX, y: (bodyTopY + bodyBottomY) / 2)
 
@@ -341,7 +341,7 @@ private struct VehicleSilhouette: View {
 
                     // Tire diameter callout (left tire)
                     Text(String(format: "Ø %.1f", spec.tireRadiusIn * 2))
-                        .font(.system(size: 8, weight: .bold, design: .monospaced))
+                        .font(.system(size: Theme.FontSize.caption, weight: .bold, design: .monospaced))
                         .foregroundColor(BuilderTheme.label)
                         .position(x: centerX - bodyWidth / 2 + tireWidth / 2,
                                   y: tireTopY + tireDiameter + 8)
@@ -402,12 +402,12 @@ private struct VehicleSilhouette: View {
     private func statLine(_ label: String, _ value: String) -> some View {
         HStack(spacing: 6) {
             Text(label)
-                .font(.system(size: 8, weight: .bold, design: .monospaced))
+                .font(.system(size: Theme.FontSize.caption, weight: .bold, design: .monospaced))
                 .tracking(1)
                 .foregroundColor(BuilderTheme.label)
                 .frame(width: 30, alignment: .leading)
             Text(value)
-                .font(.system(size: 10, weight: .regular, design: .monospaced))
+                .font(.system(size: Theme.FontSize.body, weight: .regular, design: .monospaced))
                 .foregroundColor(.white)
         }
     }

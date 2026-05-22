@@ -13,7 +13,7 @@
 import SwiftUI
 
 private let cellSpacing: CGFloat = 1
-private let cellCornerRadius: CGFloat = 2
+private let cellCornerRadius: CGFloat = Theme.Radius.lamp
 // iOS shrinks the Y-axis label channel and drops the rotated "MAP (kPa)"
 // title so the heatmap gets back the dead space on the left.
 #if os(macOS)
@@ -53,7 +53,7 @@ private struct EcuTuningEditor: View {
     #endif
 
     var body: some View {
-        VStack(spacing: 8) {
+        VStack(spacing: Theme.Space.md) {
             tabBar
             mapBody
             #if os(macOS)
@@ -68,9 +68,9 @@ private struct EcuTuningEditor: View {
             #endif
         }
         #if os(macOS)
-        .padding(10)
+        .padding(Theme.Space.lg)
         #else
-        .padding(6)
+        .padding(Theme.Space.sm)
         #endif
         .background(Color.appBackground)
         .onAppear { selectTopLeftCell() }
@@ -107,7 +107,7 @@ private struct EcuTuningEditor: View {
             // iOS where every pt of heatmap counts.
             #if os(macOS)
             Text("MAP  (kPa)")
-                .modifier(RetroFont(size: 9))
+                .modifier(RetroFont(size: Theme.FontSize.footnote))
                 .foregroundColor(.white.opacity(0.45))
                 .tracking(1.0)
                 .rotationEffect(.degrees(-90))
@@ -121,7 +121,7 @@ private struct EcuTuningEditor: View {
                 Color.clear.frame(height: labelChannelHeight)
                 ForEach((0..<ecu.loadBins.count).reversed(), id: \.self) { rowIdx in
                     Text("\(Int(ecu.loadBins[rowIdx]))")
-                        .modifier(RetroFont(size: 9))
+                        .modifier(RetroFont(size: Theme.FontSize.footnote))
                         .foregroundColor(.white.opacity(0.55))
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
                         .padding(.trailing, 4)
@@ -136,7 +136,7 @@ private struct EcuTuningEditor: View {
                 // the bin numbers right above clearly read as RPM.
                 #if os(macOS)
                 Text("ENGINE  SPEED  (rpm)")
-                    .modifier(RetroFont(size: 9))
+                    .modifier(RetroFont(size: Theme.FontSize.footnote))
                     .foregroundColor(.white.opacity(0.45))
                     .tracking(1.0)
                     .frame(maxWidth: .infinity)
@@ -272,10 +272,10 @@ private struct EcuTuningEditor: View {
             }
             if isSelected {
                 RoundedRectangle(cornerRadius: cellCornerRadius)
-                    .stroke(isLive ? Color.white : Color.yellow, lineWidth: 2)
+                    .stroke(isLive ? Color.white : Color.accentWarn, lineWidth: 2)
             }
             Text(formatValue(value))
-                .modifier(RetroFont(size: 10))
+                .modifier(RetroFont(size: Theme.FontSize.body))
                 .foregroundColor(.white.opacity(0.95))
                 .shadow(color: .black.opacity(0.7), radius: 1)
                 .lineLimit(1)
@@ -293,7 +293,7 @@ private struct EcuTuningEditor: View {
             HStack(spacing: cellSpacing) {
                 ForEach(0..<count, id: \.self) { idx in
                     Text(rpmLabel(ecu.rpmBins[idx]))
-                        .modifier(RetroFont(size: 9))
+                        .modifier(RetroFont(size: Theme.FontSize.footnote))
                         .foregroundColor(.white.opacity(0.55))
                         .frame(width: cellW)
                         .lineLimit(1)
@@ -309,7 +309,7 @@ private struct EcuTuningEditor: View {
             // Recent operating-point trail.
             ForEach(ecu.tracerTrail) { sample in
                 Circle()
-                    .fill(Color.green.opacity(0.18))
+                    .fill(Color.accentOk.opacity(0.18))
                     .frame(width: 4, height: 4)
                     .position(pixelPos(rpm: sample.rpm,
                                        loadKpa: sample.loadKpa,
@@ -317,9 +317,9 @@ private struct EcuTuningEditor: View {
             }
             // Live tracer dot at the current operating point.
             Circle()
-                .fill(Color.green)
+                .fill(Color.accentOk)
                 .frame(width: 10, height: 10)
-                .shadow(color: .green, radius: 5)
+                .shadow(color: .accentOk, radius: 5)
                 .position(pixelPos(rpm: ecu.currentRpm,
                                    loadKpa: ecu.currentLoadKpa,
                                    cellW: cellW, cellH: cellH))
@@ -339,12 +339,12 @@ private struct EcuTuningEditor: View {
         return HStack(spacing: 8) {
             VStack(alignment: .leading, spacing: 1) {
                 Text(cellLabel(coord))
-                    .modifier(RetroFont(size: 9))
+                    .modifier(RetroFont(size: Theme.FontSize.footnote))
                     .foregroundColor(.white.opacity(0.7))
                     .monospacedDigit()
                     .frame(width: 140, alignment: .leading)
                 Text(formatValue(value))
-                    .modifier(RetroFont(size: 16))
+                    .modifier(RetroFont(size: Theme.FontSize.title))
                     .foregroundColor(.white)
                     .monospacedDigit()
                     .frame(width: 140, alignment: .leading)
@@ -372,13 +372,13 @@ private struct EcuTuningEditor: View {
                 SmallActionButton(label: "−ALL") { ecu.bumpAll(in: activeMap, by: -mapStep()) }
                 SmallActionButton(label: "+ALL") { ecu.bumpAll(in: activeMap, by: +mapStep()) }
                 SmallActionButton(label: "SMOOTH") { ecu.smooth(activeMap) }
-                SmallActionButton(label: "BAD", accent: .red) { ecu.corrupt(activeMap) }
+                SmallActionButton(label: "BAD", accent: .accentDanger) { ecu.corrupt(activeMap) }
                 SmallActionButton(label: "RESET") { ecu.reset(activeMap) }
             }
         }
         .padding(.horizontal, 6)
         .padding(.vertical, 6)
-        .background(RoundedRectangle(cornerRadius: 4).fill(Color.white.opacity(0.04)))
+        .background(RoundedRectangle(cornerRadius: Theme.Radius.small).fill(Color.white.opacity(0.04)))
     }
 
     // MARK: - iOS paint-mode UI
@@ -394,12 +394,12 @@ private struct EcuTuningEditor: View {
         return HStack(spacing: 6) {
             VStack(alignment: .leading, spacing: 1) {
                 Text(cellLabel(displayCell))
-                    .modifier(RetroFont(size: 8))
+                    .modifier(RetroFont(size: Theme.FontSize.caption))
                     .foregroundColor(.white.opacity(0.55))
                     .monospacedDigit()
                     .frame(width: 90, alignment: .leading)
                 Text(formatValue(ecu.value(in: activeMap, at: displayCell)))
-                    .modifier(RetroFont(size: 12))
+                    .modifier(RetroFont(size: Theme.FontSize.control))
                     .foregroundColor(.white)
                     .monospacedDigit()
                     .frame(width: 90, alignment: .leading)
@@ -424,12 +424,12 @@ private struct EcuTuningEditor: View {
             Spacer()
 
             SmallActionButton(label: "SMOOTH") { ecu.smooth(activeMap) }
-            SmallActionButton(label: "BAD", accent: .red) { ecu.corrupt(activeMap) }
+            SmallActionButton(label: "BAD", accent: .accentDanger) { ecu.corrupt(activeMap) }
             SmallActionButton(label: "RESET") { ecu.reset(activeMap) }
         }
         .padding(.horizontal, 4)
         .padding(.vertical, 5)
-        .background(RoundedRectangle(cornerRadius: 4).fill(Color.white.opacity(0.04)))
+        .background(RoundedRectangle(cornerRadius: Theme.Radius.small).fill(Color.white.opacity(0.04)))
     }
 
     /// Just the big-step ± modes. We expose only these on iOS — the small
@@ -606,8 +606,8 @@ private enum IosPaintMode: Hashable {
 
     var accent: Color {
         switch self {
-        case .decBig, .decSmall: return .red
-        case .incSmall, .incBig: return .green
+        case .decBig, .decSmall: return .accentDanger
+        case .incSmall, .incBig: return .accentOk
         }
     }
 
@@ -625,7 +625,7 @@ private struct IosPaintPill: View {
     var body: some View {
         Button(action: action) {
             Text(label)
-                .modifier(RetroFont(size: 10, weight: .bold))
+                .modifier(RetroFont(size: Theme.FontSize.body, weight: .bold))
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
                 .fixedSize()
@@ -633,11 +633,11 @@ private struct IosPaintPill: View {
                 .padding(.horizontal, 8)
                 .padding(.vertical, 5)
                 .background(
-                    RoundedRectangle(cornerRadius: 4)
+                    RoundedRectangle(cornerRadius: Theme.Radius.small)
                         .fill(active ? accent : accent.opacity(0.12))
                 )
                 .overlay(
-                    RoundedRectangle(cornerRadius: 4)
+                    RoundedRectangle(cornerRadius: Theme.Radius.small)
                         .stroke(accent.opacity(active ? 1.0 : 0.6), lineWidth: 1)
                 )
         }
@@ -655,18 +655,18 @@ private struct TabButton: View {
     var body: some View {
         Button(action: action) {
             Text(label)
-                .modifier(RetroFont(size: 10))
+                .modifier(RetroFont(size: Theme.FontSize.body))
                 .foregroundColor(active ? .white : .white.opacity(0.5))
                 .tracking(0.8)
                 .padding(.horizontal, 10)
                 .padding(.vertical, 5)
                 .background(
-                    RoundedRectangle(cornerRadius: 4)
-                        .fill(active ? Color.orange.opacity(0.25) : Color.white.opacity(0.05))
+                    RoundedRectangle(cornerRadius: Theme.Radius.small)
+                        .fill(active ? Color.accentLive.opacity(0.25) : Color.white.opacity(0.05))
                 )
                 .overlay(
-                    RoundedRectangle(cornerRadius: 4)
-                        .stroke(active ? Color.orange.opacity(0.8) : Color.white.opacity(0.1), lineWidth: 1)
+                    RoundedRectangle(cornerRadius: Theme.Radius.small)
+                        .stroke(active ? Color.accentLive.opacity(0.8) : Color.white.opacity(0.1), lineWidth: 1)
                 )
         }
         .buttonStyle(.plain)
@@ -680,7 +680,7 @@ private struct EditButton: View {
     var body: some View {
         Button(action: action) {
             Text(label)
-                .modifier(RetroFont(size: 12))
+                .modifier(RetroFont(size: Theme.FontSize.control))
                 .lineLimit(1)
                 .minimumScaleFactor(0.6)
                 .fixedSize()
@@ -692,7 +692,7 @@ private struct EditButton: View {
                     LinearGradient(colors: [Color(white: 0.22), Color(white: 0.10)],
                                    startPoint: .top, endPoint: .bottom)
                 )
-                .overlay(RoundedRectangle(cornerRadius: 3).stroke(Color.white.opacity(0.2), lineWidth: 0.7))
+                .overlay(RoundedRectangle(cornerRadius: Theme.Radius.small).stroke(Color.white.opacity(0.2), lineWidth: 0.7))
                 .cornerRadius(3)
         }
         .buttonStyle(.plain)
@@ -710,10 +710,10 @@ private struct Readout: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 1) {
             Text(label)
-                .modifier(RetroFont(size: 8))
+                .modifier(RetroFont(size: Theme.FontSize.caption))
                 .foregroundColor(.white.opacity(0.5))
             Text(value)
-                .modifier(RetroFont(size: 11))
+                .modifier(RetroFont(size: Theme.FontSize.callout))
                 .foregroundColor(.white)
                 // Mono digits + a fixed leading-aligned frame: digits
                 // never reflow even as the value grows.

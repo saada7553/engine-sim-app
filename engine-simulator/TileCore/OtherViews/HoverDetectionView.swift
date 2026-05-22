@@ -20,11 +20,11 @@ enum HoverMode {
 // Palette constants — kept here so all overlay styling is in one place and
 // stays aligned with RetroPanel / ControlButton elsewhere in the app.
 private let overlayBackgroundDim = Color.black.opacity(0.55)
-private let overlayHighlightFill = Color.orange.opacity(0.22)
-private let overlayHighlightBorder = Color.orange.opacity(0.85)
-private let overlayDeleteFill = Color.red.opacity(0.22)
-private let overlayDeleteBorder = Color.red.opacity(0.85)
-private let overlayDeleteIconColor = Color.red
+private let overlayHighlightFill = Color.accentLive.opacity(0.22)
+private let overlayHighlightBorder = Color.accentLive.opacity(0.85)
+private let overlayDeleteFill = Color.accentDanger.opacity(0.22)
+private let overlayDeleteBorder = Color.accentDanger.opacity(0.85)
+private let overlayDeleteIconColor = Color.accentDanger
 private let overlayLabelBackground = Color.black.opacity(0.85)
 private let overlayLabelBorder = Color.white.opacity(0.25)
 private let overlayCornerRadius: CGFloat = 10
@@ -248,7 +248,7 @@ private struct OverlayLabel: View {
 
     var body: some View {
         Text(text)
-            .modifier(RetroFont(size: 10, weight: .bold))
+            .modifier(RetroFont(size: Theme.FontSize.body, weight: .bold))
             .foregroundColor(.white)
             .tracking(1)
             .padding(.horizontal, 10)

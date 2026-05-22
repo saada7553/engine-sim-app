@@ -52,9 +52,9 @@ private let metalLightColor = Color(white: 0.55)
 private let metalMidColor = Color(white: 0.32)
 private let metalDarkColor = Color(white: 0.16)
 private let metalOutlineColor = Color.white.opacity(0.22)
-private let frictionColor = Color.orange.opacity(0.85)
-private let frictionOutlineColor = Color.orange.opacity(0.5)
-private let airflowColor = Color.cyan.opacity(0.7)
+private let frictionColor = Color.accentLive.opacity(0.85)
+private let frictionOutlineColor = Color.accentLive.opacity(0.5)
+private let airflowColor = Color.accentInfo.opacity(0.7)
 private let scribeColor = Color.black.opacity(0.45)
 
 struct ThrottleView: View {
@@ -112,7 +112,7 @@ struct ThrottleView: View {
             // gets the full column height.
             #if os(macOS)
             HStack {
-                Text(title).modifier(RetroFont(size: 10)).foregroundColor(.gray)
+                Text(title).modifier(RetroFont(size: Theme.FontSize.body)).foregroundColor(.textMuted)
                 Spacer()
             }
             .padding(.horizontal, 8)
@@ -438,9 +438,9 @@ private struct StateLabel: View {
     }
 
     private var color: Color {
-        if disengageAmount < 0.05 { return .green.opacity(0.85) }
-        if disengageAmount > 0.95 { return .orange.opacity(0.85) }
-        return .yellow.opacity(0.85)
+        if disengageAmount < 0.05 { return .accentOk.opacity(0.85) }
+        if disengageAmount > 0.95 { return .accentHeat.opacity(0.85) }
+        return .accentWarn.opacity(0.85)
     }
 
     var body: some View {
@@ -448,7 +448,7 @@ private struct StateLabel: View {
             HStack {
                 Spacer()
                 Text(label)
-                    .modifier(RetroFont(size: 8))
+                    .modifier(RetroFont(size: Theme.FontSize.caption))
                     .foregroundColor(color)
                     .padding(.horizontal, 5)
                     .padding(.vertical, 2)
@@ -563,7 +563,7 @@ private struct ThrottleBody: View {
                     .position(x: rect.midX, y: rect.midY)
 
                 Rectangle()
-                    .fill(LinearGradient(colors: [.orange, .red], startPoint: .top, endPoint: .bottom))
+                    .fill(LinearGradient(colors: [.accentHeat, .accentDanger], startPoint: .top, endPoint: .bottom))
                     .frame(width: bladeLength, height: bladeThickness)
                     .rotationEffect(.degrees(angle), anchor: .center)
                     .position(x: rect.midX, y: rect.midY)
@@ -681,8 +681,8 @@ struct PrecisionThrottleSlider: View {
         PercentageSlider(
             label: "THROTTLE INPUT",
             value: $value,
-            valueColor: .orange,
-            fillColor: .orange.opacity(0.35)
+            valueColor: .accentLive,
+            fillColor: .accentLive.opacity(0.35)
         )
     }
 }
@@ -704,8 +704,8 @@ struct PrecisionClutchSlider: View {
                 get: { pedalPosition },
                 set: { newPedal in onChange(1.0 - newPedal) }
             ),
-            valueColor: pressure < 0.5 ? .orange : .green,
-            fillColor: Color.orange.opacity(0.25)
+            valueColor: pressure < 0.5 ? .accentHeat : .accentOk,
+            fillColor: Color.accentHeat.opacity(0.25)
         )
     }
 }
@@ -723,10 +723,10 @@ private struct PercentageSlider: View {
     var body: some View {
         VStack(spacing: 4) {
             HStack {
-                Text(label).modifier(RetroFont(size: 9)).foregroundColor(.gray)
+                Text(label).modifier(RetroFont(size: Theme.FontSize.footnote)).foregroundColor(.textMuted)
                 Spacer()
                 Text(String(format: "%.0f%%", value * 100))
-                    .modifier(RetroFont(size: 9))
+                    .modifier(RetroFont(size: Theme.FontSize.footnote))
                     .foregroundColor(valueColor)
             }
 

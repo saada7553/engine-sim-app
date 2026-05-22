@@ -20,12 +20,12 @@ import SwiftUI
 // MARK: - Palette / thresholds
 
 private let healthyFill = Color.healthGreen
-private let warningColor = Color.orange
-private let criticalColor = Color.red
-private let emptySegmentFill = Color.white.opacity(0.06)
-private let segmentBorder = Color.white.opacity(0.14)
-private let dividerColor = Color.white.opacity(0.12)
-private let labelColor = Color.white.opacity(0.45)
+// Amber warning band — an explicit health-scale colour, deliberately NOT the
+// brand accent (which is blue); a damaged component must read as amber→red.
+private let warningColor = Color.accentHeat
+private let criticalColor = Color.accentDanger
+private let dividerColor = Color.strokeSubtle
+private let labelColor = Color.textMuted
 private let headerColor = Color.white.opacity(0.6)
 private let percentColor = Color.white.opacity(0.5)
 
@@ -45,9 +45,9 @@ private let cellGapBase: CGFloat = 4
 private let rowGapBase: CGFloat = 3
 private let segmentGapBase: CGFloat = 1.5
 private let segmentCornerBase: CGFloat = 1
-private let headerFontBase: CGFloat = 9
-private let rowLabelFontBase: CGFloat = 7
-private let percentFontBase: CGFloat = 8
+private let headerFontBase: CGFloat = Theme.FontSize.footnote
+private let rowLabelFontBase: CGFloat = Theme.FontSize.micro
+private let percentFontBase: CGFloat = Theme.FontSize.caption
 private let wideStripTopPadBase: CGFloat = 6
 private let wideRowGapBase: CGFloat = 4
 private let wideColumnGapBase: CGFloat = 10
@@ -82,8 +82,11 @@ private func percentText(_ v: Double) -> String {
 
 // MARK: - Segmented bar
 
-/// A flat dash-LED bar: `segments` cells that light up to represent `health`.
-/// No gradients — lit cells are a solid colour, unlit cells a faint recess.
+/// A row of vintage tell-tale lamps that light up to represent `health`. Each
+/// cell is a little incandescent bulb glowing behind a frosted translucent
+/// cover — the kind you'd find on a period instrument cluster. Lit lamps bloom
+/// from a hot core out to the accent colour; unlit lamps read as a dim domed
+/// bulb behind faintly tinted glass so you can tell what colour it would burn.
 private struct SegmentedHealthBar: View {
     let health: Double
     let segments: Int
@@ -100,12 +103,8 @@ private struct SegmentedHealthBar: View {
     var body: some View {
         HStack(spacing: gap) {
             ForEach(0..<segments, id: \.self) { i in
-                RoundedRectangle(cornerRadius: corner)
-                    .fill(i < litCount ? color : emptySegmentFill)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: corner)
-                            .stroke(segmentBorder, lineWidth: segmentBorderWidth)
-                    )
+                LampLens(lit: i < litCount, color: color, cornerRadius: corner,
+                         rimWidth: segmentBorderWidth)
             }
         }
     }

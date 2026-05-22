@@ -18,14 +18,14 @@ private let selectViewHorizontalPadding: CGFloat = 24
 private let selectViewVerticalPadding: CGFloat = 20
 private let cardMinWidth: CGFloat = 150
 private let cardHeight: CGFloat = 92
-private let cardCornerRadius: CGFloat = 8
-private let cardHoverBorder = Color.orange.opacity(0.75)
+private let cardCornerRadius: CGFloat = Theme.Radius.panel
+private let cardHoverBorder = Color.accentLive.opacity(0.75)
 private let cardIdleBorder = Color.white.opacity(0.15)
 private let cardBackground = Color.white.opacity(0.04)
-private let cardHoverBackground = Color.orange.opacity(0.08)
-private let cardIconColor = Color.orange.opacity(0.85)
+private let cardHoverBackground = Color.accentLive.opacity(0.08)
+private let cardIconColor = Color.accentLive.opacity(0.85)
 private let cardTitleColor = Color.white.opacity(0.92)
-private let cardSubtitleColor = Color.white.opacity(0.45)
+private let cardSubtitleColor = Color.textMuted
 private let sectionTitleColor = Color.white.opacity(0.55)
 
 // MARK: - Tile type metadata
@@ -133,11 +133,11 @@ struct SelectView: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text("SELECT A VIEW")
-                .modifier(RetroFont(size: 11, weight: .bold))
-                .foregroundColor(.orange)
+                .modifier(RetroFont(size: Theme.FontSize.callout, weight: .bold))
+                .foregroundColor(.accentLive)
                 .tracking(2)
             Text("Pick what this tile should display.")
-                .font(.system(size: 13))
+                .font(.system(size: Theme.FontSize.headline))
                 .foregroundColor(.white.opacity(0.6))
         }
     }
@@ -154,7 +154,7 @@ private struct SectionGrid: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(section.title)
-                .modifier(RetroFont(size: 9, weight: .bold))
+                .modifier(RetroFont(size: Theme.FontSize.footnote, weight: .bold))
                 .foregroundColor(sectionTitleColor)
                 .tracking(1.4)
 
@@ -233,7 +233,7 @@ private struct PreviewIcon: View {
 
             Image(systemName: symbol)
                 .font(.system(size: 18, weight: .regular))
-                .foregroundColor(hovering ? .orange : cardIconColor)
+                .foregroundColor(hovering ? .accentLive : cardIconColor)
         }
         .frame(width: 36, height: 36)
     }

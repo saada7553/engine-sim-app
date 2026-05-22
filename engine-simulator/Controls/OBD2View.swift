@@ -30,10 +30,10 @@ private let amberWarn = Color(red: 1.0, green: 0.72, blue: 0.20)
 private let amberCritical = Color(red: 1.0, green: 0.35, blue: 0.15)
 private let amberDim = Color(red: 0.55, green: 0.40, blue: 0.10)
 private let nominalGreen = Color(red: 0.30, green: 1.0, blue: 0.45)
-private let panelBorder = Color.white.opacity(0.10)
+private let panelBorder = Color.strokeSubtle
 
-private let tilePadding: CGFloat = 10
-private let cardCorner: CGFloat = 3
+private let tilePadding: CGFloat = Theme.Space.lg
+private let cardCorner: CGFloat = Theme.Radius.small
 private let scanlineSpacing: CGFloat = 2.0
 private let scanlineOpacity: Double = 0.05
 private let scanlineMinHeight: CGFloat = 80
@@ -186,13 +186,13 @@ struct OBD2View: View {
                     .opacity(blinkOn ? 1.0 : 0.25)
                     .shadow(color: amberWarn.opacity(0.7), radius: 2)
                 Text("OBD-II SCAN")
-                    .modifier(RetroFont(size: 12))
+                    .modifier(RetroFont(size: Theme.FontSize.control))
                     .tracking(1.0)
                     .foregroundColor(.white)
             }
             Spacer()
             Text(codeBadgeText)
-                .modifier(RetroFont(size: 11))
+                .modifier(RetroFont(size: Theme.FontSize.callout))
                 .tracking(0.6)
                 .foregroundColor(displayedCodes.isEmpty ? nominalGreen : amberWarn)
             clearButton
@@ -289,7 +289,7 @@ struct OBD2View: View {
                 .foregroundColor(nominalGreen)
                 .shadow(color: nominalGreen.opacity(0.6), radius: 4)
             Text("SYSTEM NOMINAL")
-                .modifier(RetroFont(size: 11))
+                .modifier(RetroFont(size: Theme.FontSize.callout))
                 .tracking(1.6)
                 .foregroundColor(nominalGreen.opacity(0.7))
         }

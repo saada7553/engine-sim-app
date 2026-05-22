@@ -19,8 +19,8 @@ import Combine
 
 private let paywallScrim = Color.black.opacity(0.72)
 private let paywallCardFill = Color.appBackground
-private let paywallCardBorder = Color.white.opacity(0.10)
-private let paywallCardCorner: CGFloat = 14
+private let paywallCardBorder = Color.strokeSubtle
+private let paywallCardCorner: CGFloat = Theme.Radius.window
 private let paywallMaxWidth: CGFloat = 520
 private let paywallContentSpacing: CGFloat = 18
 private let paywallPadding: CGFloat = 24
@@ -32,20 +32,20 @@ private let heroHeight: CGFloat = 260
 /// centerpiece; copy still has room to breathe at this width without
 /// excessive wrapping.
 private let iosTextColumnWidth: CGFloat = 400
-private let heroCorner: CGFloat = 10
+private let heroCorner: CGFloat = Theme.Radius.panel
 private let heroBackground = Color.black.opacity(0.55)
-private let heroBorder = Color.white.opacity(0.08)
+private let heroBorder = Color.strokeFaint
 private let heroAnnotationBg = Color.black.opacity(0.50)
 private let heroAnnotationBorder = Color.white.opacity(0.06)
 
-private let ctaIdleFill = Color.orange
+private let ctaIdleFill = Color.accentLive
 private let ctaIdleText = Color.black
-private let ctaHoverFill = Color.orange.opacity(0.88)
+private let ctaHoverFill = Color.accentLive.opacity(0.88)
 private let bodyText = Color.white.opacity(0.85)
-private let mutedText = Color.white.opacity(0.45)
-private let dividerColor = Color.white.opacity(0.08)
-private let successColor = Color.green
-private let errorColor = Color.red.opacity(0.9)
+private let mutedText = Color.textMuted
+private let dividerColor = Color.strokeFaint
+private let successColor = Color.accentOk
+private let errorColor = Color.accentDanger.opacity(0.9)
 
 // MARK: - Carousel constants
 
@@ -176,18 +176,18 @@ struct PaywallSheet: View {
     private var iosTextHeader: some View {
         HStack(spacing: 10) {
             Text("ENGINE SIMULATOR")
-                .modifier(RetroFont(size: 9, weight: .bold))
+                .modifier(RetroFont(size: Theme.FontSize.footnote, weight: .bold))
                 .tracking(2)
                 .foregroundColor(bodyText)
             Text("PRO")
-                .modifier(RetroFont(size: 9, weight: .bold))
+                .modifier(RetroFont(size: Theme.FontSize.footnote, weight: .bold))
                 .tracking(2)
-                .foregroundColor(.orange)
+                .foregroundColor(.accentLive)
                 .padding(.horizontal, 5)
                 .padding(.vertical, 2)
                 .background(
                     RoundedRectangle(cornerRadius: 3)
-                        .stroke(Color.orange.opacity(0.6), lineWidth: 1)
+                        .stroke(Color.accentLive.opacity(0.6), lineWidth: 1)
                 )
             Spacer()
             Button(action: dismiss) {
@@ -229,18 +229,18 @@ struct PaywallSheet: View {
     private var header: some View {
         HStack(alignment: .center, spacing: 10) {
             Text("ENGINE SIMULATOR")
-                .modifier(RetroFont(size: 10, weight: .bold))
+                .modifier(RetroFont(size: Theme.FontSize.body, weight: .bold))
                 .tracking(2)
                 .foregroundColor(bodyText)
             Text("PRO")
-                .modifier(RetroFont(size: 10, weight: .bold))
+                .modifier(RetroFont(size: Theme.FontSize.body, weight: .bold))
                 .tracking(2)
-                .foregroundColor(.orange)
+                .foregroundColor(.accentLive)
                 .padding(.horizontal, 6)
                 .padding(.vertical, 2)
                 .background(
                     RoundedRectangle(cornerRadius: 3)
-                        .stroke(Color.orange.opacity(0.6), lineWidth: 1)
+                        .stroke(Color.accentLive.opacity(0.6), lineWidth: 1)
                 )
             Spacer()
             Button(action: dismiss) {
@@ -273,11 +273,11 @@ struct PaywallSheet: View {
     }
 
     /// Radial spotlight behind the SCN view. SceneKit's vignette dims the
-    /// frame; this brightens the center so the engine sits in a warm pool.
+    /// frame; this lifts the center so the engine sits in a soft, cool pool.
     private var heroBackdrop: some View {
         RadialGradient(
             gradient: Gradient(stops: [
-                .init(color: Color(red: 0.10, green: 0.08, blue: 0.07), location: 0),
+                .init(color: Color(red: 0.07, green: 0.08, blue: 0.11), location: 0),
                 .init(color: Color.black.opacity(0.75), location: 0.65),
                 .init(color: Color.black.opacity(0.95), location: 1.0),
             ]),
@@ -296,7 +296,7 @@ struct PaywallSheet: View {
                 carouselArrow(systemName: "chevron.left", help: "Previous engine",
                               action: { carousel.previous() })
                 Text(carousel.currentName.uppercased())
-                    .modifier(RetroFont(size: 12, weight: .bold))
+                    .modifier(RetroFont(size: Theme.FontSize.control, weight: .bold))
                     .tracking(2.5)
                     .foregroundColor(.white)
                     .id(carousel.currentName)
@@ -375,23 +375,13 @@ struct PaywallSheet: View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
             Image(systemName: "wrench.and.screwdriver.fill")
                 .font(.system(size: 11, weight: .semibold))
-                .foregroundColor(.orange.opacity(0.85))
-            Text("Or design your own from scratch in the engine builder — any layout, bore, stroke, cam, and tune.")
+                .foregroundColor(.accentLive.opacity(0.85))
+            Text("Or design your own from scratch in the engine builder, with any layout, bore, stroke, cam, and tune.")
                 .font(.system(size: 12))
                 .foregroundColor(bodyText)
                 .fixedSize(horizontal: false, vertical: true)
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 9)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: 6)
-                .fill(Color.white.opacity(0.04))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 6)
-                .stroke(Color.white.opacity(0.08), lineWidth: 1)
-        )
     }
 
     // MARK: Price row
@@ -530,7 +520,7 @@ private struct CarouselProgressBar: View {
                 Rectangle()
                     .fill(dividerColor)
                 Rectangle()
-                    .fill(Color.orange.opacity(0.75))
+                    .fill(Color.accentLive.opacity(0.75))
                     .frame(width: segmentWidth)
                     .offset(x: segmentWidth * CGFloat(currentIndex))
                     .animation(.easeInOut(duration: 0.45), value: currentIndex)

@@ -70,13 +70,11 @@ private let baseReadoutValueFontSize: CGFloat = 56
 #endif
 private let textShrinkFloor: CGFloat = 0.5
 
-private let panelStrokeColor = Color.white.opacity(0.12)
-private let panelFill = Color.white.opacity(0.03)
-private let ledOffColor = Color.white.opacity(0.06)
-private let ledOffStroke = Color.white.opacity(0.10)
-private let ledGreenColor = Color.green
-private let ledYellowColor = Color.yellow
-private let ledRedColor = Color.red
+private let panelStrokeColor = Color.strokeSubtle
+private let panelFill = Color.surfaceFaint
+private let ledGreenColor = Color.accentOk
+private let ledYellowColor = Color.accentWarn
+private let ledRedColor = Color.accentDanger
 
 // MARK: - View
 
@@ -109,7 +107,7 @@ struct ShiftLightView: View {
         HStack(alignment: .firstTextBaseline, spacing: baseReadoutSpacing * scale) {
             Text("SHIFT LIGHT")
                 .modifier(RetroFont(size: baseHeaderFontSize * scale))
-                .foregroundColor(.gray)
+                .foregroundColor(.textMuted)
                 .lineLimit(1)
                 .minimumScaleFactor(textShrinkFloor)
                 .fixedSize()
@@ -122,11 +120,11 @@ struct ShiftLightView: View {
                           scale: scale)
             inlineReadout(label: "OPTIMAL",
                           value: "\(Int(shiftRpm))",
-                          color: .orange,
+                          color: .accentLive,
                           scale: scale)
             inlineReadout(label: "GEAR",
                           value: vm.gear == -1 ? "N" : "\(vm.gear + 1)",
-                          color: vm.gear == -1 ? .green : .orange,
+                          color: vm.gear == -1 ? .accentOk : .accentLive,
                           scale: scale)
 
             Spacer(minLength: baseReadoutSpacing * scale)
@@ -173,9 +171,9 @@ struct ShiftLightView: View {
 
     private func statusFor(progress: Double) -> (String, Color) {
         if progress < preShiftBlankFraction { return ("STANDBY", Color.white.opacity(0.4)) }
-        if progress < 1.0                   { return ("BUILD", .green) }
-        if progress < 1.15                  { return ("SHIFT NOW", .red) }
-        return ("OVER REV", .red)
+        if progress < 1.0                   { return ("BUILD", .accentOk) }
+        if progress < 1.15                  { return ("SHIFT NOW", .accentDanger) }
+        return ("OVER REV", .accentDanger)
     }
 
     private func ledBar(scale: CGFloat) -> some View {
@@ -202,16 +200,12 @@ struct ShiftLightView: View {
         let lit = shouldLight(idx: idx, now: now)
         let color = ledColor(for: idx)
         let corner = baseLedCornerRadius * scale
-        return RoundedRectangle(cornerRadius: corner)
-            .fill(lit ? color : ledOffColor)
-            .overlay(
-                RoundedRectangle(cornerRadius: corner)
-                    .stroke(lit ? color.opacity(0.9) : ledOffStroke, lineWidth: 1)
-            )
+        // Same glass-lensed lamp the damage matrix uses, so every indicator
+        // in the app glows from one shared treatment.
+        return LampLens(lit: lit, color: color, cornerRadius: corner,
+                        rimWidth: 1, bloomRadius: baseGlowRadius * scale)
             .frame(height: baseLedHeight * scale)
             .frame(maxWidth: .infinity)
-            .shadow(color: lit ? color.opacity(0.85) : .clear,
-                    radius: baseGlowRadius * scale)
     }
 
     // MARK: - Light logic

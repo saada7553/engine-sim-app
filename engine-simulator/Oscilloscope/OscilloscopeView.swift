@@ -194,14 +194,14 @@ struct OscilloscopeView: View {
                     let value = y.min + (y.max - y.min) * frac
                     Text(formatValue(value))
                         .font(.system(size: 9, design: .monospaced))
-                        .foregroundColor(.gray)
+                        .foregroundColor(.textMuted)
                         .position(x: labelX,
                                   y: geometry.size.height * (1.0 - CGFloat(frac)) - 6)
                 }
 
                 Text(configs[i].yAxisLabel)
                     .font(.system(size: 9, weight: .bold, design: .monospaced))
-                    .foregroundColor(.gray)
+                    .foregroundColor(.textMuted)
                     .position(x: labelX, y: 8)
             }
         }
@@ -325,7 +325,7 @@ struct OscilloscopeView: View {
         ForEach(gridY, id: \.self) { val in
             Text(formatValue(val))
                 .font(.system(size: 9, design: .monospaced))
-                .foregroundColor(.gray)
+                .foregroundColor(.textMuted)
                 .position(x: 20, y: convertY(val, bounds: (bounds.yMin, bounds.yMax), height: geometry.size.height) - 6)
         }
     }
@@ -426,16 +426,16 @@ struct DynoOscilloscopeView: View {
             if !engineVm.dynoEnabled && hasNoData {
                 #if os(macOS)
                 Text("ENABLE DYNO (D) TO RUN")
-                    .modifier(RetroFont(size: 11))
-                    .foregroundColor(.gray)
+                    .modifier(RetroFont(size: Theme.FontSize.callout))
+                    .foregroundColor(.textMuted)
                     .padding(.horizontal, 12)
                     .padding(.vertical, 8)
                     .background(Color.black.opacity(0.55))
                     .cornerRadius(6)
                 #else
                 Text("TAP DYNO IN TOP BAR TO RUN")
-                    .modifier(RetroFont(size: 11))
-                    .foregroundColor(.gray)
+                    .modifier(RetroFont(size: Theme.FontSize.callout))
+                    .foregroundColor(.textMuted)
                     .padding(.horizontal, 12)
                     .padding(.vertical, 8)
                     .background(Color.black.opacity(0.55))

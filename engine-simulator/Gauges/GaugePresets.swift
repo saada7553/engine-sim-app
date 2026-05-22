@@ -13,11 +13,15 @@ enum GaugePresets {
 
     // MARK: - Color Constants (matching C++ app colors)
 
-    static let foregroundColor = Color.white
-    static let orange = Color.orange
-    static let red = Color.red
-    static let blue = Color(red: 0.2, green: 0.6, blue: 1.0)
-    static let green = Color.green
+    // Sourced from the global palette so the gauges share one set of colours
+    // with the rest of the app. `orange`/`red`/`green` are the warm warning,
+    // danger and healthy zone colours; `blue` is the brand accent (cool zones
+    // + the speedo needle).
+    static let foregroundColor = Color.textPrimary
+    static let orange = Color.accentHeat
+    static let red = Color.accentDanger
+    static let blue = Color.accentLive
+    static let green = Color.accentOk
 
     // MARK: - Tachometer
 
@@ -69,7 +73,7 @@ enum GaugePresets {
                          width: 3, radialOffset: 6,
                          shortenStart: shortenAngle, shortenEnd: -shortenAngle)
             ],
-            needleColor: .red,
+            needleColor: red,
             tickColor: .white
         )
     }
@@ -106,7 +110,7 @@ enum GaugePresets {
                 maxVelocity: 2.0
             ),
             bands: [],
-            needleColor: orange,
+            needleColor: blue,
             tickColor: .white
         )
     }
@@ -534,7 +538,7 @@ enum GaugePresets {
                          width: 3, radialOffset: 6,
                          shortenStart: shortenAngle, shortenEnd: -shortenAngle)
             ],
-            needleColor: .cyan,
+            needleColor: .accentInfo,
             tickColor: .white
         )
     }

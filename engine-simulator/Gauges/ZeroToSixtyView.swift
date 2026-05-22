@@ -61,7 +61,6 @@ private let baseStatusLineSpacing: CGFloat = 10
 private let baseSpeedRowSpacing: CGFloat = 6
 private let baseSpeedRowHorizontalPadding: CGFloat = 4
 
-private let baseDisplayCornerRadius: CGFloat = 8
 private let baseDisplayVerticalPadding: CGFloat = 18
 #if os(macOS)
 private let baseDisplayFontSize: CGFloat = 88
@@ -99,9 +98,6 @@ private let baseChipFontSize: CGFloat = 20
 #endif
 private let textShrinkFloor: CGFloat = 0.5
 private let displayShrinkFloor: CGFloat = 0.3
-
-private let displayPanelFill = Color.white.opacity(0.04)
-private let displayPanelStroke = Color.white.opacity(0.12)
 
 // MARK: - Phase model
 
@@ -158,7 +154,7 @@ struct ZeroToSixtyView: View {
         HStack {
             Text("LAUNCH TIMER")
                 .modifier(RetroFont(size: baseHeaderFontSize * scale))
-                .foregroundColor(.gray)
+                .foregroundColor(.textMuted)
                 .lineLimit(1)
                 .minimumScaleFactor(textShrinkFloor)
             Spacer()
@@ -184,26 +180,28 @@ struct ZeroToSixtyView: View {
         }
     }
 
-    /// Big monospaced clock face. Font scales with tile size and uses a
-    /// generous `minimumScaleFactor` so the digits never wrap or truncate
-    /// when the user narrows the tile.
+    /// Big monospaced clock face — the hero of the tile. No boxed panel; just
+    /// large light-weight digits with a small unit, so it reads as a clean
+    /// readout rather than a bordered widget. Font scales with tile size with a
+    /// generous `minimumScaleFactor` so the digits never wrap or truncate.
     private func timeDisplay(scale: CGFloat) -> some View {
         TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { context in
-            Text(displayTimeString(at: context.date.timeIntervalSinceReferenceDate))
-                .font(.system(size: baseDisplayFontSize * scale,
-                              weight: .regular,
-                              design: .monospaced))
-                .foregroundColor(.white)
-                .lineLimit(1)
-                .minimumScaleFactor(displayShrinkFloor)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, baseDisplayVerticalPadding * scale)
-                .background(
-                    RoundedRectangle(cornerRadius: baseDisplayCornerRadius * scale)
-                        .fill(displayPanelFill)
-                        .overlay(RoundedRectangle(cornerRadius: baseDisplayCornerRadius * scale)
-                                    .stroke(displayPanelStroke, lineWidth: 1))
-                )
+            HStack(alignment: .lastTextBaseline, spacing: 4 * scale) {
+                Text(displayTimeString(at: context.date.timeIntervalSinceReferenceDate))
+                    .font(.system(size: baseDisplayFontSize * scale,
+                                  weight: .light,
+                                  design: .monospaced))
+                    .foregroundColor(phase == .idle ? .white.opacity(0.85) : .white)
+                    .lineLimit(1)
+                    .minimumScaleFactor(displayShrinkFloor)
+                Text("s")
+                    .font(.system(size: baseDisplayFontSize * scale * 0.32,
+                                  weight: .regular,
+                                  design: .monospaced))
+                    .foregroundColor(.textMuted)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, baseDisplayVerticalPadding * scale * 0.5)
         }
     }
 
@@ -269,7 +267,7 @@ struct ZeroToSixtyView: View {
     private var phaseAccentColor: Color {
         switch phase {
         case .idle:     return .white.opacity(0.45)
-        default:        return .orange
+        default:        return .accentLive
         }
     }
 
@@ -437,7 +435,7 @@ private struct TimerButton: View {
 
     private var accent: Color {
         switch style {
-        case .primary:   return .orange
+        case .primary:   return .accentLive
         case .secondary: return .white.opacity(0.55)
         }
     }
@@ -479,20 +477,17 @@ private struct TargetChip: View {
             Text(label)
                 .modifier(RetroFont(size: baseChipFontSize * scale, weight: .bold))
                 .tracking(1.2)
-                .foregroundColor(selected ? .orange : (hovered ? .white : .white.opacity(0.55)))
+                .foregroundColor(selected ? .accentLive : (hovered ? .white : .white.opacity(0.5)))
                 .lineLimit(1)
                 .minimumScaleFactor(textShrinkFloor)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .padding(.horizontal, baseChipHorizontalPadding * scale)
+                // Clean segmented look — the selected target gets a soft orange
+                // fill, the rest are plain text. No borders.
                 .background(
                     RoundedRectangle(cornerRadius: baseChipCornerRadius * scale)
-                        .fill(selected ? Color.orange.opacity(0.18)
+                        .fill(selected ? Color.accentLive.opacity(0.16)
                                        : (hovered ? Color.white.opacity(0.05) : Color.clear))
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: baseChipCornerRadius * scale)
-                        .stroke(selected ? Color.orange.opacity(0.7) : Color.white.opacity(0.18),
-                                lineWidth: 1)
                 )
         }
         .buttonStyle(.plain)

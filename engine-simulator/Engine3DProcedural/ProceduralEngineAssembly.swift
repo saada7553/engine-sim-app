@@ -468,8 +468,8 @@ enum ProceduralEngineAssembly {
     /// across the app (see `DamageMatrixView`): a single healthy green for
     /// every part, easing through amber into red as it fails.
     private static let wireHealthyColor  = PlatformColor(Color.healthGreen)
-    private static let wireWarningColor  = PlatformColor(Color.orange)
-    private static let wireCriticalColor = PlatformColor(Color.red)
+    private static let wireWarningColor  = PlatformColor(Color.accentHeat)
+    private static let wireCriticalColor = PlatformColor(Color.accentDanger)
 
     /// Colour each visible part by its health. All parts share one green at full
     /// health and slide through the app's warning/critical colors as they wear,

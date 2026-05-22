@@ -17,7 +17,7 @@ let dashBezelTopGray = Color(white: 0.22)
 let dashBezelBottomGray = Color(white: 0.08)
 let dashBezelStrokeLight = Color.white.opacity(0.45)
 let dashBezelStrokeDark = Color.black.opacity(0.7)
-let dashBezelCorner: CGFloat = 7
+let dashBezelCorner: CGFloat = Theme.Radius.control
 private let dashBezelShadow = Color.black.opacity(0.55)
 
 struct DashBezel: View {
@@ -61,20 +61,20 @@ struct RetroPanel<Content: View>: View {
             // Header
             HStack {
                 Text(title.uppercased())
-                    .modifier(RetroFont(size: 10))
+                    .modifier(RetroFont(size: Theme.FontSize.body))
                     .foregroundColor(.black)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
+                    .padding(.horizontal, Theme.Space.sm)
+                    .padding(.vertical, Theme.Space.hair)
                     .background(Color.white)
                 Spacer()
             }
             .background(Color.white.opacity(0.1))
-            
+
             // Content
             ZStack {
                 Color.appBackground
                 content
-                    .padding(8)
+                    .padding(Theme.Space.md)
             }
         }
         .border(Color.white.opacity(0.3), width: 1)
@@ -133,18 +133,18 @@ struct ControlButton: View {
     var body: some View {
         Button(action: action) {
             HStack {
-                Text(label).modifier(RetroFont(size: 12))
-                    .foregroundColor(active ? .white : .gray) // Better contrast
+                Text(label).modifier(RetroFont(size: Theme.FontSize.control))
+                    .foregroundColor(active ? .textPrimary : .textMuted)
                 Spacer()
-                
+
                 // Status Light
                 Circle()
                     .fill(active ? color : Color.black)
-                    .overlay(Circle().stroke(active ? color : Color.gray, lineWidth: 1))
+                    .overlay(Circle().stroke(active ? color : Color.gray, lineWidth: Theme.Stroke.thin))
                     .shadow(color: active ? color.opacity(0.8) : .clear, radius: 4)
                     .frame(width: 10, height: 10)
             }
-            .padding(12)
+            .padding(Theme.Space.xl)
             .background(Color.white.opacity(active ? 0.15 : 0.05)) // Visible background when off
             .border(active ? color : Color.white.opacity(0.2), width: 1) // Visible border when off
         }
@@ -162,20 +162,20 @@ struct SmallActionButton: View {
     var body: some View {
         Button(action: action) {
             Text(label)
-                .modifier(RetroFont(size: 9))
+                .modifier(RetroFont(size: Theme.FontSize.footnote))
                 .lineLimit(1)
                 .minimumScaleFactor(0.6)
                 .fixedSize()
                 .foregroundColor(accent == .white ? .white.opacity(0.8) : accent)
-                .padding(.horizontal, 6)
-                .padding(.vertical, 4)
+                .padding(.horizontal, Theme.Space.sm)
+                .padding(.vertical, Theme.Space.xs)
                 .background(
-                    RoundedRectangle(cornerRadius: 3)
-                        .fill(accent == .white ? Color.white.opacity(0.05) : accent.opacity(0.12))
+                    RoundedRectangle(cornerRadius: Theme.Radius.small)
+                        .fill(accent == .white ? Color.surfaceLow : accent.opacity(0.12))
                 )
                 .overlay(
-                    RoundedRectangle(cornerRadius: 3)
-                        .stroke(accent == .white ? Color.white.opacity(0.15) : accent.opacity(0.6), lineWidth: 0.5)
+                    RoundedRectangle(cornerRadius: Theme.Radius.small)
+                        .stroke(accent == .white ? Color.strokeStrong : accent.opacity(0.6), lineWidth: Theme.Stroke.hairline)
                 )
         }
         .buttonStyle(.plain)
@@ -188,11 +188,11 @@ struct DataRow: View {
     
     var body: some View {
         HStack {
-            Text(label).modifier(RetroFont(size: 10)).foregroundColor(.gray)
+            Text(label).modifier(RetroFont(size: Theme.FontSize.body)).foregroundColor(.textMuted)
             Spacer()
-            Text(value).modifier(RetroFont(size: 10)).foregroundColor(.white)
+            Text(value).modifier(RetroFont(size: Theme.FontSize.body)).foregroundColor(.textPrimary)
         }
-        .padding(.horizontal, 4)
+        .padding(.horizontal, Theme.Space.xs)
         Divider().background(Color.gray.opacity(0.3))
     }
 }

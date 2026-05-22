@@ -39,9 +39,9 @@ private let gaugeSpacingBase: CGFloat = 12
 private let controlSpacingBase: CGFloat = 16
 private let controlCaptionGapBase: CGFloat = 3
 
-private let titleFontBase: CGFloat = 11
-private let sectionLabelFontBase: CGFloat = 9
-private let captionFontBase: CGFloat = 8
+private let titleFontBase: CGFloat = Theme.FontSize.callout
+private let sectionLabelFontBase: CGFloat = Theme.FontSize.footnote
+private let captionFontBase: CGFloat = Theme.FontSize.caption
 
 #if os(macOS)
 private let switchWidthBase: CGFloat = 46
@@ -62,10 +62,10 @@ private let gaugeHeightFractionWithDamage: CGFloat = 0.30
 private let gaugeHeightFractionThermalsOnly: CGFloat = 0.55
 private let gaugeHeightMin: CGFloat = 78
 
-private let cardCorner: CGFloat = 3
-private let mutedText = Color.white.opacity(0.45)
-private let pumpAccent = Color.green
-private let repairAccent = Color.orange
+private let cardCorner: CGFloat = Theme.Radius.small
+private let mutedText = Color.textMuted
+private let pumpAccent = Color.accentOk
+private let repairAccent = Color.accentLive
 
 private let pristineThreshold: Double = 0.999
 
