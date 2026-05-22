@@ -28,6 +28,7 @@ private let crtInner = Color(red: 0.05, green: 0.04, blue: 0.02)
 private let amberWarn = Color(red: 1.0, green: 0.72, blue: 0.20)
 private let amberCritical = Color(red: 1.0, green: 0.35, blue: 0.15)
 private let amberDim = Color(red: 0.55, green: 0.40, blue: 0.10)
+private let nominalGreen = Color(red: 0.30, green: 1.0, blue: 0.45)
 private let panelBorder = Color.white.opacity(0.10)
 
 private let tilePadding: CGFloat = 10
@@ -74,6 +75,12 @@ struct OBD2View: View {
     /// were first observed. Used to enforce `appearDebounceSeconds`.
     @State private var firstSeen: [String: Date] = [:]
 
+    /// Fault ids that were active when CLEAR CODES was last pressed. They stay
+    /// suppressed (won't re-accumulate) for as long as they remain continuously
+    /// active; once a fault clears, it drops out of this set so a genuine
+    /// recurrence shows up again.
+    @State private var suppressed: Set<String> = []
+
     // Held in @State so the publisher is created exactly once. As a plain
     // `let` it would be rebuilt on every re-render — and the engine pushes
     // updates many times a second — so onReceive would resubscribe to a
@@ -114,14 +121,19 @@ struct OBD2View: View {
         guard clearedAt == nil else { return }
         let now = Date()
         let raw = OBD2CodeService.codes(for: vm)
+        let rawIds = Set(raw.map { $0.id })
         let rawById = Dictionary(raw.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+
+        // Lift suppression for any cleared fault that has since gone away — if
+        // it comes back later it counts as a fresh occurrence and will show.
+        suppressed.formIntersection(rawIds)
 
         // Keep escalating severity / description changes in sync.
         accumulated = accumulated.map { rawById[$0.id] ?? $0 }
 
         let shown = Set(accumulated.map { $0.id })
         var pending = firstSeen
-        for code in raw where !shown.contains(code.id) {
+        for code in raw where !shown.contains(code.id) && !suppressed.contains(code.id) {
             let seenAt = pending[code.id] ?? now
             if now.timeIntervalSince(seenAt) >= appearDebounceSeconds {
                 accumulated.append(code)
@@ -133,7 +145,6 @@ struct OBD2View: View {
 
         // Drop candidates that vanished before committing — their debounce
         // restarts if they reappear.
-        let rawIds = Set(raw.map { $0.id })
         firstSeen = pending.filter { rawIds.contains($0.key) }
     }
 
@@ -156,7 +167,7 @@ struct OBD2View: View {
             Text(codeBadgeText)
                 .modifier(RetroFont(size: 11))
                 .tracking(0.6)
-                .foregroundColor(displayedCodes.isEmpty ? amberDim : amberWarn)
+                .foregroundColor(displayedCodes.isEmpty ? nominalGreen : amberWarn)
             clearButton
         }
         .onAppear {
@@ -174,27 +185,19 @@ struct OBD2View: View {
 
     private var clearButton: some View {
         let isEmpty = displayedCodes.isEmpty
-        return Button(action: clearCodes) {
-            Text("CLEAR CODES")
-                .modifier(RetroFont(size: 11))
-                .tracking(0.6)
-                .foregroundColor(isEmpty ? amberDim : amberWarn)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 4)
-                .background(
-                    RoundedRectangle(cornerRadius: cardCorner)
-                        .stroke(isEmpty ? amberDim.opacity(0.4) : amberWarn.opacity(0.6),
-                                lineWidth: 0.75)
-                )
-        }
-        .buttonStyle(.plain)
-        .disabled(isEmpty)
-        .help("Clear stored codes. Active faults will re-appear after a moment.")
+        return SmallActionButton(label: "CLEAR CODES",
+                                 accent: amberWarn,
+                                 action: clearCodes)
+            .disabled(isEmpty)
+            .opacity(isEmpty ? 0.4 : 1.0)
+            .help("Clear stored codes. A fault only re-appears if it clears and then recurs.")
     }
 
-    /// Wipe the accumulated log. Sampling is paused during the wipe; once
-    /// it ends, any still-active fault re-accumulates after its debounce.
+    /// Wipe the accumulated log and suppress every currently-active fault so it
+    /// stays cleared until it actually goes away and re-occurs. Sampling pauses
+    /// for the brief wipe; when it resumes, suppressed faults are skipped.
     private func clearCodes() {
+        suppressed = Set(OBD2CodeService.codes(for: vm).map { $0.id })
         accumulated = []
         firstSeen = [:]
         clearedAt = Date()
@@ -250,26 +253,19 @@ struct OBD2View: View {
 
     // MARK: Empty state
 
-    @State private var emptyPulse: Bool = false
-
     private var emptyState: some View {
         VStack(spacing: 8) {
             Text("NO ACTIVE CODES")
                 .modifier(RetroFont(size: 14))
                 .tracking(2.4)
-                .foregroundColor(amberDim)
-                .opacity(emptyPulse ? 0.55 : 0.25)
+                .foregroundColor(nominalGreen)
+                .shadow(color: nominalGreen.opacity(0.6), radius: 4)
             Text("SYSTEM NOMINAL")
                 .modifier(RetroFont(size: 11))
                 .tracking(1.6)
-                .foregroundColor(amberDim.opacity(0.7))
+                .foregroundColor(nominalGreen.opacity(0.7))
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .onAppear {
-            withAnimation(.easeInOut(duration: 1.6).repeatForever(autoreverses: true)) {
-                emptyPulse.toggle()
-            }
-        }
     }
 
     // MARK: Code list

@@ -652,34 +652,6 @@ private struct TabButton: View {
     }
 }
 
-private struct SmallActionButton: View {
-    let label: String
-    var accent: Color = .white
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            Text(label)
-                .modifier(RetroFont(size: 9))
-                .lineLimit(1)
-                .minimumScaleFactor(0.6)
-                .fixedSize()
-                .foregroundColor(accent == .white ? .white.opacity(0.8) : accent)
-                .padding(.horizontal, 6)
-                .padding(.vertical, 4)
-                .background(
-                    RoundedRectangle(cornerRadius: 3)
-                        .fill(accent == .white ? Color.white.opacity(0.05) : accent.opacity(0.12))
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 3)
-                        .stroke(accent == .white ? Color.white.opacity(0.15) : accent.opacity(0.6), lineWidth: 0.5)
-                )
-        }
-        .buttonStyle(.plain)
-    }
-}
-
 private struct EditButton: View {
     let label: String
     let action: () -> Void

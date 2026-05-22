@@ -125,6 +125,11 @@ struct TileSurfApp: App {
         // 0-60 timer's Run / Reset buttons when the sidebar collapsed and
         // the timer column reflowed).
         .ignoresSafeArea(.container, edges: isPad ? .all : [.leading, .top])
+        // iPadOS does not always honour the Info.plist UIStatusBarHidden flag
+        // (e.g. in Stage Manager), so the status bar can sit on top of the
+        // full-bleed dashboard. Re-assert it at the view level to reclaim the
+        // top edge. iPhone is already hidden; re-asserting is harmless.
+        .statusBarHidden(true)
         #endif
     }
 

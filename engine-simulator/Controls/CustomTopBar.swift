@@ -128,11 +128,11 @@ struct CustomTopBar: View {
             // (the throttle slider auto-holds its position), so iOS has
             // nothing left to show here.
             #if os(macOS)
-            DashWarningTile(label: "IGN",    active: vm.isIgnitionOn,  accent: .red)    { IgnitionIcon() }
-            DashWarningTile(label: "CRANK",  active: vm.isStarterOn,   accent: .green)  { StarterIcon() }
-            DashWarningTile(label: "CLUTCH", active: vm.clutchPressed, accent: .blue)   { ClutchIcon() }
-            DashWarningTile(label: "DYNO",   active: vm.dynoEnabled,   accent: .orange) { DynoIcon() }
-            DashWarningTile(label: "HOLD",   active: vm.throttleHeld,  accent: .yellow) { HoldIcon() }
+            DashWarningTile(label: "IGN",    active: vm.isIgnitionOn,  accent: .red,    onTap: { vm.toggleIgnition() }) { IgnitionIcon() }
+            DashWarningTile(label: "CRANK",  active: vm.isStarterOn,   accent: .green,  onTap: { vm.toggleStarter() })  { StarterIcon() }
+            DashWarningTile(label: "CLUTCH", active: vm.clutchPressed, accent: .blue,   onTap: { vm.toggleClutch() })   { ClutchIcon() }
+            DashWarningTile(label: "DYNO",   active: vm.dynoEnabled,   accent: .orange, onTap: { vm.toggleDyno() })     { DynoIcon() }
+            DashWarningTile(label: "HOLD",   active: vm.throttleHeld,  accent: .yellow, onTap: { vm.toggleHold() })     { HoldIcon() }
             #else
             EmptyView()
             #endif
@@ -325,16 +325,7 @@ struct DashRockerSwitch: View {
     }
 
     private var bezel: some View {
-        RoundedRectangle(cornerRadius: 7)
-            .fill(LinearGradient(colors: [Color(white: 0.22), Color(white: 0.08)],
-                                 startPoint: .top, endPoint: .bottom))
-            .overlay(
-                RoundedRectangle(cornerRadius: 7)
-                    .stroke(LinearGradient(colors: [Color.white.opacity(0.45), Color.black.opacity(0.7)],
-                                           startPoint: .topLeading, endPoint: .bottomTrailing),
-                            lineWidth: 1)
-            )
-            .shadow(color: .black.opacity(0.55), radius: 3, x: 0, y: 2)
+        DashBezel(cornerRadius: 7)
     }
 
     private var rockerFace: some View {

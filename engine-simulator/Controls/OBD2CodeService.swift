@@ -122,7 +122,7 @@ enum OBD2CodeService {
             if c.seized {
                 out.append(.init(id: "P130\(cylDigit)-SEIZED",
                                  code: "P130\(cylDigit)",
-                                 description: "Cylinder \(cylNum) Mechanical Failure / Seized",
+                                 description: "Cylinder \(cylNum) Mechanical Failure",
                                  severity: .critical))
                 continue
             }

@@ -39,3 +39,7 @@ You should also play this noise if you need my permission to do something / are 
 5) Do not redefine exsiting colors, read the color file and you should reuse the existing ones, if you need a new color that does not exist and is radically different from the exisitng ones, then you can add it.
 
 # Current TODOs: 
+
+- When only the valves are damaged and the user is accelerating, the sound appears to be muffeled, when the throttle is let go, the damage sound returns. Why does the engine sound so muffeled when accelerating with only valve damage? Investigate and fix.
+- The three buttons on the thermals engine health tile should be vertically stacked on the right side of the gauges
+- The build new engine button is too low key, make I don't want it to be too crazy, but just make it better & fit in with the rest of the app.

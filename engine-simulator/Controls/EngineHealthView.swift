@@ -2,224 +2,275 @@
 //  EngineHealthView.swift
 //  engine-simulator
 //
-//  Diagnostic tile for the Tier-3 thermal + damage simulation. The
-//  layout is two stacked sections:
+//  Diagnostic tile for the Tier-3 thermal + damage simulation. Two stacked
+//  sections:
 //
-//    1. Thermals row — three UniversalGauge dials (coolant, oil temp,
-//       oil pressure) so the readouts match the gauges used everywhere
-//       else in the app, plus dash-style rocker pump toggles under the
-//       gauges that own the relevant pumps.
-//    2. Engine schematic — a stylised cross-section view of the engine
-//       block; cylinder bores tint by worst-component health, head /
-//       cam / crank bars tint by their engine-wide values, and the
-//       per-cylinder components are called out by hand-drawn icons on
-//       either side of the block.
+//    1. Thermals — three UniversalGauge dials (coolant temp, oil temp, oil
+//       pressure) over a single dash-control strip that groups the coolant
+//       pump, oil pump and the repair control together.
+//    2. Damage — a per-cylinder component heat-map (DamageMatrixView). Hidden
+//       on iPhone where there isn't room; shown on iPad and macOS.
 //
-//  Design language matches the rest of the dashboard: appBackground,
-//  hairline white-opacity borders, retro monospaced numerics, orange
-//  accent for the REPAIR pill.
+//  The whole tile scales off the available space: a `scale` factor derived
+//  from the tile width drives every padding / font / control dimension so
+//  nothing is pinned to a fixed point size, and the gauge row + damage grid
+//  flex to share the available height.
 //
 
 import SwiftUI
+#if canImport(UIKit)
+import UIKit
+#endif
 
-// MARK: - Layout / palette
+// MARK: - Layout metrics (base values scaled by `scale`)
 
-private let tilePadding: CGFloat = 10
-private let sectionSpacing: CGFloat = 7
+private let referenceWidth: CGFloat = 380
+private let minScale: CGFloat = 0.8
+private let maxScale: CGFloat = 1.5
+
+private let tilePaddingBase: CGFloat = 12
+private let sectionSpacingBase: CGFloat = 8
+private let panelSpacingBase: CGFloat = 6
+private let gaugeSpacingBase: CGFloat = 12
+private let controlSpacingBase: CGFloat = 16
+private let controlCaptionGapBase: CGFloat = 3
+
+private let titleFontBase: CGFloat = 11
+private let sectionLabelFontBase: CGFloat = 9
+private let captionFontBase: CGFloat = 8
+
+private let switchWidthBase: CGFloat = 50
+private let switchHeightBase: CGFloat = 48
+
+private let titleFontMin: CGFloat = 9
+private let sectionLabelFontMin: CGFloat = 8
+private let captionFontMin: CGFloat = 7
+
+// Share of the tile height the gauge row may claim. Lower when the damage
+// grid is present so both sections fit; higher on iPhone where thermals own
+// the whole tile.
+private let gaugeHeightFractionWithDamage: CGFloat = 0.30
+private let gaugeHeightFractionThermalsOnly: CGFloat = 0.55
+private let gaugeHeightMin: CGFloat = 78
+
 private let cardCorner: CGFloat = 3
 private let borderColor = Color.white.opacity(0.12)
-private let panelFill = Color.white.opacity(0.03)
 private let mutedText = Color.white.opacity(0.45)
 private let pumpAccent = Color.green
+private let repairAccent = Color.orange
 
-private let pumpSwitchWidth: CGFloat = 46
-private let pumpSwitchHeight: CGFloat = 40
-private let pumpCaptionFontSize: CGFloat = 8
-// Fixed height reserved beneath every gauge for the pump control. Columns
-// without a pump (oil temp) keep an empty area of the same height so all
-// three gauges stay the same size.
-private let pumpAreaHeight: CGFloat = 58
+private let pristineThreshold: Double = 0.999
+
+// Repair control face metrics, expressed as fractions of the switch height so
+// the glyph + sub-label track the rocker switches beside it.
+private let repairIconHeightRatio: CGFloat = 0.34
+private let repairSubFontRatio: CGFloat = 0.17
+private let repairLedSize: CGFloat = 4
+private let repairFacePadding: CGFloat = 3
 
 // MARK: - View
 
 struct EngineHealthView: View {
     @ObservedObject var vm: EngineViewModel
 
+    private var showsDamageSection: Bool {
+        #if os(macOS)
+        return true
+        #else
+        return UIDevice.current.userInterfaceIdiom == .pad
+        #endif
+    }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: sectionSpacing) {
-            header
-            thermalsSection
-            schematicSection
+        GeometryReader { geo in
+            let scale = min(max(geo.size.width / referenceWidth, minScale), maxScale)
+            let gaugeFraction = showsDamageSection
+                ? gaugeHeightFractionWithDamage
+                : gaugeHeightFractionThermalsOnly
+            let gaugeHeight = max(gaugeHeightMin, geo.size.height * gaugeFraction)
+
+            VStack(alignment: .leading, spacing: sectionSpacingBase * scale) {
+                header(scale: scale)
+                thermalsSection(scale: scale, gaugeHeight: gaugeHeight)
+                if showsDamageSection {
+                    damageSection(scale: scale)
+                }
+            }
+            .padding(tilePaddingBase * scale)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .background(Color.appBackground)
         }
-        .padding(tilePadding)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background(Color.appBackground)
     }
 
     // MARK: Header
 
-    private var header: some View {
-        HStack(spacing: 8) {
-            Text("ENGINE HEALTH")
-                .modifier(RetroFont(size: 10))
-                .tracking(1.0)
-                .foregroundColor(.white)
-            Spacer()
-            repairButton
-        }
+    private func header(scale: CGFloat) -> some View {
+        Text("ENGINE HEALTH")
+            .modifier(RetroFont(size: max(titleFontMin, titleFontBase * scale)))
+            .tracking(1.0)
+            .foregroundColor(.white)
     }
 
-    private var repairButton: some View {
-        Button(action: { vm.repairEngine() }) {
-            Text("REPAIR")
-                .modifier(RetroFont(size: 10))
-                .tracking(0.8)
-                .foregroundColor(isDamaged ? .black : mutedText)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 4)
-                .background(
-                    RoundedRectangle(cornerRadius: cardCorner)
-                        .fill(isDamaged ? Color.orange : Color.white.opacity(0.06))
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: cardCorner)
-                        .stroke(isDamaged
-                                ? Color.orange.opacity(0.9)
-                                : Color.white.opacity(0.15),
-                                lineWidth: 0.75)
-                )
-        }
-        .buttonStyle(.plain)
-        .disabled(!isDamaged)
-        .help(isDamaged ? "Restore all components to pristine" : "Engine is healthy")
+    private func sectionLabel(_ text: String, scale: CGFloat) -> some View {
+        Text(text)
+            .modifier(RetroFont(size: max(sectionLabelFontMin, sectionLabelFontBase * scale)))
+            .tracking(1.0)
+            .foregroundColor(mutedText)
     }
 
     // MARK: Thermals
 
-    private var thermalsSection: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text("THERMALS")
-                .modifier(RetroFont(size: 9))
-                .tracking(1.0)
-                .foregroundColor(mutedText)
-            HStack(alignment: .top, spacing: 12) {
-                gaugeColumn(config: GaugePresets.coolantTemp(),
-                            valueKeyPath: \.coolantTempC,
-                            pumpCaption: "COOLANT PUMP",
-                            pumpOn: vm.coolantPumpOn,
-                            togglePump: { vm.toggleCoolantPump() })
+    private func thermalsSection(scale: CGFloat, gaugeHeight: CGFloat) -> some View {
+        VStack(alignment: .leading, spacing: panelSpacingBase * scale) {
+            sectionLabel("THERMALS", scale: scale)
 
-                gaugeColumn(config: GaugePresets.oilTemp(),
-                            valueKeyPath: \.oilTempC,
-                            pumpCaption: nil,
-                            pumpOn: nil,
-                            togglePump: nil)
-
-                gaugeColumn(config: GaugePresets.oilPressure(),
-                            valueKeyPath: \.oilPressurePsi,
-                            pumpCaption: "OIL PUMP",
-                            pumpOn: vm.oilPumpOn,
-                            togglePump: { vm.toggleOilPump() })
+            HStack(alignment: .center, spacing: gaugeSpacingBase * scale) {
+                gauge(GaugePresets.coolantTemp(), \.coolantTempC)
+                gauge(GaugePresets.oilTemp(), \.oilTempC)
+                gauge(GaugePresets.oilPressure(), \.oilPressurePsi)
             }
+            .frame(maxWidth: .infinity)
+            .frame(height: gaugeHeight)
+
+            controlStrip(scale: scale)
         }
-        .padding(7)
-        .background(panelFill)
-        .overlay(
-            RoundedRectangle(cornerRadius: cardCorner)
-                .stroke(borderColor, lineWidth: 0.75)
-        )
+        .padding(panelSpacingBase * scale)
+        .overlay(panelBorder)
         .clipShape(RoundedRectangle(cornerRadius: cardCorner))
     }
 
-    /// One thermals column: the shared app gauge with an optional pump
-    /// rocker beneath it. Columns without a pump (oil temp) simply omit
-    /// the rocker; the gauge above still aligns with its neighbours.
-    private func gaugeColumn(config: GaugeConfiguration,
-                             valueKeyPath: KeyPath<EngineViewModel, Double>,
-                             pumpCaption: String?,
-                             pumpOn: Bool?,
-                             togglePump: (() -> Void)?) -> some View {
-        VStack(spacing: 6) {
-            UniversalGauge(engineVm: vm,
-                           config: config,
-                           valueKeyPath: valueKeyPath)
-                .frame(maxWidth: .infinity)
-
-            pumpArea(caption: pumpCaption, pumpOn: pumpOn, togglePump: togglePump)
-        }
-        .frame(maxWidth: .infinity)
+    private func gauge(_ config: GaugeConfiguration,
+                       _ keyPath: KeyPath<EngineViewModel, Double>) -> some View {
+        UniversalGauge(engineVm: vm, config: config, valueKeyPath: keyPath)
+            .frame(maxWidth: .infinity)
     }
 
-    /// Fixed-height region under each gauge. Renders a labelled rocker for
-    /// columns that own a pump, or stays empty (but same height) for those
-    /// that don't, so every gauge ends up the same size.
-    private func pumpArea(caption: String?,
-                          pumpOn: Bool?,
-                          togglePump: (() -> Void)?) -> some View {
-        VStack(spacing: 3) {
-            if let pumpOn = pumpOn, let togglePump = togglePump, let caption = caption {
-                DashRockerSwitch(topLabel: "ON",
-                                 bottomLabel: "OFF",
-                                 isOn: pumpOn,
-                                 accent: pumpAccent,
-                                 width: pumpSwitchWidth,
-                                 height: pumpSwitchHeight,
-                                 toggle: togglePump)
-                Text(caption)
-                    .modifier(RetroFont(size: pumpCaptionFontSize))
-                    .tracking(0.6)
-                    .foregroundColor(mutedText)
-                    .lineLimit(1)
+    // MARK: Control strip — pumps + repair grouped together
+
+    private func controlStrip(scale: CGFloat) -> some View {
+        let switchWidth = switchWidthBase * scale
+        let switchHeight = switchHeightBase * scale
+
+        return HStack(spacing: controlSpacingBase * scale) {
+            Spacer(minLength: 0)
+            pumpControl(caption: "COOLANT",
+                        isOn: vm.coolantPumpOn,
+                        width: switchWidth, height: switchHeight, scale: scale,
+                        toggle: { vm.toggleCoolantPump() })
+            pumpControl(caption: "OIL",
+                        isOn: vm.oilPumpOn,
+                        width: switchWidth, height: switchHeight, scale: scale,
+                        toggle: { vm.toggleOilPump() })
+            repairControl(width: switchWidth, height: switchHeight, scale: scale)
+            Spacer(minLength: 0)
+        }
+    }
+
+    private func pumpControl(caption: String,
+                             isOn: Bool,
+                             width: CGFloat, height: CGFloat, scale: CGFloat,
+                             toggle: @escaping () -> Void) -> some View {
+        VStack(spacing: controlCaptionGapBase * scale) {
+            DashRockerSwitch(topLabel: "ON",
+                             bottomLabel: "OFF",
+                             isOn: isOn,
+                             accent: pumpAccent,
+                             width: width,
+                             height: height,
+                             toggle: toggle)
+            controlCaption(caption, scale: scale)
+        }
+    }
+
+    /// Repair shares the dash-switch chrome but is momentary: pressing it once
+    /// restores every component. Lit orange + actionable while the engine is
+    /// damaged; dim green "OK" when nothing needs fixing.
+    private func repairControl(width: CGFloat, height: CGFloat, scale: CGFloat) -> some View {
+        let active = isDamaged
+        let accent = active ? repairAccent : pumpAccent
+
+        return VStack(spacing: controlCaptionGapBase * scale) {
+            Button(action: { if active { vm.repairEngine() } }) {
+                ZStack {
+                    DashBezel(cornerRadius: dashBezelCorner)
+                    VStack(spacing: 0) {
+                        Image(systemName: "wrench.and.screwdriver.fill")
+                            .font(.system(size: height * repairIconHeightRatio, weight: .bold))
+                            .foregroundColor(active ? accent : .white.opacity(0.30))
+                            .shadow(color: active ? accent.opacity(0.6) : .clear, radius: 3)
+                            .frame(maxHeight: .infinity)
+                        Text(active ? "FIX" : "OK")
+                            .modifier(RetroFont(size: height * repairSubFontRatio))
+                            .tracking(1.0)
+                            .foregroundColor(active ? .white.opacity(0.85) : accent.opacity(0.7))
+                            .frame(maxHeight: .infinity)
+                        Circle()
+                            .fill(accent.opacity(active ? 1.0 : 0.3))
+                            .frame(width: repairLedSize, height: repairLedSize)
+                            .shadow(color: active ? accent.opacity(0.9) : .clear, radius: 2.5)
+                            .padding(.bottom, repairFacePadding)
+                    }
+                    .padding(.vertical, repairFacePadding)
+                }
+                .frame(width: width, height: height)
             }
+            .buttonStyle(.plain)
+            .disabled(!active)
+            .animation(.easeInOut(duration: 0.18), value: active)
+            .help(active ? "Restore all components to pristine" : "Engine is healthy")
+
+            controlCaption("REPAIR", scale: scale)
         }
-        .frame(height: pumpAreaHeight)
     }
 
-    // MARK: Schematic
+    private func controlCaption(_ text: String, scale: CGFloat) -> some View {
+        Text(text)
+            .modifier(RetroFont(size: max(captionFontMin, captionFontBase * scale)))
+            .tracking(0.6)
+            .foregroundColor(mutedText)
+            .lineLimit(1)
+    }
 
-    private var schematicSection: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text("DAMAGE")
-                .modifier(RetroFont(size: 9))
-                .tracking(1.0)
-                .foregroundColor(mutedText)
-            EngineSchematicView(
-                cylinders: vm.cylinderHealths,
-                wide: vm.engineWideHealth,
-                coolantPumpOn: vm.coolantPumpOn,
-                oilPumpOn: vm.oilPumpOn
-            )
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+    // MARK: Damage
+
+    private func damageSection(scale: CGFloat) -> some View {
+        VStack(alignment: .leading, spacing: panelSpacingBase * scale) {
+            sectionLabel("DAMAGE", scale: scale)
+            DamageMatrixView(cylinders: vm.cylinderHealths,
+                             wide: vm.engineWideHealth,
+                             scale: scale)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .padding(7)
-        .background(panelFill)
-        .overlay(
-            RoundedRectangle(cornerRadius: cardCorner)
-                .stroke(borderColor, lineWidth: 0.75)
-        )
+        .padding(panelSpacingBase * scale)
+        .overlay(panelBorder)
         .clipShape(RoundedRectangle(cornerRadius: cardCorner))
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     // MARK: Helpers
 
+    private var panelBorder: some View {
+        RoundedRectangle(cornerRadius: cardCorner)
+            .stroke(borderColor, lineWidth: 0.75)
+    }
+
     private var isDamaged: Bool {
         let wide = vm.engineWideHealth
-        if wide.cylinderHead < 0.999 { return true }
-        if wide.camshaft < 0.999 { return true }
-        if wide.crankshaft < 0.999 { return true }
-        if wide.mainBearing < 0.999 { return true }
-        if wide.waterPump < 0.999 { return true }
-        if wide.oilPump < 0.999 { return true }
+        if wide.cylinderHead < pristineThreshold { return true }
+        if wide.camshaft < pristineThreshold { return true }
+        if wide.crankshaft < pristineThreshold { return true }
+        if wide.mainBearing < pristineThreshold { return true }
+        if wide.waterPump < pristineThreshold { return true }
+        if wide.oilPump < pristineThreshold { return true }
         for c in vm.cylinderHealths {
             if c.seized { return true }
-            if c.headGasket   < 0.999 { return true }
-            if c.pistonRings  < 0.999 { return true }
-            if c.piston       < 0.999 { return true }
-            if c.rod          < 0.999 { return true }
-            if c.rodBearing   < 0.999 { return true }
-            if c.intakeValve  < 0.999 { return true }
-            if c.exhaustValve < 0.999 { return true }
+            if c.headGasket   < pristineThreshold { return true }
+            if c.pistonRings  < pristineThreshold { return true }
+            if c.piston       < pristineThreshold { return true }
+            if c.rod          < pristineThreshold { return true }
+            if c.rodBearing   < pristineThreshold { return true }
+            if c.intakeValve  < pristineThreshold { return true }
+            if c.exhaustValve < pristineThreshold { return true }
         }
         return false
     }

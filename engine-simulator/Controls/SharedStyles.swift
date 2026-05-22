@@ -7,6 +7,36 @@
 
 import SwiftUI
 
+// MARK: - Dash chrome
+//
+// Shared bezel used by every rectangular dash control (rocker switches,
+// momentary buttons). One definition so the chrome never drifts between the
+// top-bar switches and the Engine Health controls.
+
+let dashBezelTopGray = Color(white: 0.22)
+let dashBezelBottomGray = Color(white: 0.08)
+let dashBezelStrokeLight = Color.white.opacity(0.45)
+let dashBezelStrokeDark = Color.black.opacity(0.7)
+let dashBezelCorner: CGFloat = 7
+private let dashBezelShadow = Color.black.opacity(0.55)
+
+struct DashBezel: View {
+    var cornerRadius: CGFloat = dashBezelCorner
+
+    var body: some View {
+        RoundedRectangle(cornerRadius: cornerRadius)
+            .fill(LinearGradient(colors: [dashBezelTopGray, dashBezelBottomGray],
+                                 startPoint: .top, endPoint: .bottom))
+            .overlay(
+                RoundedRectangle(cornerRadius: cornerRadius)
+                    .stroke(LinearGradient(colors: [dashBezelStrokeLight, dashBezelStrokeDark],
+                                           startPoint: .topLeading, endPoint: .bottomTrailing),
+                            lineWidth: 1)
+            )
+            .shadow(color: dashBezelShadow, radius: 3, x: 0, y: 2)
+    }
+}
+
 // MARK: - STYLES & FONTS
 struct RetroFont: ViewModifier {
     var size: CGFloat
@@ -117,6 +147,36 @@ struct ControlButton: View {
             .padding(12)
             .background(Color.white.opacity(active ? 0.15 : 0.05)) // Visible background when off
             .border(active ? color : Color.white.opacity(0.2), width: 1) // Visible border when off
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+/// Compact bordered action pill — the app's standard small button. Shared so
+/// the ECU tuning tile and the OBD-II scanner present the same control.
+struct SmallActionButton: View {
+    let label: String
+    var accent: Color = .white
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Text(label)
+                .modifier(RetroFont(size: 9))
+                .lineLimit(1)
+                .minimumScaleFactor(0.6)
+                .fixedSize()
+                .foregroundColor(accent == .white ? .white.opacity(0.8) : accent)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 4)
+                .background(
+                    RoundedRectangle(cornerRadius: 3)
+                        .fill(accent == .white ? Color.white.opacity(0.05) : accent.opacity(0.12))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 3)
+                        .stroke(accent == .white ? Color.white.opacity(0.15) : accent.opacity(0.6), lineWidth: 0.5)
+                )
         }
         .buttonStyle(.plain)
     }
