@@ -25,8 +25,8 @@ import UIKit
 // MARK: - Layout metrics (base values scaled by `scale`)
 
 private let referenceWidth: CGFloat = 380
-private let minScale: CGFloat = 0.8
-private let maxScale: CGFloat = 1.5
+private let minScale: CGFloat = 0.7
+private let maxScale: CGFloat = 1.25
 
 private let tilePaddingBase: CGFloat = 12
 private let sectionSpacingBase: CGFloat = 8
@@ -39,8 +39,8 @@ private let titleFontBase: CGFloat = 11
 private let sectionLabelFontBase: CGFloat = 9
 private let captionFontBase: CGFloat = 8
 
-private let switchWidthBase: CGFloat = 50
-private let switchHeightBase: CGFloat = 48
+private let switchWidthBase: CGFloat = 46
+private let switchHeightBase: CGFloat = 44
 
 private let titleFontMin: CGFloat = 9
 private let sectionLabelFontMin: CGFloat = 8
@@ -128,11 +128,11 @@ struct EngineHealthView: View {
                 gauge(GaugePresets.coolantTemp(), \.coolantTempC)
                 gauge(GaugePresets.oilTemp(), \.oilTempC)
                 gauge(GaugePresets.oilPressure(), \.oilPressurePsi)
+
+                controlColumn(scale: scale)
             }
             .frame(maxWidth: .infinity)
-            .frame(height: gaugeHeight)
-
-            controlStrip(scale: scale)
+            .frame(minHeight: gaugeHeight)
         }
         .padding(panelSpacingBase * scale)
         .overlay(panelBorder)
@@ -145,24 +145,22 @@ struct EngineHealthView: View {
             .frame(maxWidth: .infinity)
     }
 
-    // MARK: Control strip — pumps + repair grouped together
+    // MARK: Control column — pumps + repair grouped together
 
-    private func controlStrip(scale: CGFloat) -> some View {
+    private func controlColumn(scale: CGFloat) -> some View {
         let switchWidth = switchWidthBase * scale
         let switchHeight = switchHeightBase * scale
 
-        return HStack(spacing: controlSpacingBase * scale) {
-            Spacer(minLength: 0)
-            pumpControl(caption: "COOLANT",
+        return VStack(spacing: panelSpacingBase * scale) {
+            pumpControl(caption: "COOLANT PUMP",
                         isOn: vm.coolantPumpOn,
                         width: switchWidth, height: switchHeight, scale: scale,
                         toggle: { vm.toggleCoolantPump() })
-            pumpControl(caption: "OIL",
+            pumpControl(caption: "OIL PUMP",
                         isOn: vm.oilPumpOn,
                         width: switchWidth, height: switchHeight, scale: scale,
                         toggle: { vm.toggleOilPump() })
             repairControl(width: switchWidth, height: switchHeight, scale: scale)
-            Spacer(minLength: 0)
         }
     }
 

@@ -129,6 +129,7 @@ struct PaywallSheet: View {
         // indicator), but RESPECT the leading and trailing safe areas so
         // the iPhone landscape notch doesn't crop into the carousel hero.
         .ignoresSafeArea(.container, edges: [.top, .bottom])
+        .statusBarHidden(true)
     }
 
     /// Left column on iOS: carousel chevrons + engine name strip sits as

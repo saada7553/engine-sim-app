@@ -19,15 +19,15 @@ import SwiftUI
 
 // MARK: - Palette / thresholds
 
-private let healthyFill = Color.white.opacity(0.82)
+private let healthyFill = Color.green
 private let warningColor = Color.orange
 private let criticalColor = Color.red
 private let emptySegmentFill = Color.white.opacity(0.06)
 private let segmentBorder = Color.white.opacity(0.14)
 private let dividerColor = Color.white.opacity(0.12)
-private let labelColor = Color.white.opacity(0.55)
-private let headerColor = Color.white.opacity(0.8)
-private let percentColor = Color.white.opacity(0.7)
+private let labelColor = Color.white.opacity(0.45)
+private let headerColor = Color.white.opacity(0.6)
+private let percentColor = Color.white.opacity(0.5)
 
 private let warnThreshold: Double = 0.70
 private let critThreshold: Double = 0.30

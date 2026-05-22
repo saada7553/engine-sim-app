@@ -924,7 +924,7 @@ void PistonEngineSimulator::writeToSynthesizer() {
                                   + 0.26 * rawNoise;
                 const double knockRpmScale = std::min(1.0, rpm / 4000.0);
                 knockOut = m_knockResonY1[i] * m_knockBurstAmp[i]
-                         * 0.01 * knockRpmScale;
+                         * 0.025 * knockRpmScale;
                 m_knockBurstAmp[i] *= 0.96;
             }
 

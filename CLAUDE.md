@@ -40,6 +40,17 @@ You should also play this noise if you need my permission to do something / are 
 
 # Current TODOs: 
 
-- When only the valves are damaged and the user is accelerating, the sound appears to be muffeled, when the throttle is let go, the damage sound returns. Why does the engine sound so muffeled when accelerating with only valve damage? Investigate and fix.
-- The three buttons on the thermals engine health tile should be vertically stacked on the right side of the gauges
-- The build new engine button is too low key, make I don't want it to be too crazy, but just make it better & fit in with the rest of the app.
+1) When only the valves are damaged and the user is accelerating, the sound appears to be muffeled, when the throttle is let go, the damage sound returns. Why does the engine sound so muffeled when accelerating with only valve damage? Investigate and fix.
+2) Hitting the repair button should clear any ECU codes
+3) Remove the parenthetical (procedural) form the selection view where you describe Engine 3D (Procedural)
+
+I want some new mechanics: 
+    - Users should be able to turn on/off ignition or fuel to any cylinder of their choosing
+    - There needs to be a new tile which holds switches where you can individually toggle fuel / ignition to the culinders. Use switches from the engine health tile that are used for coolant pump / oil pump for consistency
+    - I believe the c++ model already has support for turning on / off the ignition to individual cylinders, but you will need to make the simple changes required to enable turning off fuel injection
+
+New tile under diagnostics in the selection list:
+
+bad tune needs to affect the ecu
+
+brake mechanics?

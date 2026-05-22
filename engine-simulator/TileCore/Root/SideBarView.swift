@@ -182,14 +182,20 @@ private struct BuildEngineButton: View {
     let action: () -> Void
     @State private var hovered = false
 
+    private let blueprintColor = Color.accentSecondary.opacity(0.8)
+
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 10) {
-                Image(systemName: "plus")
-                    .font(.system(size: 13, weight: .semibold))
+            HStack(spacing: 12) {
+                Image(systemName: "plus.square.dashed")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundColor(blueprintColor)
+                
                 Text("Build New Engine")
-                    .font(.system(size: 13, weight: .regular))
-                Spacer(minLength: 0)
+                    .font(.system(size: 13, weight: .medium, design: .monospaced))
+                    .tracking(0.2)
+                
+                Spacer()
             }
             .foregroundColor(hovered ? .white : dimText)
             .padding(.horizontal, rowPaddingH)
@@ -197,12 +203,12 @@ private struct BuildEngineButton: View {
             .frame(maxWidth: .infinity)
             .background(
                 RoundedRectangle(cornerRadius: rowCornerRadius)
-                    .fill(hovered ? hoverFill : Color.clear)
+                    .fill(hovered ? blueprintColor.opacity(0.12) : Color.white.opacity(0.02))
             )
             .overlay(
                 RoundedRectangle(cornerRadius: rowCornerRadius)
                     .stroke(
-                        hovered ? Color.white.opacity(0.35) : Color.white.opacity(0.18),
+                        hovered ? blueprintColor.opacity(0.6) : blueprintColor.opacity(0.25),
                         style: StrokeStyle(lineWidth: 1, dash: [4, 3])
                     )
             )
