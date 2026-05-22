@@ -267,6 +267,15 @@ class EngineViewModel: ObservableObject {
                 self.cylinderIgnitionEnabled =
                     (state.cylinderIgnitionEnabled ?? []).map { $0.boolValue }
 
+                // Crash haptics: a strong one-shot kick when a damaging
+                // money-shift fires, then a continuous rumble that tracks the
+                // live crash-audio envelope so the haptic follows the sound.
+                if state.moneyshiftJustFired {
+                    HapticManager.shared.beginMoneyshift(severity: state.moneyshiftSeverity)
+                }
+                HapticManager.shared.updateMoneyshift(level: state.catastropheHapticLevel,
+                                                      peak: state.catastropheHapticPeak)
+
                 // A seized cylinder means the engine has mechanically failed.
                 // Cut the starter once at the moment of failure (cranking a
                 // locked engine just grinds it); after that one-shot the user
@@ -580,6 +589,7 @@ class EngineViewModel: ObservableObject {
     func repairEngine() {
         engine?.repairEngine()
         repairToken &+= 1
+        HapticManager.shared.tap(.success)
     }
 
     /// Cut or restore spark to a single cylinder. Optimistically flips the

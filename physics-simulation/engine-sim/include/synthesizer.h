@@ -98,6 +98,22 @@ class Synthesizer {
         AudioParameters getAudioParameters();
         void setAudioParameters(const AudioParameters &params);
 
+        // Live peak-follower envelope (~[0,1]) of the DRY catastrophe signal
+        // (boom + clanks). Written per-sample on the audio thread, read by the
+        // UI poll thread to drive haptics that follow the crash sound in real
+        // time. atomic<float> read so the cross-thread read is well-defined.
+        float getCatastropheEnvelope() const {
+            return m_catHapticEnv.load(std::memory_order_relaxed);
+        }
+
+        // Peak |dry catastrophe| since the last call, then RESET to 0. Unlike
+        // the smoothed envelope, this captures the loudest crash impact in each
+        // UI poll window regardless of poll rate, so the haptics can punch on
+        // every boom/clank and feel different as the random sound varies.
+        float getCatastrophePeak() {
+            return m_catHapticPeak.exchange(0.0f, std::memory_order_relaxed);
+        }
+
     //protected:
         ButterworthLowPassFilter<float> m_antialiasing;
         LevelingFilter m_levelingFilter;
@@ -118,6 +134,13 @@ class Synthesizer {
         float *m_dryTransferBuffer = nullptr;
         double m_dryLastSample = 0.0;
         ButterworthLowPassFilter<double> m_dryAntialiasing;
+
+        // Peak-follower envelope of the dry catastrophe signal (see
+        // getCatastropheEnvelope). Snaps up to new peaks, bleeds down slowly.
+        std::atomic<float> m_catHapticEnv{0.0f};
+        // Peak-hold of the dry catastrophe signal since the last UI read (see
+        // getCatastrophePeak). Reset to 0 on read.
+        std::atomic<float> m_catHapticPeak{0.0f};
 
         float m_inputSampleRate;
         float m_audioSampleRate;

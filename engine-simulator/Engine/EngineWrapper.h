@@ -78,6 +78,18 @@
 @property (nonatomic, strong) EngineWideHealthState *engineWideHealth;
 @property (nonatomic, assign) BOOL rodKnocking;
 
+// Money-shift crash haptics. `moneyshiftJustFired` is a one-shot YES on the
+// poll where a damaging over-rev catastrophe fires; `moneyshiftSeverity`
+// (~0..N over-redline excess) scales the initial kick. `catastropheHapticLevel`
+// is the live peak-follower envelope (~0..1) of the crash audio, so the UI can
+// drive haptics that track the boom/clank in real time.
+@property (nonatomic, assign) BOOL moneyshiftJustFired;
+@property (nonatomic, assign) double moneyshiftSeverity;
+@property (nonatomic, assign) double catastropheHapticLevel;
+// Loudest crash-audio impact since the previous poll (~0..1). Drives the sharp
+// per-impact haptic punches that follow the random boom/clank pattern.
+@property (nonatomic, assign) double catastropheHapticPeak;
+
 // Per-cylinder spark state. Index i is YES when cylinder i's spark plug is
 // firing, NO when the user has cut ignition to that cylinder.
 @property (nonatomic, strong) NSArray<NSNumber *> *cylinderIgnitionEnabled;

@@ -129,9 +129,9 @@ struct ControlButton: View {
     var active: Bool
     var color: Color
     var action: () -> Void
-    
+
     var body: some View {
-        Button(action: action) {
+        Button(action: { HapticManager.shared.tap(.light); action() }) {
             HStack {
                 Text(label).modifier(RetroFont(size: Theme.FontSize.control))
                     .foregroundColor(active ? .textPrimary : .textMuted)
@@ -160,7 +160,7 @@ struct SmallActionButton: View {
     let action: () -> Void
 
     var body: some View {
-        Button(action: action) {
+        Button(action: { HapticManager.shared.tap(.light); action() }) {
             Text(label)
                 .modifier(RetroFont(size: Theme.FontSize.footnote))
                 .lineLimit(1)

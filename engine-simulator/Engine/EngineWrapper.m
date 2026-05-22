@@ -90,6 +90,13 @@ static inline double kRadToDeg(double rad) { return rad * (180.0 / M_PI); }
     // peak with a slow exponential decay so the gauge surfaces "peak
     // combustion pressure", which is the number tuners actually care about.
     double _cylinderPressurePeakPsi;
+
+    // Money-shift crash haptic latch. The sim loop builds many EngineState
+    // objects per frame and keeps only the last, so a one-shot popped mid-loop
+    // would be lost. Latch the onset + severity here and hand them to Swift in
+    // pollState, which clears the latch once consumed.
+    BOOL _moneyshiftPendingHaptic;
+    double _moneyshiftPendingSeverity;
 }
 
 // Per-frame multiplicative decay applied to the cylinder-pressure peak.
@@ -386,6 +393,14 @@ static const double kCylinderPressurePeakDecay = 0.985;
                 state.rodKnocking = NO;
 
                 ThermalSystem *thermal = engine->getThermalSystem();
+
+                // Latch a damaging over-rev catastrophe for the crash haptic.
+                // Consumed (and cleared) by Swift in pollState.
+                if (thermal->popMoneyshiftEvent()) {
+                    _moneyshiftPendingHaptic = YES;
+                    _moneyshiftPendingSeverity = thermal->lastMoneyshiftSeverity();
+                }
+
                 const int cylCount = engine->getCylinderCount();
                 NSMutableArray *cylinderHealths =
                     [NSMutableArray arrayWithCapacity:cylCount];
@@ -450,7 +465,25 @@ static const double kCylinderPressurePeakDecay = 0.985;
 }
 
 - (EngineState *)pollState {
-    return self.latestState;
+    EngineState *state = self.latestState;
+    if (state) {
+        // Hand over the latched crash onset (one-shot), then clear it so the
+        // haptic fires exactly once per catastrophe.
+        state.moneyshiftJustFired = _moneyshiftPendingHaptic;
+        state.moneyshiftSeverity = _moneyshiftPendingSeverity;
+        _moneyshiftPendingHaptic = NO;
+        // Live crash-audio envelope + per-window peak, read fresh so the haptic
+        // tracks the sound. getCatastrophePeak() also RESETS the peak, so call
+        // it exactly once per poll.
+        if (_sim) {
+            state.catastropheHapticLevel = _sim->synthesizer().getCatastropheEnvelope();
+            state.catastropheHapticPeak = _sim->synthesizer().getCatastrophePeak();
+        } else {
+            state.catastropheHapticLevel = 0.0;
+            state.catastropheHapticPeak = 0.0;
+        }
+    }
+    return state;
 }
 
 - (ScopeData *)getScopeData:(EngineScopeType)type {

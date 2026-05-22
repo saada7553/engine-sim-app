@@ -373,6 +373,24 @@ int16_t Synthesizer::renderAudio(int inputSample) {
     // the sum clipping. m_dryTransferBuffer is ~[-1,1] (normalized upstream).
     const float cat = m_dryTransferBuffer[inputSample];   // ~[-1,1], |cat|<1
     const float aCat = std::fabs(cat);
+
+    // Track a peak-follower envelope of the catastrophe so the UI poll thread
+    // can drive haptics that FOLLOW the crash sound: snap instantly up to any
+    // new peak (sharp attack on each boom/clank impact), then bleed down with
+    // a ~75 ms release so the gaps between clank transients fill into a single
+    // rumbling envelope that decays as the sound dies. ~[0,1].
+    constexpr float kCatEnvRelease = 0.9997f;   // per-sample decay (~75ms @ 44.1k)
+    const float prevEnv = m_catHapticEnv.load(std::memory_order_relaxed);
+    const float decayed = prevEnv * kCatEnvRelease;
+    m_catHapticEnv.store(aCat > decayed ? aCat : decayed,
+                         std::memory_order_relaxed);
+
+    // Peak-hold since the last UI read (reset there). Lets the haptics fire a
+    // discrete punch on the loudest impact of each poll window.
+    const float prevPeak = m_catHapticPeak.load(std::memory_order_relaxed);
+    if (aCat > prevPeak) {
+        m_catHapticPeak.store(aCat, std::memory_order_relaxed);
+    }
     // The bang must SPIKE well above the engine — so it is mixed near FULL SCALE
     // and the engine is ducked almost to silence under it. Levels are chosen so
     // boom (cat~1)+ducked engine stays just under the int16 ceiling, i.e. it is

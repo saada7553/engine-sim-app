@@ -445,7 +445,7 @@ private struct StarterButton: View {
         // Caption below to match the rest of the bar; the CRANK text on the
         // face still identifies the button at a glance.
         VStack(spacing: Theme.Bar.captionGap) {
-            Button(action: action) {
+            Button(action: { HapticManager.shared.tap(.firm); action() }) {
                 ZStack {
                     bezel
 
@@ -564,6 +564,9 @@ private struct DashTileChrome<Glyph: View>: View {
     let accent: Color
     /// Non-nil makes the tile a button (e.g. CLUTCH / DYNO toggles on iOS).
     let onTap: (() -> Void)?
+    /// Haptic flavor for the tap. Toggles use a light tap; gear shifts pass
+    /// `.firm` for a more consequential feel.
+    var hapticKind: HapticTap = .light
     /// Bezel width. Defaults to a square footprint so every control in the bar
     /// shares the same size; callers can widen without changing the height.
     var width: CGFloat = Theme.Bar.bezel
@@ -577,7 +580,7 @@ private struct DashTileChrome<Glyph: View>: View {
     var body: some View {
         Group {
             if let onTap = onTap {
-                Button(action: onTap) { tileContent }
+                Button(action: { HapticManager.shared.tap(hapticKind); onTap() }) { tileContent }
                     .buttonStyle(.plain)
             } else {
                 tileContent
@@ -867,6 +870,7 @@ private struct TopBarShiftButton: View {
                        active: pressed,
                        accent: .accentLive,
                        onTap: action,
+                       hapticKind: .firm,
                        style: .button) {
             Image(systemName: direction.symbol)
                 .font(.system(size: Theme.Bar.bezel * 0.34, weight: .bold))

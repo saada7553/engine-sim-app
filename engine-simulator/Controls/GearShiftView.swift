@@ -167,6 +167,9 @@ private struct HPatternShifter: View {
     let onShift: (Int) -> Void
     @State private var livePos: CGPoint? = nil
     @State private var isDragging = false
+    // Gear the knob was last snapped to mid-drag, so we tick once per detent
+    // crossing rather than every gesture sample. -2 = "no drag in progress".
+    @State private var lastSnap: Int = -2
 
     var body: some View {
         GeometryReader { geo in
@@ -185,13 +188,24 @@ private struct HPatternShifter: View {
                 DragGesture(minimumDistance: 0)
                     .onChanged { v in
                         isDragging = true
-                        livePos = g.constrain(v.location)
+                        let p = g.constrain(v.location)
+                        livePos = p
+                        // Light detent tick each time the knob clicks into a
+                        // new slot (or back to neutral) as it's dragged.
+                        let snap = g.resolveGear(at: p)
+                        if snap != lastSnap {
+                            lastSnap = snap
+                            HapticManager.shared.tap(.selection)
+                        }
                     }
                     .onEnded { v in
                         isDragging = false
                         let resolved = g.resolveGear(at: g.constrain(v.location))
+                        // Firm clunk banging into gear; lighter drop to neutral.
+                        HapticManager.shared.tap(resolved >= 0 ? .firm : .light)
                         onShift(resolved)
                         livePos = nil
+                        lastSnap = -2
                     }
             )
         }
@@ -459,6 +473,7 @@ private struct ShiftButton: View {
     var body: some View {
         Button(action: {
             pressed = true
+            HapticManager.shared.tap(.firm)
             action()
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) { pressed = false }
         }) {
