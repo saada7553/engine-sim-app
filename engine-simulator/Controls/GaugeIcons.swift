@@ -91,58 +91,6 @@ struct StarterIcon: Shape {
     }
 }
 
-// MARK: - CLUTCH (disc)
-
-struct ClutchIcon: Shape {
-    func path(in rect: CGRect) -> Path {
-        var p = Path()
-        let w = rect.width
-        let h = rect.height
-        let cx = w / 2
-        let cy = h / 2
-        let outer = min(w, h) * 0.42
-        let inner = outer * 0.30
-
-        // Outer disc + central hub.
-        p.addEllipse(in: CGRect(x: cx - outer, y: cy - outer, width: outer * 2, height: outer * 2))
-        p.addEllipse(in: CGRect(x: cx - inner, y: cy - inner, width: inner * 2, height: inner * 2))
-
-        // Six friction pads arranged radially.
-        let padCount = 6
-        let padInner = outer * 0.45
-        let padOuter = outer * 0.82
-        let padHalfAngle: CGFloat = .pi / CGFloat(padCount) * 0.65
-        for i in 0..<padCount {
-            let baseAngle: CGFloat = CGFloat(i) * 2.0 * .pi / CGFloat(padCount) - .pi / 2
-            let p1 = CGPoint(x: cx + cos(baseAngle - padHalfAngle) * padInner,
-                             y: cy + sin(baseAngle - padHalfAngle) * padInner)
-            let p2 = CGPoint(x: cx + cos(baseAngle + padHalfAngle) * padInner,
-                             y: cy + sin(baseAngle + padHalfAngle) * padInner)
-            let p3 = CGPoint(x: cx + cos(baseAngle + padHalfAngle) * padOuter,
-                             y: cy + sin(baseAngle + padHalfAngle) * padOuter)
-            let p4 = CGPoint(x: cx + cos(baseAngle - padHalfAngle) * padOuter,
-                             y: cy + sin(baseAngle - padHalfAngle) * padOuter)
-            p.move(to: p1)
-            p.addLine(to: p2)
-            p.addLine(to: p3)
-            p.addLine(to: p4)
-            p.closeSubpath()
-        }
-
-        // Splines on the central hub.
-        let splineCount = 8
-        for i in 0..<splineCount {
-            let a: CGFloat = CGFloat(i) * 2.0 * .pi / CGFloat(splineCount)
-            let s = CGPoint(x: cx + cos(a) * inner * 0.55, y: cy + sin(a) * inner * 0.55)
-            let e = CGPoint(x: cx + cos(a) * inner * 0.95, y: cy + sin(a) * inner * 0.95)
-            p.move(to: s)
-            p.addLine(to: e)
-        }
-
-        return p
-    }
-}
-
 // MARK: - DYNO (roller drum)
 
 struct DynoIcon: Shape {

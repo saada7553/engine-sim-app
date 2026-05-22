@@ -51,16 +51,23 @@ private let maxDtSeconds: Double = 1.0 / 30.0
 
 struct Engine3DProceduralView: _SCNViewRepresentable {
     @ObservedObject var vm: EngineViewModel
+    /// Diagnostic wireframe presentation: hidden shells, health-coloured line
+    /// art (green = healthy, warming toward red with damage), black background.
+    /// Camera framing matches the normal view and the user can orbit / zoom.
+    /// Defaults off so the normal "Engine 3D" tile is unaffected.
+    var wireframe: Bool = false
 
     private func makeSCNView(context: Context) -> SCNView {
         let scnView = SCNView()
         scnView.scene = SCNScene()
         scnView.allowsCameraControl = true
         scnView.defaultCameraController.interactionMode = .orbitAngleMapping
-        scnView.backgroundColor = PlatformColor(Color.appBackground)
+        scnView.backgroundColor = wireframe ? PlatformColor.black
+                                            : PlatformColor(Color.appBackground)
         scnView.antialiasingMode = .multisampling4X
         scnView.isPlaying = true
         scnView.loops = true
+        context.coordinator.wireframe = wireframe
 
         configureLights(in: scnView.scene!)
         configureCamera(in: scnView.scene!, params: nil)
@@ -194,6 +201,7 @@ struct Engine3DProceduralView: _SCNViewRepresentable {
     // MARK: - Coordinator
 
     final class Coordinator: NSObject, SCNSceneRendererDelegate {
+        var wireframe: Bool = false
         var currentRPM: Double = 0.0
         // Pushed by updateNSView each tick — used by the render loop to
         // recolour parts based on their damage state. Default to pristine
@@ -265,17 +273,28 @@ struct Engine3DProceduralView: _SCNViewRepresentable {
                 return
             }
 
+            // The wireframe build coarsens the hand-built geometries (cam lobes,
+            // fan blades); the flag is reset right after so nothing else builds
+            // at reduced detail.
+            ProceduralWireframeBuild.active = wireframe
             let built = ProceduralEngineAssembly.build(spec: spec)
+            ProceduralWireframeBuild.active = false
+
             let root = SCNNode()
             root.name = "proceduralEngineRoot"
             root.addChildNode(built.assemblyNode)
             scene.rootNode.addChildNode(root)
             self.parts = built
 
+            if wireframe {
+                ProceduralEngineAssembly.applyWireframeStyle(parts: built)
+            }
+
             currentSpecId = spec.id
             currentSpecFingerprint = Coordinator.geometryFingerprint(of: spec)
 
-            // Re-frame the camera around the new engine size.
+            // Re-frame the camera around the new engine size (identical framing
+            // to the solid view).
             adjustCamera(for: built.params)
         }
 
@@ -321,8 +340,18 @@ struct Engine3DProceduralView: _SCNViewRepresentable {
                 accumulatedAngle = accumulatedAngle.truncatingRemainder(dividingBy: 4.0 * .pi)
             }
 
-            if let parts = parts {
-                ProceduralEngineAssembly.animate(parts: parts, crankAngle: accumulatedAngle)
+            guard let parts = parts else { return }
+            ProceduralEngineAssembly.animate(parts: parts, crankAngle: accumulatedAngle)
+
+            // Both modes recolour by per-part health; wireframe maps it to a
+            // green→red hue, the solid view to a red-emission tint.
+            if wireframe {
+                ProceduralEngineAssembly.applyWireframeHealthColors(
+                    parts: parts,
+                    cylinderHealths: currentCylinderHealths,
+                    engineWide: currentEngineWideHealth
+                )
+            } else {
                 ProceduralEngineAssembly.applyDamageTints(
                     parts: parts,
                     cylinderHealths: currentCylinderHealths,

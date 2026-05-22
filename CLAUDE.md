@@ -41,16 +41,13 @@ You should also play this noise if you need my permission to do something / are 
 # Current TODOs: 
 
 1) When only the valves are damaged and the user is accelerating, the sound appears to be muffeled, when the throttle is let go, the damage sound returns. Why does the engine sound so muffeled when accelerating with only valve damage? Investigate and fix.
-2) Hitting the repair button should clear any ECU codes
-3) Remove the parenthetical (procedural) form the selection view where you describe Engine 3D (Procedural)
-
-I want some new mechanics: 
-    - Users should be able to turn on/off ignition or fuel to any cylinder of their choosing
-    - There needs to be a new tile which holds switches where you can individually toggle fuel / ignition to the culinders. Use switches from the engine health tile that are used for coolant pump / oil pump for consistency
-    - I believe the c++ model already has support for turning on / off the ignition to individual cylinders, but you will need to make the simple changes required to enable turning off fuel injection
-
-New tile under diagnostics in the selection list:
-
-bad tune needs to affect the ecu
-
-brake mechanics?
+2) Hitting the repair button should clear any OBD2 codes
+5) Fuel turning on the ecu needs work
+    - Currently, the entire map says 1s. What do these 1s mean? aren't they supposed to be seperate values? 
+    - Lets brainstorm what they should be, what does the 1 represent, etc.
+6) When they user changes ecu settings, they can throw the AFR / other engine parameters out of whack, if this happens, the OBD2 scanner should report warining / errors relating to these changes to let the user know there is a problem with their tune
+7) I need to add vehicle breaking to this so the car vehicle speed can slowly come down
+    - On macos, this should be a slider on the control pannel, think about the best way to incorporate this in 
+8) Coolant & Oil problems
+    - When driving hard, the coolant cools down instead of heating up
+    

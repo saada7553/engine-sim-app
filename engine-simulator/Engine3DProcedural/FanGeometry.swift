@@ -171,7 +171,11 @@ enum FanGeometry {
                    controlPoint1: CGPoint(x: bladeLength * 0.40, y: midHalf),
                    controlPoint2: CGPoint(x: bladeLength * 0.18, y: rootHalf))
         path.close()
-        path.flatness = 0.001
+        // Coarser in the wireframe so the extruded blade caps don't tessellate
+        // into a solid fill of triangle edges.
+        path.flatness = ProceduralWireframeBuild.active
+            ? ProceduralWireframeBuild.fanBladeFlatness
+            : 0.001
         return path
     }
 

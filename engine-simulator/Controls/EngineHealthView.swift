@@ -25,7 +25,11 @@ import UIKit
 // MARK: - Layout metrics (base values scaled by `scale`)
 
 private let referenceWidth: CGFloat = 380
+#if os(macOS)
 private let minScale: CGFloat = 0.7
+#else
+private let minScale: CGFloat = 0.50
+#endif
 private let maxScale: CGFloat = 1.25
 
 private let tilePaddingBase: CGFloat = 12
@@ -39,8 +43,13 @@ private let titleFontBase: CGFloat = 11
 private let sectionLabelFontBase: CGFloat = 9
 private let captionFontBase: CGFloat = 8
 
+#if os(macOS)
 private let switchWidthBase: CGFloat = 46
 private let switchHeightBase: CGFloat = 44
+#else
+private let switchWidthBase: CGFloat = 36
+private let switchHeightBase: CGFloat = 32
+#endif
 
 private let titleFontMin: CGFloat = 9
 private let sectionLabelFontMin: CGFloat = 8

@@ -42,6 +42,8 @@ private struct TilePreviewMeta {
 private let tilePreviews: [TileType: TilePreviewMeta] = [
     .engine3DProcedural: .init(icon: "cube.transparent",
                                summary: "Live 3D model of the simulated engine"),
+    .engine3DWireframe: .init(icon: "grid",
+                              summary: "Rotating colour-cycling wireframe diagnostic view"),
 
     .speedometerGauge:           .init(icon: "speedometer",        summary: "Vehicle speed dial"),
     .rpmGauge:                   .init(icon: "gauge.high",         summary: "Engine RPM with redline"),
@@ -54,6 +56,7 @@ private let tilePreviews: [TileType: TilePreviewMeta] = [
 
     .engineControls:  .init(icon: "slider.horizontal.3", summary: "Throttle, clutch, gear shifter"),
     .ecuTuning:       .init(icon: "memorychip",          summary: "Ignition + fuel map tuning grid"),
+    .cylinderControl: .init(icon: "switch.2",            summary: "Cut spark to individual cylinders"),
     .engineHealth:    .init(icon: "heart.text.square",   summary: "Coolant, oil, per-component damage"),
     .obd2:            .init(icon: "exclamationmark.triangle", summary: "OBD-II diagnostic code readout"),
 
@@ -83,13 +86,13 @@ private struct TilePreviewSection {
 }
 
 private let pickerSections: [TilePreviewSection] = [
-    .init(title: "VISUALIZATION", types: [.engine3DProcedural]),
+    .init(title: "VISUALIZATION", types: [.engine3DProcedural, .engine3DWireframe]),
     .init(title: "GAUGES", types: [
         .rpmGauge, .speedometerGauge, .manifoldPressureGauge,
         .volumetricEfficiencyGauge, .airScfmGauge, .intakeAfrGauge,
         .exhaustO2Gauge, .cylinderPressureGauge,
     ]),
-    .init(title: "CONTROLS", types: [.engineControls, .ecuTuning]),
+    .init(title: "CONTROLS", types: [.engineControls, .ecuTuning, .cylinderControl]),
     .init(title: "DIAGNOSTICS", types: [.engineHealth, .obd2]),
     .init(title: "DRIVER TOOLS", types: [.shiftLight, .zeroToSixtyTimer]),
     .init(title: "OSCILLOSCOPES", types: [
@@ -173,7 +176,7 @@ private struct PreviewCard: View {
     @State private var hovering = false
 
     private var meta: TilePreviewMeta {
-        tilePreviews[type] ?? TilePreviewMeta(icon: "square.dashed", summary: type.rawValue)
+        tilePreviews[type] ?? TilePreviewMeta(icon: "square.dashed", summary: type.displayName)
     }
 
     var body: some View {
@@ -182,7 +185,7 @@ private struct PreviewCard: View {
                 PreviewIcon(symbol: meta.icon, hovering: hovering)
 
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(type.rawValue)
+                    Text(type.displayName)
                         .font(.system(size: 13, weight: .semibold))
                         .foregroundColor(cardTitleColor)
                         .lineLimit(2)

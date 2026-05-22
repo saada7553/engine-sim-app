@@ -47,6 +47,7 @@ enum OBD2CodeService {
         codes.append(contentsOf: perCylinderCodes(vm: vm))
         codes.append(contentsOf: engineWideCodes(vm: vm))
         codes.append(contentsOf: knockCodes(vm: vm))
+        codes.append(contentsOf: ignitionCutCodes(vm: vm))
 
         // Severity then code ordering: critical first, then alphanumeric.
         return codes.sorted { lhs, rhs in
@@ -214,6 +215,27 @@ enum OBD2CodeService {
                              code: "P0521",
                              description: "Oil Pump Performance",
                              severity: wide.oilPump < crit ? .critical : .warning))
+        }
+
+        return out
+    }
+
+    // MARK: - Ignition cut
+
+    /// A user-driven fault, not a damage one: while a cylinder's spark is cut
+    /// from the Cylinder Control tile its plug never fires, which a real
+    /// scanner reads as an open ignition-coil circuit (P035X). The code drops
+    /// off as soon as ignition is restored.
+    private static func ignitionCutCodes(vm: EngineViewModel) -> [OBD2Code] {
+        var out: [OBD2Code] = []
+
+        for (idx, enabled) in vm.cylinderIgnitionEnabled.enumerated() where !enabled {
+            let cylNum = idx + 1
+            let cylDigit = hexDigit(for: cylNum)
+            out.append(.init(id: "P035\(cylDigit)-CUT",
+                             code: "P035\(cylDigit)",
+                             description: "Cylinder \(cylNum) Ignition Coil Disabled",
+                             severity: .warning))
         }
 
         return out

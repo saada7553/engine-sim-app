@@ -60,6 +60,8 @@ struct TileView: View {
         // legacy type still load — they just get the new rendering.
         case .engine3DView, .engine3DProcedural:
             return AnyView(Engine3DProceduralView(vm: tile.engineVm).id(engineResetId))
+        case .engine3DWireframe:
+            return AnyView(Engine3DProceduralView(vm: tile.engineVm, wireframe: true).id(engineResetId))
 
         // Gauges
         case .speedometerGauge:
@@ -124,6 +126,8 @@ struct TileView: View {
             // EcuTuningView observes vm.ecu via its inner editor whose .id is
             // keyed to ObjectIdentifier(vm.ecu), so swaps are handled inside.
             return AnyView(EcuTuningView(vm: tile.engineVm).id(engineResetId))
+        case .cylinderControl:
+            return AnyView(CylinderControlView(vm: tile.engineVm).id(engineResetId))
         case .engineHealth:
             return AnyView(EngineHealthView(vm: tile.engineVm).id(engineResetId))
         case .obd2:

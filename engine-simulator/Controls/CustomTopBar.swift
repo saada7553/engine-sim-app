@@ -11,6 +11,9 @@
 //
 
 import SwiftUI
+#if canImport(UIKit)
+import UIKit
+#endif
 
 // MARK: - Top Bar
 
@@ -104,15 +107,18 @@ struct CustomTopBar: View {
             // iOS: tappable CLUTCH + DYNO sit next to the ignition + starter
             // so all the on/off controls live in one cluster on the left.
             // The right side stays reserved for the throttle slider + shift
-            // buttons (right-thumb territory).
-            DashWarningTile(label: "CLUTCH",
-                            active: vm.clutchPressed,
-                            accent: .blue,
-                            onTap: { vm.toggleClutch() }) { ClutchIcon() }
+            // buttons (right-thumb territory). The status warning lights ride
+            // on the left here too, since iOS keeps the right side clear.
+            DashImageWarningTile(label: "CLUTCH",
+                                 active: vm.clutchPressed,
+                                 accent: .blue,
+                                 imageName: "clutch",
+                                 onTap: { vm.toggleClutch() })
             DashWarningTile(label: "DYNO",
                             active: vm.dynoEnabled,
                             accent: .orange,
                             onTap: { vm.toggleDyno() }) { DynoIcon() }
+            warningLights
             #endif
         }
     }
@@ -130,19 +136,72 @@ struct CustomTopBar: View {
             #if os(macOS)
             DashWarningTile(label: "IGN",    active: vm.isIgnitionOn,  accent: .red,    onTap: { vm.toggleIgnition() }) { IgnitionIcon() }
             DashWarningTile(label: "CRANK",  active: vm.isStarterOn,   accent: .green,  onTap: { vm.toggleStarter() })  { StarterIcon() }
-            DashWarningTile(label: "CLUTCH", active: vm.clutchPressed, accent: .blue,   onTap: { vm.toggleClutch() })   { ClutchIcon() }
+            DashImageWarningTile(label: "CLUTCH", active: vm.clutchPressed, accent: .blue, imageName: "clutch", onTap: { vm.toggleClutch() })
             DashWarningTile(label: "DYNO",   active: vm.dynoEnabled,   accent: .orange, onTap: { vm.toggleDyno() })     { DynoIcon() }
             DashWarningTile(label: "HOLD",   active: vm.throttleHeld,  accent: .yellow, onTap: { vm.toggleHold() })     { HoldIcon() }
+            warningLights
             #else
             EmptyView()
             #endif
         }
     }
 
+    // MARK: Status warning lights (check engine / oil / coolant)
+    //
+    // Driven straight off the OBD-II code list so the lights mirror exactly
+    // what the diagnostic scanner reports — no second set of thresholds to
+    // drift out of sync. Off normally; lit (in their accent colour) when a
+    // matching fault is present; the check-engine light flashes on any
+    // critical/catastrophic fault.
+
+    @ViewBuilder
+    private var warningLights: some View {
+        let state = WarningLightState(codes: OBD2CodeService.codes(for: vm))
+        DashImageWarningTile(label: "CHECK", active: state.checkEngine, accent: .yellow,
+                             imageName: "car-indicator", flashing: state.catastrophic)
+        #if os(macOS)
+        DashImageWarningTile(label: "OIL", active: state.oil, accent: .red,
+                             imageName: "oil-indicator")
+        DashImageWarningTile(label: "TEMP", active: state.coolant, accent: .cyan,
+                             imageName: "car-cooler")
+        #else
+        if UIDevice.current.userInterfaceIdiom == .pad {
+            DashImageWarningTile(label: "OIL", active: state.oil, accent: .red,
+                                 imageName: "oil-indicator")
+            DashImageWarningTile(label: "TEMP", active: state.coolant, accent: .cyan,
+                                 imageName: "car-cooler")
+        }
+        #endif
+    }
+
     private var topBarBackground: some View {
         // Flat fill — the gradient overlay competed with the dash chrome and
         // the user asked for it gone on both platforms.
         Color.appBackground
+    }
+}
+
+// MARK: - Warning-light derivation
+
+/// Maps the active OBD-II codes onto the three dashboard tell-tales. The code
+/// ids come from `OBD2CodeService`; grouping them here keeps the top bar and
+/// the scanner in agreement about what counts as "out of whack".
+private struct WarningLightState {
+    let checkEngine: Bool
+    let catastrophic: Bool
+    let oil: Bool
+    let coolant: Bool
+
+    init(codes: [OBD2Code]) {
+        // Any active code trips the check-engine light; a critical one makes
+        // it flash.
+        checkEngine = !codes.isEmpty
+        catastrophic = codes.contains { $0.severity == .critical }
+
+        let oilCodeIds: Set<String> = ["P0196", "P0521", "P0524", "P0521-PUMP"]
+        let coolantCodeIds: Set<String> = ["P0217", "P0480"]
+        oil = codes.contains { oilCodeIds.contains($0.id) }
+        coolant = codes.contains { coolantCodeIds.contains($0.id) }
     }
 }
 
@@ -496,27 +555,20 @@ private struct StarterButton: View {
 }
 
 // MARK: - Dashboard warning tile
+//
+// `DashTileChrome` draws the shared bezel + recessed face + label; the glyph
+// (already tinted for the current active state) is supplied by the caller.
+// `DashWarningTile` feeds it a hand-drawn `Shape`; `DashImageWarningTile`
+// feeds it a tinted PNG template image. Sharing the chrome keeps every dash
+// light visually identical regardless of which glyph source it uses.
 
-private struct DashWarningTile<Icon: Shape>: View {
+private struct DashTileChrome<Glyph: View>: View {
     let label: String
     let active: Bool
     let accent: Color
-    let icon: Icon
-    /// Non-nil makes the tile a button. Used on iOS for CLUTCH and DYNO
-    /// where tapping the indicator toggles the underlying state.
+    /// Non-nil makes the tile a button (e.g. CLUTCH / DYNO toggles on iOS).
     let onTap: (() -> Void)?
-
-    init(label: String,
-         active: Bool,
-         accent: Color,
-         onTap: (() -> Void)? = nil,
-         @ViewBuilder icon: () -> Icon) {
-        self.label = label
-        self.active = active
-        self.accent = accent
-        self.onTap = onTap
-        self.icon = icon()
-    }
+    @ViewBuilder let glyph: () -> Glyph
 
     var body: some View {
         Group {
@@ -558,9 +610,7 @@ private struct DashWarningTile<Icon: Shape>: View {
                         .blur(radius: 4)
                 }
 
-                icon
-                    .stroke(iconColor, style: StrokeStyle(lineWidth: 1.4, lineJoin: .round))
-                    .background(icon.fill(iconColor.opacity(active ? 0.25 : 0.06)))
+                glyph()
                     .frame(width: 22, height: 22)
                     .shadow(color: active ? accent.opacity(0.7) : .clear, radius: 5)
             }
@@ -572,10 +622,6 @@ private struct DashWarningTile<Icon: Shape>: View {
                 .tracking(0.5)
         }
         .frame(width: 44)
-    }
-
-    private var iconColor: Color {
-        active ? accent : accent.opacity(0.25)
     }
 
     private var isClickable: Bool { onTap != nil }
@@ -594,6 +640,92 @@ private struct DashWarningTile<Icon: Shape>: View {
             return active ? accent.opacity(0.85) : accent.opacity(0.45)
         }
         return Color.white.opacity(0.12)
+    }
+}
+
+/// Shape-glyph dash light (battery, gear, lock, etc.).
+private struct DashWarningTile<Icon: Shape>: View {
+    let label: String
+    let active: Bool
+    let accent: Color
+    let icon: Icon
+    let onTap: (() -> Void)?
+
+    init(label: String,
+         active: Bool,
+         accent: Color,
+         onTap: (() -> Void)? = nil,
+         @ViewBuilder icon: () -> Icon) {
+        self.label = label
+        self.active = active
+        self.accent = accent
+        self.onTap = onTap
+        self.icon = icon()
+    }
+
+    var body: some View {
+        DashTileChrome(label: label, active: active, accent: accent, onTap: onTap) {
+            icon
+                .stroke(iconColor, style: StrokeStyle(lineWidth: 1.4, lineJoin: .round))
+                .background(icon.fill(iconColor.opacity(active ? 0.25 : 0.06)))
+        }
+    }
+
+    private var iconColor: Color { active ? accent : accent.opacity(0.25) }
+}
+
+/// PNG-glyph dash light. Renders an asset-catalog image as a tintable
+/// template so the warning icons (check engine, oil, coolant, clutch) match
+/// the hand-drawn lights' on/off colour behaviour. `flashing` pulses the
+/// glyph while active — used for catastrophic check-engine faults.
+private struct DashImageWarningTile: View {
+    let label: String
+    let active: Bool
+    let accent: Color
+    let imageName: String
+    let flashing: Bool
+    let onTap: (() -> Void)?
+
+    @State private var flashDimmed = false
+
+    init(label: String,
+         active: Bool,
+         accent: Color,
+         imageName: String,
+         flashing: Bool = false,
+         onTap: (() -> Void)? = nil) {
+        self.label = label
+        self.active = active
+        self.accent = accent
+        self.imageName = imageName
+        self.flashing = flashing
+        self.onTap = onTap
+    }
+
+    var body: some View {
+        DashTileChrome(label: label, active: active, accent: accent, onTap: onTap) {
+            Image(imageName)
+                .renderingMode(.template)
+                .resizable()
+                .aspectRatio(contentMode: .fit)
+                .foregroundColor(iconColor)
+                .opacity(active && flashing && flashDimmed ? 0.2 : 1.0)
+        }
+        .onChange(of: shouldFlash) { _, flash in updateFlash(flash) }
+        .onAppear { updateFlash(shouldFlash) }
+    }
+
+    private var iconColor: Color { active ? accent : accent.opacity(0.25) }
+    private var shouldFlash: Bool { active && flashing }
+
+    private func updateFlash(_ flash: Bool) {
+        if flash {
+            withAnimation(.easeInOut(duration: 0.45).repeatForever(autoreverses: true)) {
+                flashDimmed = true
+            }
+        } else {
+            withAnimation(.easeOut(duration: 0.2)) { flashDimmed = false }
+        }
     }
 }
 

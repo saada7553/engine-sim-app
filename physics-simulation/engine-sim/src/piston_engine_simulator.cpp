@@ -623,6 +623,15 @@ void PistonEngineSimulator::writeToSynthesizer() {
     constexpr double kValveExciteMax  = 7.0e6;
     constexpr double kWhinePeak       = 2.0e6;
 
+    // Knock = piston crown contacting the valve. The impact velocity tracks
+    // engine speed, so the energy (and loudness) scales with rpm². A quadratic
+    // ramp keeps knock nearly silent at idle and only brings it up as the
+    // engine spins faster, matching the physical impact.
+    constexpr double kKnockFullRpm = 4000.0;   // rpm at which knock is full
+    // Click-envelope decay per sample. Lower = tighter click, shorter ring/
+    // reverb tail. Tightened so each knock reads as a dry tick.
+    constexpr double kKnockEnvDecay = 0.92;
+
     // Gate damage audio on engine rotation (silent at zero RPM).
     const double rpmForAudio = m_engine->getRpm();
     const double rpmFactor = std::min(1.0,
@@ -912,20 +921,22 @@ void PistonEngineSimulator::writeToSynthesizer() {
             // is a one-pole LPF state colouring the noise to ~1.3 kHz. Each
             // knock is a tight click (~1.7ms) with NO reverb tail.
             //
-            // Knock level scales with a dedicated RPM ramp (NOT attenuation_3,
-            // which saturates at ~382 rpm and would make knock full-volume at
-            // all driving speeds). At idle it's a faint background tick; it
-            // grows with engine speed. Overall gain kept very low (×0.04) so
-            // knock is a faint layer UNDER the engine note, never dominant.
+            // Knock loudness follows a QUADRATIC rpm ramp (impact energy of
+            // the piston hitting the valve ∝ velocity² ∝ rpm²). At idle it's
+            // nearly silent; it comes up as the engine spins faster. The ramp
+            // is dedicated (NOT attenuation_3, which saturates at ~382 rpm and
+            // would make knock full-volume everywhere). Overall gain kept low
+            // so knock is a faint layer UNDER the engine note, never dominant.
             double knockOut = 0.0;
             if (m_knockBurstAmp[i] > 1.0) {
                 const double rawNoise = noise(m_audioRng);
                 m_knockResonY1[i] = 0.74 * m_knockResonY1[i]
                                   + 0.26 * rawNoise;
-                const double knockRpmScale = std::min(1.0, rpm / 4000.0);
+                const double rpmRamp = std::min(1.0, rpm / kKnockFullRpm);
+                const double knockRpmScale = rpmRamp * rpmRamp;
                 knockOut = m_knockResonY1[i] * m_knockBurstAmp[i]
                          * 0.025 * knockRpmScale;
-                m_knockBurstAmp[i] *= 0.96;
+                m_knockBurstAmp[i] *= kKnockEnvDecay;
             }
 
             damageAudio += yR + yP + yV + knockOut;

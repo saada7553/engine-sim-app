@@ -93,6 +93,11 @@ class EngineViewModel: ObservableObject {
     @Published var cylinderHealths: [CylinderHealthState] = []
     @Published var engineWideHealth: EngineWideHealthState = EngineWideHealthState()
     @Published var rodKnocking: Bool = false
+
+    /// Per-cylinder spark state. Index i is `true` while cylinder i fires,
+    /// `false` when the user has cut ignition to it from the Cylinder Control
+    /// tile. Mirrors the C++ ignition module each poll.
+    @Published var cylinderIgnitionEnabled: [Bool] = []
     
     // Inputs
     @Published var throttlePosition: Double = 0.0 {
@@ -215,6 +220,8 @@ class EngineViewModel: ObservableObject {
                     self.engineWideHealth = wide
                 }
                 self.rodKnocking = state.rodKnocking
+                self.cylinderIgnitionEnabled =
+                    (state.cylinderIgnitionEnabled ?? []).map { $0.boolValue }
 
                 // Pass engine wrapper to oscilloscope manager for sampling
                 self.oscilloscopeManager.sample(from: engine)
@@ -465,5 +472,15 @@ class EngineViewModel: ObservableObject {
     }
     func repairEngine() {
         engine?.repairEngine()
+    }
+
+    /// Cut or restore spark to a single cylinder. Optimistically flips the
+    /// local flag so the switch responds instantly; the next poll re-syncs
+    /// authoritatively from the C++ ignition module.
+    func toggleCylinderIgnition(_ index: Int) {
+        guard index >= 0 && index < cylinderIgnitionEnabled.count else { return }
+        let next = !cylinderIgnitionEnabled[index]
+        engine?.setCylinderIgnitionEnabled(Int32(index), enabled: next)
+        cylinderIgnitionEnabled[index] = next
     }
 }

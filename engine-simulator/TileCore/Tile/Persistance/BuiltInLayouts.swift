@@ -292,26 +292,50 @@ enum BuiltInLayouts {
         #endif
     }
 
-    /// Diagnostic bench. Left column = the 3D engine view as the
-    /// visual reference for what's failing. Right column splits into
-    /// Engine Health (gauges + damage schematic) on top and the OBD-II
-    /// scanner readout below — so the user sees the engine, the
-    /// component-level damage state, and the live trouble codes all in
-    /// one view while abusing a build.
+    /// Diagnostic bench. The wireframe engine is the visual reference for
+    /// what's failing, alongside the component-level damage state, the
+    /// per-cylinder ignition/fuel cut switches, and the live OBD-II codes.
     static let diagnostic: TileLayout = TileLayout(
         id: BuiltInLayoutId.diagnostic,
         name: "Diagnostic",
-        rootData: BuiltInBuilder.split(.horizontal, [
-            BuiltInBuilder.leaf(.engine3DProcedural,
+        rootData: diagnosticRoot,
+        isBuiltIn: true
+    )
+
+    /// macOS: wireframe on the left; the right column stacks Engine Health,
+    /// the Cylinder Control switch row, then the OBD-II scanner.
+    /// iOS / iPad: wireframe on top with the short Cylinder Control row
+    /// directly beneath it; Engine Health + OBD-II share the right column.
+    private static var diagnosticRoot: TileData {
+        #if os(macOS)
+        return BuiltInBuilder.split(.horizontal, [
+            BuiltInBuilder.leaf(.engine3DWireframe,
                                 size: CGSize(width: 880, height: 1000)),
+            BuiltInBuilder.split(.vertical, [
+                BuiltInBuilder.leaf(.engineHealth,
+                                    size: CGSize(width: 720, height: 560)),
+                BuiltInBuilder.leaf(.cylinderControl,
+                                    size: CGSize(width: 720, height: 150)),
+                BuiltInBuilder.leaf(.obd2,
+                                    size: CGSize(width: 720, height: 290)),
+            ], size: CGSize(width: 720, height: 1000)),
+        ])
+        #else
+        return BuiltInBuilder.split(.horizontal, [
+            BuiltInBuilder.split(.vertical, [
+                BuiltInBuilder.leaf(.engine3DWireframe,
+                                    size: CGSize(width: 880, height: 780)),
+                BuiltInBuilder.leaf(.cylinderControl,
+                                    size: CGSize(width: 880, height: 220)),
+            ], size: CGSize(width: 880, height: 1000)),
             BuiltInBuilder.split(.vertical, [
                 BuiltInBuilder.leaf(.engineHealth,
                                     size: CGSize(width: 720, height: 600)),
                 BuiltInBuilder.leaf(.obd2,
                                     size: CGSize(width: 720, height: 400)),
             ], size: CGSize(width: 720, height: 1000)),
-        ]),
-        isBuiltIn: true
-    )
+        ])
+        #endif
+    }
 
 }

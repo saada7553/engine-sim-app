@@ -57,7 +57,12 @@ enum CamshaftGeometry {
     /// lies in the X-Z plane with the peak pointing along +X at peakAngleRad=0.
     private static func makeLobeNode(params p: EngineGeometryParams,
                                      peakAngleRad: Double) -> SCNNode {
-        let n = lobeContourPointCount
+        // In the diagnostic wireframe a 192-point lobe cap fans into a solid
+        // disc of lines, so drop to a coarse contour there. The solid view
+        // keeps the full count.
+        let n = ProceduralWireframeBuild.active
+            ? ProceduralWireframeBuild.lobeContourPoints
+            : lobeContourPointCount
         let baseR = p.camBaseRadius
         let lift = p.camMaxLift
         let halfDur = p.camDurationRadCam / 2.0

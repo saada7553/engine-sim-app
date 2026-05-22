@@ -37,6 +37,14 @@ class IgnitionModule : public Part {
         bool getIgnitionEvent(int index) const;
         void resetIgnitionEvents();
 
+        /// Per-cylinder spark control. Disabling a plug stops it from firing,
+        /// so that cylinder draws in its charge and pumps it out unburnt — the
+        /// equivalent of pulling a single coil wire. Out-of-range indices are
+        /// ignored / reported disabled.
+        void setPlugEnabled(int cylinderIndex, bool enabled);
+        bool isPlugEnabled(int cylinderIndex) const;
+        int getCylinderCount() const { return m_cylinderCount; }
+
         /// Per-cylinder firing angle in the 4-stroke cycle, in radians [0, 4π).
         /// Combined with the output crankshaft's current cycle angle this
         /// gives the position of each cylinder in its own cycle — needed for

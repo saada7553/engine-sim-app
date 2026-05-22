@@ -19,6 +19,23 @@ import Foundation
 
 private let valveYHalfPitchFactorOfBore: Double = 0.25  // two valves per cam per cylinder
 
+/// Set to `true` only while the diagnostic wireframe assembly is being built
+/// (on the main thread, synchronously around `ProceduralEngineAssembly.build`),
+/// then immediately reset. The hand-built geometries that aren't SceneKit
+/// primitives — cam lobes and fan blades — read this to drop to a coarse
+/// tessellation so the wireframe shows clean edges instead of a solid mass of
+/// triangle lines. SceneKit primitives are coarsened after the fact instead
+/// (see `coarsenGeometry`). The solid "Engine 3D" tile leaves this `false`, so
+/// its geometry is untouched.
+enum ProceduralWireframeBuild {
+    static var active = false
+
+    /// Cam-lobe contour points: full detail vs. coarse wireframe.
+    static let lobeContourPoints = 28
+    /// Bezier flatness for the extruded fan-blade silhouette in wireframe.
+    static let fanBladeFlatness: CGFloat = 0.12
+}
+
 final class ProceduralEngineParts {
     let assemblyNode: SCNNode
     let params: EngineGeometryParams
@@ -312,38 +329,41 @@ enum ProceduralEngineAssembly {
         cylinderHealths: [CylinderHealthState],
         engineWide: EngineWideHealthState
     ) {
-        // Per-cylinder parts.
+        forEachTrackedPart(parts: parts,
+                           cylinderHealths: cylinderHealths,
+                           engineWide: engineWide) { node, health in
+            tintNodeTree(node, damage: 1.0 - health)
+        }
+    }
+
+    /// Walk every health-tracked part once, handing the caller each part node
+    /// together with its current health (0 = destroyed, 1 = pristine). Shared
+    /// by the solid-view damage tint and the wireframe health colouring so the
+    /// two never disagree about which node maps to which health value.
+    private static func forEachTrackedPart(
+        parts: ProceduralEngineParts,
+        cylinderHealths: [CylinderHealthState],
+        engineWide: EngineWideHealthState,
+        _ apply: (SCNNode, Double) -> Void
+    ) {
         let n = min(cylinderHealths.count, parts.pistons.count)
         for i in 0..<n {
             let c = cylinderHealths[i]
-            tintNodeTree(parts.pistons[i],   damage: 1.0 - c.piston)
-            if i < parts.rods.count {
-                tintNodeTree(parts.rods[i],  damage: 1.0 - c.rod)
-            }
-            if i < parts.wristPins.count {
-                // Pin shares fate with the piston for visual cohesion.
-                tintNodeTree(parts.wristPins[i], damage: 1.0 - c.piston)
-            }
-            // Valves: tint per intake/exhaust health.
+            apply(parts.pistons[i], c.piston)
+            if i < parts.rods.count { apply(parts.rods[i], c.rod) }
+            // Pin shares fate with the piston for visual cohesion.
+            if i < parts.wristPins.count { apply(parts.wristPins[i], c.piston) }
             if i < parts.valveSetsByCylinder.count,
                let vs = parts.valveSetsByCylinder[i] {
-                let intakeDmg  = 1.0 - c.intakeValve
-                let exhaustDmg = 1.0 - c.exhaustValve
-                for v in vs.intakeValves  { tintNodeTree(v, damage: intakeDmg) }
-                for v in vs.exhaustValves { tintNodeTree(v, damage: exhaustDmg) }
+                for v in vs.intakeValves  { apply(v, c.intakeValve) }
+                for v in vs.exhaustValves { apply(v, c.exhaustValve) }
             }
         }
 
-        // Engine-wide parts.
-        let crankDmg = 1.0 - engineWide.crankshaft
-        if let crank = parts.crankshaft {
-            tintNodeTree(crank, damage: crankDmg)
-        }
-        let camDmg = 1.0 - engineWide.camshaft
-        for cam in parts.intakeCams  { tintNodeTree(cam, damage: camDmg) }
-        for cam in parts.exhaustCams { tintNodeTree(cam, damage: camDmg) }
-        let headDmg = 1.0 - engineWide.cylinderHead
-        for head in parts.heads      { tintNodeTree(head, damage: headDmg) }
+        if let crank = parts.crankshaft { apply(crank, engineWide.crankshaft) }
+        for cam in parts.intakeCams  { apply(cam, engineWide.camshaft) }
+        for cam in parts.exhaustCams { apply(cam, engineWide.camshaft) }
+        for head in parts.heads      { apply(head, engineWide.cylinderHead) }
     }
 
     /// Apply red-emission tint to every material in the node subtree. A small
@@ -382,5 +402,94 @@ enum ProceduralEngineAssembly {
         for child in root.childNodes {
             applyEmission(to: child, color: color)
         }
+    }
+
+    // MARK: - Wireframe visualization
+    //
+    // Diagnostic mode: hide the translucent shells (block, crankcase, bank
+    // slabs and heads) and render every remaining part as a flatly shaded line
+    // drawing. The dense round primitives are coarsened first so the lines read
+    // as a wireframe instead of filling in to a solid silhouette. Colours are
+    // health-driven (see `applyWireframeHealthColors`).
+
+    // A fine cylinder/torus turns into a solid-looking disc once its triangle
+    // edges are all drawn, so the round primitives are knocked down to these
+    // coarse counts in wireframe. Only this built instance's geometry is
+    // touched — the solid "Engine 3D" tile keeps its full detail.
+    private static let wireframeMaxRadialSegments: Int = 8
+    private static let wireframeMaxRingSegments: Int = 12
+    private static let wireframeMaxPipeSegments: Int = 4
+
+    /// Switch all still-visible part materials to a constant-shaded line fill,
+    /// coarsen the geometry, and hide the shells. Call once after a rebuild;
+    /// colour is set per-frame via `applyWireframeHealthColors`.
+    static func applyWireframeStyle(parts: ProceduralEngineParts) {
+        parts.assemblyNode.childNode(withName: "engineBlock", recursively: false)?.isHidden = true
+        for head in parts.heads { head.isHidden = true }
+
+        forEachVisibleNode(under: parts.assemblyNode) { node in
+            coarsenGeometry(node.geometry)
+            for m in node.geometry?.materials ?? [] {
+                m.fillMode = .lines
+                m.lightingModel = .constant
+                m.isDoubleSided = true
+                m.writesToDepthBuffer = true
+                m.emission.contents = PlatformColor.black
+            }
+        }
+    }
+
+    /// Colour each visible part by its health: green when pristine, sliding
+    /// through yellow / orange to red as that specific part takes damage.
+    /// Cheap enough to call per-frame.
+    static func applyWireframeHealthColors(
+        parts: ProceduralEngineParts,
+        cylinderHealths: [CylinderHealthState],
+        engineWide: EngineWideHealthState
+    ) {
+        forEachTrackedPart(parts: parts,
+                           cylinderHealths: cylinderHealths,
+                           engineWide: engineWide) { node, health in
+            let color = wireframeHealthColor(health: health)
+            forEachVisibleNode(under: node) { n in
+                for m in n.geometry?.materials ?? [] { m.diffuse.contents = color }
+            }
+        }
+    }
+
+    /// Hue runs green (0.33) at full health → red (0.0) at zero, passing
+    /// through yellow on the way, so worsening damage warms the part up.
+    private static func wireframeHealthColor(health: Double) -> PlatformColor {
+        let h = max(0.0, min(1.0, health))
+        return PlatformColor(hue: CGFloat(h) * 0.33,
+                             saturation: 0.9,
+                             brightness: 1.0,
+                             alpha: 1.0)
+    }
+
+    /// Lower the segment counts of SceneKit's round primitives in place. The
+    /// primitive regenerates its mesh when these are set, so this is all it
+    /// takes to thin out the wireframe.
+    private static func coarsenGeometry(_ geometry: SCNGeometry?) {
+        switch geometry {
+        case let cyl as SCNCylinder:
+            cyl.radialSegmentCount = min(cyl.radialSegmentCount, wireframeMaxRadialSegments)
+        case let tube as SCNTube:
+            tube.radialSegmentCount = min(tube.radialSegmentCount, wireframeMaxRadialSegments)
+        case let torus as SCNTorus:
+            torus.ringSegmentCount = min(torus.ringSegmentCount, wireframeMaxRingSegments)
+            torus.pipeSegmentCount = min(torus.pipeSegmentCount, wireframeMaxPipeSegments)
+        case let sphere as SCNSphere:
+            sphere.segmentCount = min(sphere.segmentCount, wireframeMaxRadialSegments)
+        default:
+            break
+        }
+    }
+
+    private static func forEachVisibleNode(under root: SCNNode,
+                                           _ apply: (SCNNode) -> Void) {
+        if root.isHidden { return }
+        apply(root)
+        for child in root.childNodes { forEachVisibleNode(under: child, apply) }
     }
 }

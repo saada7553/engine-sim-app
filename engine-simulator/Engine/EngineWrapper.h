@@ -78,6 +78,10 @@
 @property (nonatomic, strong) EngineWideHealthState *engineWideHealth;
 @property (nonatomic, assign) BOOL rodKnocking;
 
+// Per-cylinder spark state. Index i is YES when cylinder i's spark plug is
+// firing, NO when the user has cut ignition to that cylinder.
+@property (nonatomic, strong) NSArray<NSNumber *> *cylinderIgnitionEnabled;
+
 @end
 
 typedef NS_ENUM(NSInteger, EngineScopeType) {
@@ -168,6 +172,10 @@ typedef NS_ENUM(NSInteger, EngineScopeType) {
 - (void)setCoolantPumpEnabled:(BOOL)enabled;
 - (void)setOilPumpEnabled:(BOOL)enabled;
 - (void)repairEngine;
+
+// Per-cylinder spark control. Cutting ignition stops that cylinder's plug
+// from firing; the charge is drawn in and pumped out unburnt.
+- (void)setCylinderIgnitionEnabled:(int)cylinder enabled:(BOOL)enabled;
 
 // Other
 - (void)resetTravelledDistance;

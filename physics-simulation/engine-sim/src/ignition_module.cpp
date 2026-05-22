@@ -107,6 +107,16 @@ void IgnitionModule::resetIgnitionEvents() {
     }
 }
 
+void IgnitionModule::setPlugEnabled(int cylinderIndex, bool enabled) {
+    if (cylinderIndex < 0 || cylinderIndex >= m_cylinderCount) return;
+    m_plugs[cylinderIndex].enabled = enabled;
+}
+
+bool IgnitionModule::isPlugEnabled(int cylinderIndex) const {
+    if (cylinderIndex < 0 || cylinderIndex >= m_cylinderCount) return false;
+    return m_plugs[cylinderIndex].enabled;
+}
+
 double IgnitionModule::getTimingAdvance() {
     return m_timingCurve->sampleTriangle(-m_crankshaft->m_body.v_theta) + m_ignitionOffset;
 }

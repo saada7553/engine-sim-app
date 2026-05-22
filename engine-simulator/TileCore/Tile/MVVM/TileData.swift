@@ -38,6 +38,10 @@ enum TileType: String, Codable, CaseIterable, Identifiable {
     /// SelectView no longer exposes this option for new tiles.
     case engine3DView = "Engine 3D"
     case engine3DProcedural = "Engine 3D (Procedural)"
+    /// Diagnostic presentation of the procedural engine: hidden shells, a
+    /// colour-cycling wireframe and a slow turntable. Same renderer as
+    /// `engine3DProcedural`, just driven in wireframe mode.
+    case engine3DWireframe = "Engine Wireframe"
 
     /// Hide the deprecated legacy 3D view from the type picker.
     static var pickerCases: [TileType] {
@@ -57,6 +61,7 @@ enum TileType: String, Codable, CaseIterable, Identifiable {
     // Controls
     case engineControls = "Engine Controls"
     case ecuTuning = "ECU Tuning"
+    case cylinderControl = "Cylinder Ignition Control"
     case engineHealth = "Engine Health"
     case obd2 = "OBD-II"
     /// iOS-only: the clutch + intake cross-section drawings, split out of
@@ -91,4 +96,15 @@ enum TileType: String, Codable, CaseIterable, Identifiable {
     case select = "Select View"
     
     var id: String { rawValue }
+
+    /// User-facing name. Defaults to the raw value, which doubles as the
+    /// Codable persistence key — override here when the displayed label
+    /// should differ from the stored value.
+    var displayName: String {
+        switch self {
+        case .engine3DProcedural: return "Engine 3D"
+        case .engine3DWireframe: return "Diagnostic 3D"
+        default: return rawValue
+        }
+    }
 }

@@ -405,6 +405,14 @@ static const double kCylinderPressurePeakDecay = 0.985;
                 }
                 state.cylinderHealths = cylinderHealths;
 
+                IgnitionModule *ignition = engine->getIgnitionModule();
+                NSMutableArray *ignitionEnabled =
+                    [NSMutableArray arrayWithCapacity:cylCount];
+                for (int ci = 0; ci < cylCount; ++ci) {
+                    [ignitionEnabled addObject:@(ignition->isPlugEnabled(ci))];
+                }
+                state.cylinderIgnitionEnabled = ignitionEnabled;
+
                 auto wide = thermal->getEngineWideComponents();
                 EngineWideHealthState *engineWide = [[EngineWideHealthState alloc] init];
                 engineWide.cylinderHead = wide.cylinderHead;
@@ -629,6 +637,11 @@ static const double kCylinderPressurePeakDecay = 0.985;
 }
 - (void)repairEngine {
     if (_sim) _sim->repairThermalAndDamage();
+}
+
+- (void)setCylinderIgnitionEnabled:(int)cylinder enabled:(BOOL)enabled {
+    if (!_engine) return;
+    _engine->getIgnitionModule()->setPlugEnabled(cylinder, enabled ? true : false);
 }
 
 - (void)shutdown {
