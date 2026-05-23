@@ -67,21 +67,25 @@ struct SettingsView: View {
 
     // MARK: - Header
 
+    // Title centered on the page; the close button floats at the trailing edge
+    // (a ZStack so the title's centering ignores the button's width).
     private var headerBar: some View {
-        HStack {
+        ZStack {
             Text("SETTINGS")
                 .modifier(RetroFont(size: titleFont, weight: .bold))
                 .foregroundColor(.accentLive)
                 .tracking(2)
-            Spacer()
-            Button(action: onClose) {
-                Image(systemName: "xmark.circle.fill")
-                    .font(.system(size: 22))
-                    .foregroundColor(.textMuted)
-                    .padding(6)
-                    .contentShape(Rectangle())
+            HStack {
+                Spacer()
+                Button(action: onClose) {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 22))
+                        .foregroundColor(.textMuted)
+                        .padding(6)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
             }
-            .buttonStyle(.plain)
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 12)
@@ -203,7 +207,7 @@ private struct DamageToggleRow: View {
     var body: some View {
         SettingsToggle(
             title: "Engine damage",
-            subtitle: "Money-shifts, over-rev and wear can break the engine. Turn off to drive however you like — nothing breaks.",
+            subtitle: "Money shifts, over revving and wear can break the engine. Turn this off to drive however you like and nothing breaks.",
             isOn: $settings.engineDamageEnabled
         )
     }
@@ -238,7 +242,7 @@ private struct PurchasesRow: View {
                     Text("Pro access")
                         .font(.system(size: rowTitleFont, weight: .semibold))
                         .foregroundColor(.textPrimary)
-                    Text(purchaseManager.isPro ? "Unlocked — every engine is yours."
+                    Text(purchaseManager.isPro ? "Unlocked. Every engine is yours."
                                                : "The free engine only. Unlock all engines with Pro.")
                         .font(.system(size: rowSubtitleFont))
                         .foregroundColor(.textSecondary)
@@ -294,7 +298,7 @@ private struct DebugRows: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Dev-only — gated to DEBUG builds.")
+            Text("Dev only. Gated to DEBUG builds.")
                 .font(.system(size: rowSubtitleFont))
                 .foregroundColor(.textSecondary)
             SettingsButton(label: "Forget purchase (show paywall)",

@@ -159,6 +159,10 @@ enum EngineDesignExpander {
         // A flat-out race engine goes very oversquare (big bore, short stroke) so
         // it can spin to F1-class rpm without exceeding safe piston speed.
         if intent.performance == .extreme { ratio += 0.12 }
+        // A high-rev build runs a short stroke (oversquare) so mean piston speed
+        // stays sane at high rpm — without this the piston-speed cap below drags
+        // the redline right back down.
+        if intent.has(.highRedline) { ratio += 0.12 }
         if intent.has(.bigBore)   { ratio += 0.08 }
         if intent.has(.longStroke) { ratio -= 0.10 }
         ratio = ratio.clamped(to: Limit.boreStrokeRatio)
@@ -339,7 +343,7 @@ enum EngineDesignExpander {
 
     private static func applyIgnition(_ spec: inout EngineSpec, intent: EngineIntent, layout: EngineLayout, displacementL: Double) {
         var redline = intent.redlineRpm ?? defaultRedline(intent)
-        if intent.has(.highRedline) { redline += 1200 }
+        if intent.has(.highRedline) { redline += 1500 }
         // A real engine's ceiling is set by mean PISTON SPEED, not displacement:
         // a short-stroke F1 V12 screams to ~18k while a long-stroke truck V8
         // can't. (The old `9500 - displacementL*400` cap dragged the F1 down to
@@ -356,13 +360,16 @@ enum EngineDesignExpander {
     /// Street builds stay near 20 m/s; a race/extreme engine runs the ~28 m/s of
     /// real motorsport, so short-stroke screamers can reach F1-class rpm.
     private static func pistonSpeedRedlineCap(spec: EngineSpec, intent: EngineIntent) -> Double {
-        let limitMs: Double
+        var limitMs: Double
         switch max(intent.performance.rank, effectiveCam(intent).rank) {
         case 0:  limitMs = 19   // weak / economy
         case 1:  limitMs = 21   // modest / stock
         case 2:  limitMs = 24   // strong / sport
         default: limitMs = 28   // extreme / race
         }
+        // A deliberately high-revving engine accepts higher mean piston speed
+        // (lightened internals, short stroke), so the cap rises with it.
+        if intent.has(.highRedline) { limitMs += 4 }
         let strokeM = spec.strokeMm / 1000.0
         guard strokeM > 0 else { return Limit.redlineRpm.upperBound }
         return limitMs * 60.0 / (2.0 * strokeM)
@@ -442,12 +449,7 @@ enum EngineDesignExpander {
     private static func applyDrivetrain(_ spec: inout EngineSpec, intent: EngineIntent, layout: EngineLayout, displacementL: Double) {
         spec.clutchTorqueLbFt = (displacementL * 90 + 80).clamped(to: Limit.clutchTorqueLbFt)
 
-        let gearCount: Int
-        switch intent.vehicleClass {
-        case .truck:               gearCount = 4
-        case .raceCar, .supercar:  gearCount = 7
-        default:                   gearCount = 6
-        }
+        let gearCount = gearCount(for: intent)
 
         var (first, top): (Double, Double)
         switch intent.gearing {
@@ -458,6 +460,32 @@ enum EngineDesignExpander {
         if intent.has(.shortGears) { first += 0.4; top += 0.15 }
         if intent.has(.tallGears)  { first -= 0.3; top -= 0.1 }
         spec.gearRatios = geometricGears(count: gearCount, first: first, top: max(0.45, top))
+    }
+
+    /// Gear count follows the POWER there is to manage, then the vehicle class
+    /// adjusts. A slow economy engine doesn't need a close-ratio 6-speed (the old
+    /// flat default oversized every slow build's gearbox); the extra cogs of a
+    /// race car / supercar are only handed out when there's real power to keep in
+    /// the band.
+    private static func gearCount(for intent: EngineIntent) -> Int {
+        var count: Int
+        switch intent.performance {
+        case .weak:    count = 4
+        case .modest:  count = 5
+        case .strong:  count = 6
+        case .extreme: count = 6
+        }
+        switch intent.vehicleClass {
+        case .truck:
+            count = min(count, 5)
+        case .raceCar, .supercar:
+            if intent.performance.rank >= DesignPerformance.strong.rank { count = 7 }
+        case .motorcycle:
+            count = min(max(count, 5), 6)
+        default:
+            break
+        }
+        return count
     }
 
     private static func geometricGears(count: Int, first: Double, top: Double) -> [Double] {

@@ -205,7 +205,7 @@ final class PurchaseManager: ObservableObject {
     /// Falls back to a hard-coded value while offerings load — the paywall
     /// still shows _something_ during the brief offering fetch on first run.
     var lifetimePriceLabel: String {
-        lifetimePackage()?.storeProduct.localizedPriceString ?? "$9.99"
+        lifetimePackage()?.storeProduct.localizedPriceString ?? "Fetching..."
     }
 
     private func lifetimePackage() -> Package? {

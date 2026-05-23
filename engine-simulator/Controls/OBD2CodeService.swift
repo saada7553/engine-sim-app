@@ -45,6 +45,26 @@ private let overAdvanceCriticalDeg: Double = 16.0
 private let overRetardWarnDeg: Double = -8.0
 private let overRetardCriticalDeg: Double = -16.0
 
+// MARK: - Start-assist thresholds
+//
+// These only matter while the user is actively cranking (ignition + starter on)
+// and the engine hasn't caught yet. They turn a frustrating "it just won't
+// start" into concrete things to try: spin it faster, or feed it throttle.
+
+// Above this rpm the engine has fired and is running — no longer a start fault.
+private let crankCatchRpm: Double = 450.0
+// Fraction of the starter's target cranking speed below which it's clearly
+// bogging down (can't overcome the engine it's bolted to).
+private let crankBoggingFraction: Double = 0.55
+// Assumed healthy cranking target for built-in engines with no editable spec.
+private let assumedCrankTargetRpm: Double = 220.0
+// A starter geared this slow can't build enough speed to fire most engines.
+private let starterSpeedFloorRpm: Double = 180.0
+// Throttle while cranking: wide-open floods it; near-closed may be starving a
+// big-cam engine that needs a little air to catch.
+private let floodingThrottle: Double = 0.85
+private let starvedThrottle: Double = 0.04
+
 // MARK: - Models
 
 enum OBD2Severity {
@@ -78,6 +98,7 @@ enum OBD2CodeService {
         codes.append(contentsOf: knockCodes(vm: vm))
         codes.append(contentsOf: ignitionCutCodes(vm: vm))
         codes.append(contentsOf: tuneCodes(vm: vm))
+        codes.append(contentsOf: startingCodes(vm: vm))
 
         // Severity then code ordering: critical first, then alphanumeric.
         return codes.sorted { lhs, rhs in
@@ -354,6 +375,58 @@ enum OBD2CodeService {
         }
 
         return out
+    }
+
+    // MARK: - Start assist
+    //
+    // Only active while cranking (ignition + starter on) and the engine hasn't
+    // caught. Diagnoses the two most common reasons a hand-built engine won't
+    // fire — a starter too weak/slow to spin it, or the wrong throttle — and
+    // hands the user a concrete fix instead of leaving them stabbing the starter.
+
+    private static func startingCodes(vm: EngineViewModel) -> [OBD2Code] {
+        guard vm.isIgnitionOn, vm.isStarterOn, vm.rpm < crankCatchRpm else { return [] }
+        var out: [OBD2Code] = []
+        let crankRpm = vm.rpm
+
+        let spec = vm.engineId.flatMap { EngineLibrary.shared.entry(for: $0)?.spec }
+        let target = spec?.starterSpeedRpm ?? assumedCrankTargetRpm
+        let bogging = crankRpm < target * crankBoggingFraction
+
+        // 1. Starter can't spin the engine fast enough to fire.
+        if bogging {
+            let (desc, action) = starterDiagnosis(spec: spec)
+            out.append(.init(id: "P0616-START", code: "P0616",
+                             description: desc, severity: .warning, action: action))
+        } else {
+            // The starter is doing its job, so if it still won't catch the
+            // throttle is the likely culprit — too much (flooding) or too little.
+            if vm.throttlePosition >= floodingThrottle {
+                out.append(.init(id: "P0172-START", code: "P0172",
+                                 description: "Flooded — Too Much Throttle While Cranking",
+                                 severity: .warning,
+                                 action: "Ease off the throttle, then crank"))
+            } else if vm.throttlePosition <= starvedThrottle {
+                out.append(.init(id: "P050A-START", code: "P050A",
+                                 description: "Engine Cranks But Won't Catch",
+                                 severity: .warning,
+                                 action: "Feed it some throttle while cranking"))
+            }
+        }
+
+        return out
+    }
+
+    /// Separate "geared too slow" from "not enough torque" when the engine has
+    /// an editable spec; fall back to a generic hint for built-ins.
+    private static func starterDiagnosis(spec: EngineSpec?) -> (String, String) {
+        guard let spec else {
+            return ("Cranking Speed Too Low", "Starter too weak to spin this engine")
+        }
+        if spec.starterSpeedRpm < starterSpeedFloorRpm {
+            return ("Starter Geared Too Slow to Fire", "Raise starter speed in the builder")
+        }
+        return ("Starter Torque Too Low for This Engine", "Raise starter torque in the builder")
     }
 
     // MARK: - Knock

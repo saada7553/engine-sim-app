@@ -75,6 +75,12 @@ enum DesignCondition: String, CaseIterable {
     case fresh, normal, worn
 }
 
+/// How high the engine wants to rev, as a feeling. Used only when the user gave
+/// no explicit redline number; the reconciler folds it into the build.
+enum RevCharacter: String, CaseIterable {
+    case low, medium, high, screamer
+}
+
 // MARK: - Feature tags (specific mechanical things the user called out)
 
 enum DesignFeature: String, CaseIterable {

@@ -29,6 +29,10 @@ struct KeywordHints {
     var gearing: DesignGearing?
     var powerBand: DesignPowerBand?
     var condition: DesignCondition?
+    /// A FLOOR on the intended power level from unambiguous speed words. Only
+    /// ever raises the model's judgement, never lowers it — so "fast" can't come
+    /// back as a slow engine, but the model still owns the finer gradations.
+    var performanceFloor: DesignPerformance?
     var features: Set<DesignFeature> = []
 }
 
@@ -48,11 +52,31 @@ enum PromptKeywords {
         h.compressionRatio = compression(in: t)
         h.features = features(in: t)
         h.condition = condition(in: t)
+        h.performanceFloor = performanceFloor(in: t)
         // Performance + feel (cam/idle/sound/gearing) are left to the AI's
         // holistic reasoning. Condition (wear) is explicit and the model is
         // unreliable on it, so it's keyword-driven here.
 
         return h
+    }
+
+    // MARK: - Performance floor (unambiguous speed words; only ever raises)
+
+    private static func performanceFloor(in t: String) -> DesignPerformance? {
+        // If the prompt clearly calls for a SLOW engine, don't floor it — let the
+        // model's performance call decide (it reads negation/nuance better here).
+        if t.containsAny([" slow", "gutless", "sluggish", " weak", "underpowered",
+                          "anaemic", "anemic", "no power", "gutty", "grandma", "putt",
+                          "economy", "eco ", "lazy"]) { return nil }
+        if t.containsAny(["insane", "monster", "brutal", "ballistic", "rocket",
+                          "ludicrous", "fastest", "most powerful", "maximum power",
+                          "max power", "track weapon", "all out", "all-out",
+                          "absurd", "stupid fast", "race car", "race engine", "f1 ",
+                          "formula 1", "hypercar"]) { return .extreme }
+        if t.containsAny(["fast", "quick", "rapid", "sporty", "punchy", "peppy",
+                          "spirited", "lively", "powerful", "quickest", "speedy",
+                          "hot rod", "high horsepower", "high-horsepower"]) { return .strong }
+        return nil
     }
 
     // MARK: - Condition (wear is explicit; the model over-reports "worn")
@@ -201,7 +225,9 @@ enum PromptKeywords {
         if t.containsAny(["tall gear", "long gear", "overdrive"]) { f.insert(.tallGears) }
         if t.containsAny(["high compression", "high-compression"]) { f.insert(.highCompression) }
         if t.containsAny(["low compression", "low-compression"]) { f.insert(.lowCompression) }
-        if t.containsAny(["high revving", "high-revving", "screamer", "revs high", "high rpm", "high-rpm"]) { f.insert(.highRedline) }
+        if t.containsAny(["high revving", "high-revving", "high rev", "high-rev", "revvy",
+                          "screamer", "revs high", "revs hard", "loves to rev", "rev happy",
+                          "rev-happy", "free revving", "free-revving", "high rpm", "high-rpm"]) { f.insert(.highRedline) }
         return f
     }
 

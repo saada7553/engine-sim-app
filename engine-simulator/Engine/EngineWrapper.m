@@ -292,17 +292,56 @@ static const double kCylinderPressurePeakDecay = 0.985;
             [self updateDynoForFrame:kFrameTimestep];
 
             _sim->startFrame(1.0 / 30.0);
+            Engine *engine = _sim->getEngine();
+            ThermalSystem *thermal = engine->getThermalSystem();
             while (_sim->simulateStep()) {
-                // This loop runs ~333 substeps per frame (10 kHz sim / 30 fps),
-                // each allocating an EngineState and several NSMutableArrays.
-                // The sim runs on a bare std::thread with no run loop, so without
-                // a local pool every autoreleased temporary leaks permanently and
-                // the process is OOM-killed within minutes. Drain per substep.
+                // Per-substep work only. Building the full EngineState snapshot
+                // here would allocate an EngineState + several NSMutableArrays
+                // ~333×/frame (10 kHz sim / 30 fps) just to discard all but the
+                // last, so the snapshot is assembled once after the loop. Only
+                // work that needs sub-frame resolution stays in here. The bare
+                // std::thread has no run loop, so a pool drains any autoreleased
+                // temporaries that would otherwise leak.
                 @autoreleasepool {
 
-                // --- GATHER DATA (ScopePoint Implementation) ---
+                // Cylinder pressure: track the running peak across the whole
+                // frame so the gauge reflects PEAK combustion pressure (the
+                // meaningful tuning number) rather than the raw chamber pressure
+                // that swings 14→600+ PSI every cycle.
+                if (engine->getCylinderCount() > 0) {
+                    const double instantPsi = units::convert(
+                        engine->getChamber(0)->m_system.pressure(),
+                        units::psi
+                    );
+                    _cylinderPressurePeakPsi *= kCylinderPressurePeakDecay;
+                    if (instantPsi > _cylinderPressurePeakPsi) {
+                        _cylinderPressurePeakPsi = instantPsi;
+                    }
+                } else {
+                    _cylinderPressurePeakPsi = 0.0;
+                }
+
+                // Latch a damaging over-rev catastrophe for the crash haptic.
+                // Polled per substep so a mid-frame event is never missed;
+                // consumed (and cleared) by Swift in pollState.
+                if (thermal->popMoneyshiftEvent()) {
+                    _moneyshiftPendingHaptic = YES;
+                    _moneyshiftPendingSeverity = thermal->lastMoneyshiftSeverity();
+                }
+
+                // Oscilloscopes capture waveforms and need sub-frame resolution.
+                _oscilloscopeCluster->sample();
+
+                } // @autoreleasepool
+            }
+            _sim->endFrame();
+
+            // --- Build the UI snapshot ONCE per frame ---
+            // Reflects the engine's end-of-frame state (the same instant the old
+            // per-substep build captured on its final iteration). Assigning to
+            // the strong property retains `state` past the pool drain.
+            @autoreleasepool {
                 EngineState *state = [[EngineState alloc] init];
-                Engine *engine = _sim->getEngine();
 
                 // 1. Basic Stats
                 state.rpm = _rpm;
@@ -341,31 +380,17 @@ static const double kCylinderPressurePeakDecay = 0.985;
                     : (actualAirPerSecond / theoreticalAirPerSecond);
                 state.volumetricEfficiency = 100.0 * volumetricEfficiency;
 
-                // Cylinder pressure: track the running peak so the gauge
-                // reflects PEAK combustion pressure (the meaningful tuning
-                // number) rather than the raw chamber pressure that swings
-                // 14→600+ PSI every cycle.
-                if (engine->getCylinderCount() > 0) {
-                    const double instantPsi = units::convert(
-                        engine->getChamber(0)->m_system.pressure(),
-                        units::psi
-                    );
-                    _cylinderPressurePeakPsi *= kCylinderPressurePeakDecay;
-                    if (instantPsi > _cylinderPressurePeakPsi) {
-                        _cylinderPressurePeakPsi = instantPsi;
-                    }
-                    state.cylinderPressure = _cylinderPressurePeakPsi;
-                } else {
-                    _cylinderPressurePeakPsi = 0.0;
-                    state.cylinderPressure = 0.0;
-                }
+                // Peak cylinder pressure accumulated across this frame's substeps.
+                state.cylinderPressure = (engine->getCylinderCount() > 0)
+                    ? _cylinderPressurePeakPsi
+                    : 0.0;
 
                 // Air-Fuel Ratio
                 state.intakeAFR = engine->getIntakeAfr();
 
                 // Exhaust O2 percentage (multiply by 100 to get percentage)
                 state.exhaustO2 = engine->getExhaustO2() * 100.0;
-                
+
                 // --- ECU Tuning Map Retrieval ---
                 // Both getIgnitionOffset() and getTimingAdvanceForRpm() return
                 // radians; convert to degrees so the Swift UI can display + edit
@@ -398,15 +423,6 @@ static const double kCylinderPressurePeakDecay = 0.985;
                 state.midHealth = _sim->getMidHealth();
                 state.bottomEndHealth = _sim->getBottomEndHealth();
                 state.rodKnocking = NO;
-
-                ThermalSystem *thermal = engine->getThermalSystem();
-
-                // Latch a damaging over-rev catastrophe for the crash haptic.
-                // Consumed (and cleared) by Swift in pollState.
-                if (thermal->popMoneyshiftEvent()) {
-                    _moneyshiftPendingHaptic = YES;
-                    _moneyshiftPendingSeverity = thermal->lastMoneyshiftSeverity();
-                }
 
                 const int cylCount = engine->getCylinderCount();
                 NSMutableArray *cylinderHealths =
@@ -445,17 +461,8 @@ static const double kCylinderPressurePeakDecay = 0.985;
                 engineWide.oilPump = wide.oilPump;
                 state.engineWideHealth = engineWide;
 
-                // Update C++ Oscilloscopes
-                _oscilloscopeCluster->sample();
-                
-                // Assigning to the strong property retains `state` past the
-                // pool drain below, so the kept frame survives while every
-                // per-substep temporary is freed immediately.
                 self.latestState = state;
-
-                } // @autoreleasepool
-            }
-            _sim->endFrame();
+            } // @autoreleasepool
             
             _rpm = _engine->getRpm();
             _gear = _sim->getTransmission()->getGear();

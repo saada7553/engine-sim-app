@@ -17,7 +17,7 @@ private let revenueCatAPIKey = "test_ZYpdwVJIKcNhwMICqAkYNPRCGur"
 // TODO: Replace with the production Apple App Store public API key from the
 // RevenueCat dashboard (Project Settings → API keys → Apple). Until this is
 // filled in, release builds can't load offerings or validate purchases.
-private let revenueCatAPIKey = "appl_REPLACE_WITH_PRODUCTION_KEY"
+private let revenueCatAPIKey = "appl_NjEXSfjpQZcGDAmoXiyLYKOKiGK"
 #endif
 
 /// Fixed sidebar width on iOS — mirrors the macOS NavigationSplitView
