@@ -232,6 +232,14 @@ func tileSurfCommands(rootViewModel: RootViewModel) -> some Commands {
         Button("Save Workspace") { rootViewModel.presentSaveLayout() }
             .keyboardShortcut("s", modifiers: [.command])
     }
+
+#if DEBUG
+    CommandMenu("Debug") {
+        Button("Reset Purchases (show paywall again)") {
+            Task { await PurchaseManager.shared.resetPurchasesForDebug() }
+        }
+    }
+#endif
 }
 
 /*

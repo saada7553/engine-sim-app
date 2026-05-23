@@ -50,6 +50,15 @@ struct IdentityStep: View {
     @ObservedObject var state: EngineBuilderState
     @FocusState private var focused: Bool
 
+    /// Bridges the optional spec field to the non-optional text editor: an
+    /// empty string clears it back to nil so we don't persist "".
+    private var descriptionBinding: Binding<String> {
+        Binding(
+            get: { state.spec.engineDescription ?? "" },
+            set: { state.spec.engineDescription = $0.isEmpty ? nil : $0 }
+        )
+    }
+
     var body: some View {
         HStack(alignment: .top, spacing: 64) {
             VStack(alignment: .leading, spacing: 28) {
@@ -74,6 +83,8 @@ struct IdentityStep: View {
                 Rectangle()
                     .fill(BuilderTheme.accent)
                     .frame(height: 1)
+
+                DescriptionField(text: descriptionBinding)
             }
             Spacer()
 
@@ -88,6 +99,56 @@ struct IdentityStep: View {
             focused = true
             #endif
         }
+    }
+}
+
+/// Optional description blurb under the name. Shown to other players when the
+/// engine is shared to the community, so the prompt frames it that way. A
+/// multi-line, character-capped editor styled to match the name field's
+/// underline so the two read as one form.
+private struct DescriptionField: View {
+    @Binding var text: String
+    private let maxLength = 240
+
+    // Sized from the theme rather than magic numbers. `title` (16) is comfortably
+    // legible on both platforms (iOS body is ~17) yet stays subordinate to the
+    // big name field above; the builder isn't globally scaled, so the same size
+    // reads correctly on each. The label matches the builder's field-label size.
+    private let labelSize = Theme.FontSize.control     // 12
+    private let bodySize  = Theme.FontSize.title       // 16
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("DESCRIPTION · OPTIONAL")
+                .font(.system(size: labelSize, weight: .bold, design: .monospaced))
+                .tracking(1.5)
+                .foregroundColor(BuilderTheme.label)
+
+            ZStack(alignment: .topLeading) {
+                if text.isEmpty {
+                    Text("Tell people about this build — what it's for, how it drives, what's special.")
+                        .font(.system(size: bodySize, design: .monospaced))
+                        .foregroundColor(BuilderTheme.dim)
+                        .padding(.top, 8)
+                        .allowsHitTesting(false)
+                }
+                TextEditor(text: $text)
+                    .textEditorStyle(.plain)
+                    .scrollContentBackground(.hidden)
+                    .font(.system(size: bodySize, design: .monospaced))
+                    .foregroundStyle(.white)
+                    .tint(BuilderTheme.accent)
+                    .frame(height: bodySize * 4.5)
+                    .onChange(of: text) { _, newValue in
+                        if newValue.count > maxLength { text = String(newValue.prefix(maxLength)) }
+                    }
+            }
+            Rectangle()
+                .fill(BuilderTheme.dim.opacity(0.4))
+                .frame(height: 1)
+        }
+        .frame(maxWidth: 460, alignment: .leading)
+        .padding(.top, 8)
     }
 }
 

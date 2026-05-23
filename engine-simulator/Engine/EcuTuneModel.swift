@@ -155,6 +155,38 @@ final class EcuTuneModel: ObservableObject {
         self.factoryFuelMap = fm
     }
 
+    /// Build a read-only model for previewing an engine's tune without a live
+    /// C++ engine (the community detail). The base ignition curve is sampled by
+    /// interpolating the spec's own `ignitionTiming`, then the saved `ecuTune`
+    /// is layered on if present — so the preview shows the author's tune, or the
+    /// factory tune for an untuned engine.
+    static func forDisplay(spec: EngineSpec) -> EcuTuneModel {
+        let curve = spec.ignitionTiming.sorted { $0.rpm < $1.rpm }
+        let provider: EcuBaseTimingProvider = { rpm in
+            Self.interpolatedAdvance(curve, atRpm: rpm)
+        }
+        let model = EcuTuneModel(redlineRpm: spec.redlineRpm, baseTiming: provider)
+        if let tune = spec.ecuTune { model.apply(tune) }
+        return model
+    }
+
+    /// Linear interpolation of an ascending (rpm, advance) curve, clamped at the
+    /// ends. Mirrors what the C++ ignition module does between control points.
+    private static func interpolatedAdvance(_ curve: [TimingPoint], atRpm rpm: Double) -> Double {
+        guard let first = curve.first else { return 0 }
+        if rpm <= first.rpm { return first.advanceDeg }
+        guard let last = curve.last else { return first.advanceDeg }
+        if rpm >= last.rpm { return last.advanceDeg }
+        for i in 0..<(curve.count - 1) {
+            let lo = curve[i], hi = curve[i + 1]
+            if rpm >= lo.rpm && rpm < hi.rpm {
+                let frac = (rpm - lo.rpm) / (hi.rpm - lo.rpm)
+                return lo.advanceDeg + frac * (hi.advanceDeg - lo.advanceDeg)
+            }
+        }
+        return last.advanceDeg
+    }
+
     /// Factory target AFR for a manifold load: flat stoich up to the cruise
     /// ceiling, then linearly richening to the WOT target at full load.
     private static func factoryTargetAfr(loadKpa: Double) -> Double {
@@ -256,6 +288,30 @@ final class EcuTuneModel: ObservableObject {
         }
         let n = bins.count - 1
         return (n, n, 0)
+    }
+
+    // MARK: - Persistence (save / restore a tune onto the engine spec)
+
+    /// Snapshot the current maps and axes for persisting onto the EngineSpec.
+    func export() -> EcuTune {
+        EcuTune(rpmBins: rpmBins, loadBins: loadBins,
+                ignitionMap: ignitionMap, fuelMap: fuelMap)
+    }
+
+    /// Restore a saved tune. Applied only when the grid dimensions match this
+    /// model's (they will for the same engine, since the rpm axis is derived
+    /// from the redline) — a mismatch is ignored so the freshly-seeded factory
+    /// tune stands rather than crashing on a stale grid.
+    func apply(_ tune: EcuTune) {
+        guard tune.ignitionMap.count == ignitionMap.count,
+              tune.fuelMap.count == fuelMap.count,
+              tune.ignitionMap.allSatisfy({ $0.count == rpmBins.count }),
+              tune.fuelMap.allSatisfy({ $0.count == rpmBins.count }) else {
+            print("EcuTuneModel: saved tune grid mismatch; keeping factory tune.")
+            return
+        }
+        ignitionMap = tune.ignitionMap
+        fuelMap = tune.fuelMap
     }
 
     // MARK: - Trail recording

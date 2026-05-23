@@ -31,7 +31,10 @@ enum EngineDesignExpander {
         static let rodLengthMm: ClosedRange<Double> = 100...260
         static let compressionHeightMm: ClosedRange<Double> = 18...50
         static let compressionRatio: ClosedRange<Double> = 7...14
-        static let boreStrokeRatio: ClosedRange<Double> = 0.85...1.20
+        // Up to 1.35 so a high-rpm race build can run the short-stroke (very
+        // oversquare) geometry that lets it actually rev — a 1.20 ceiling forced
+        // every engine into a long enough stroke to choke the redline.
+        static let boreStrokeRatio: ClosedRange<Double> = 0.85...1.35
         static let pistonMassG: ClosedRange<Double> = 120...700
         static let rodMassG: ClosedRange<Double> = 180...900
         static let crankMassKg: ClosedRange<Double> = 5...80
@@ -56,7 +59,7 @@ enum EngineDesignExpander {
         static let exhaustPrimaryLengthIn: ClosedRange<Double> = 10...40
         static let exhaustCollectorBoreIn: ClosedRange<Double> = 1.2...4.0
         static let exhaustLengthIn: ClosedRange<Double> = 40...200
-        static let redlineRpm: ClosedRange<Double> = 3000...12000
+        static let redlineRpm: ClosedRange<Double> = 3000...18000
         static let clutchTorqueLbFt: ClosedRange<Double> = 100...1500
         static let chamberVolumeCc: ClosedRange<Double> = 8...250
     }
@@ -149,10 +152,13 @@ enum EngineDesignExpander {
         let cam = effectiveCam(intent)
         var ratio: Double
         switch (intent.powerBand, cam) {
-        case (.topEnd, _), (_, .race): ratio = 1.10
+        case (.topEnd, _), (_, .race): ratio = 1.15
         case (.lowEnd, _), (_, .economy): ratio = 0.92
         default: ratio = 1.0
         }
+        // A flat-out race engine goes very oversquare (big bore, short stroke) so
+        // it can spin to F1-class rpm without exceeding safe piston speed.
+        if intent.performance == .extreme { ratio += 0.12 }
         if intent.has(.bigBore)   { ratio += 0.08 }
         if intent.has(.longStroke) { ratio -= 0.10 }
         ratio = ratio.clamped(to: Limit.boreStrokeRatio)
@@ -334,8 +340,11 @@ enum EngineDesignExpander {
     private static func applyIgnition(_ spec: inout EngineSpec, intent: EngineIntent, layout: EngineLayout, displacementL: Double) {
         var redline = intent.redlineRpm ?? defaultRedline(intent)
         if intent.has(.highRedline) { redline += 1200 }
-        // Big engines can't rev forever — cap by displacement.
-        redline = min(redline, 9500 - displacementL * 400)
+        // A real engine's ceiling is set by mean PISTON SPEED, not displacement:
+        // a short-stroke F1 V12 screams to ~18k while a long-stroke truck V8
+        // can't. (The old `9500 - displacementL*400` cap dragged the F1 down to
+        // ~7k purely because of its size.)
+        redline = min(redline, pistonSpeedRedlineCap(spec: spec, intent: intent))
         redline = redline.clamped(to: Limit.redlineRpm)
         spec.redlineRpm = redline
 
@@ -343,21 +352,39 @@ enum EngineDesignExpander {
         spec.ignitionTiming = buildTimingCurve(redline: redline, fuel: intent.fuel ?? .gasoline)
     }
 
+    /// Max rpm allowed by a mean-piston-speed ceiling (mean speed = 2·stroke·rpm).
+    /// Street builds stay near 20 m/s; a race/extreme engine runs the ~28 m/s of
+    /// real motorsport, so short-stroke screamers can reach F1-class rpm.
+    private static func pistonSpeedRedlineCap(spec: EngineSpec, intent: EngineIntent) -> Double {
+        let limitMs: Double
+        switch max(intent.performance.rank, effectiveCam(intent).rank) {
+        case 0:  limitMs = 19   // weak / economy
+        case 1:  limitMs = 21   // modest / stock
+        case 2:  limitMs = 24   // strong / sport
+        default: limitMs = 28   // extreme / race
+        }
+        let strokeM = spec.strokeMm / 1000.0
+        guard strokeM > 0 else { return Limit.redlineRpm.upperBound }
+        return limitMs * 60.0 / (2.0 * strokeM)
+    }
+
     private static func defaultRedline(_ intent: EngineIntent) -> Double {
         // Redline follows the intended POWER level first (a "slow worn-out"
-        // engine must not rev to 9k), then a layout-based nudge.
+        // engine must not rev to 9k), then a layout-based nudge. The piston-speed
+        // cap above keeps these honest for the actual geometry.
         var base: Double
         switch intent.performance {
         case .weak:    base = 5500
         case .modest:  base = 6800
         case .strong:  base = 8200
-        case .extreme: base = 9200
+        case .extreme: base = 9800
         }
         switch intent.vehicleClass {
-        case .motorcycle:         base += 1500
-        case .truck:              base -= 800
-        case .muscle:             base -= 600
-        case .supercar, .raceCar: base += 600
+        case .motorcycle:  base += 2500   // bikes scream
+        case .truck:       base -= 800
+        case .muscle:      base -= 600
+        case .supercar:    base += 800
+        case .raceCar:     base += 3500   // F1 / prototype territory
         default: break
         }
         return base

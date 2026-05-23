@@ -144,6 +144,7 @@ enum LeaderboardMetric: String, CaseIterable, Identifiable {
 /// value/budget boards work without recomputation.
 struct LeaderboardEntry: Identifiable, Equatable {
     let id: String              // CKRecord.ID.recordName
+    let ownerId: String         // stable PlayerIdentity.playerId of the poster
     let username: String
     let engineName: String
     let engineClass: EngineClass

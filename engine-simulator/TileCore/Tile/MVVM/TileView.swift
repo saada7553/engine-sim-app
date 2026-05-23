@@ -142,6 +142,8 @@ struct TileView: View {
         // Compete
         case .leaderboard:
             return AnyView(LeaderboardTileView(engineVm: tile.engineVm))
+        case .community:
+            return AnyView(CommunityTileView(engineVm: tile.engineVm))
 
         // Oscilloscopes
         case .torqueOscilloscope:

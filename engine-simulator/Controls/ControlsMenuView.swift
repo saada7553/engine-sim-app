@@ -3,53 +3,64 @@
 //  engine-simulator
 //
 //  Popover that lists the keyboard bindings handled by KeyboardController.
+//  Styled to match the dash theme — RetroFont labels, the brand accent header,
+//  and the same key chips used by the onboarding keyboard legend.
 //
 
 import SwiftUI
 
-struct KeyBinding: Identifiable {
+private let controlsPopoverWidth: CGFloat = 250
+private let controlsKeyChipMinWidth: CGFloat = 46
+
+private struct KeyBinding: Identifiable {
     let id = UUID()
     let key: String
     let action: String
-    let available: Bool
 }
 
 struct ControlsMenuView: View {
     private let bindings: [KeyBinding] = [
-        KeyBinding(key: "A", action: "Toggle ignition", available: true),
-        KeyBinding(key: "S", action: "Starter", available: true),
-        KeyBinding(key: "⇧", action: "Clutch", available: true),
-        KeyBinding(key: "↑", action: "Upshift", available: true),
-        KeyBinding(key: "↓", action: "Downshift", available: true),
-        KeyBinding(key: "D", action: "Enable dyno", available: true),
-        KeyBinding(key: "H", action: "Throttle hold", available: true),
-        KeyBinding(key: "Space", action: "Rev engine", available: true),
-        KeyBinding(key: ".", action: "Vehicle brake", available: false)
+        .init(key: "A", action: "Ignition"),
+        .init(key: "S", action: "Starter"),
+        .init(key: "⇧", action: "Clutch"),
+        .init(key: "Space", action: "Rev engine"),
+        .init(key: "↑", action: "Upshift"),
+        .init(key: "↓", action: "Downshift"),
+        .init(key: "D", action: "Dyno"),
+        .init(key: "H", action: "Throttle hold")
     ]
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 8) {
-                Image(systemName: "keyboard")
-                    .foregroundColor(.sidebarAccent)
-                Text("KEYBOARD CONTROLS")
-                    .font(.system(size: Theme.FontSize.callout, weight: .semibold))
-                    .foregroundColor(.white)
-            }
-            .padding(.horizontal, 14)
-            .padding(.vertical, Theme.Space.xl)
+            header
 
-            Divider().background(Color.strokeFaint)
+            Rectangle()
+                .fill(Color.strokeFaint)
+                .frame(height: Theme.Stroke.thin)
 
-            VStack(spacing: 0) {
-                ForEach(bindings) { binding in
-                    KeyBindingRow(binding: binding)
-                }
+            VStack(spacing: Theme.Space.sm) {
+                ForEach(bindings) { KeyBindingRow(binding: $0) }
             }
-            .padding(.vertical, Theme.Space.sm)
+            .padding(.horizontal, Theme.Space.xl)
+            .padding(.vertical, Theme.Space.lg)
         }
-        .frame(width: 240)
+        .frame(width: controlsPopoverWidth)
         .background(Color.appBackground)
+    }
+
+    private var header: some View {
+        HStack(spacing: Theme.Space.md) {
+            Image(systemName: "keyboard")
+                .font(.system(size: Theme.FontSize.headline))
+                .foregroundColor(.accentLive)
+            Text("KEYBOARD CONTROLS")
+                .modifier(RetroFont(size: Theme.FontSize.callout))
+                .tracking(Theme.Tracking.wide)
+                .foregroundColor(.textPrimary)
+            Spacer()
+        }
+        .padding(.horizontal, Theme.Space.xl)
+        .padding(.vertical, Theme.Space.lg)
     }
 }
 
@@ -57,28 +68,20 @@ private struct KeyBindingRow: View {
     let binding: KeyBinding
 
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: Theme.Space.lg) {
             Text(binding.key)
-                .font(.system(size: Theme.FontSize.callout, weight: .semibold, design: .monospaced))
-                .foregroundColor(binding.available ? .white : .sidebarTextSecondary)
-                .frame(minWidth: 46)
+                .font(.system(size: Theme.FontSize.footnote, weight: .semibold, design: .monospaced))
+                .foregroundColor(.textPrimary)
+                .frame(minWidth: controlsKeyChipMinWidth)
                 .padding(.vertical, Theme.Space.xs)
-                .background(Color.sidebarHighlight)
-                .cornerRadius(Theme.Radius.small)
+                .background(RoundedRectangle(cornerRadius: Theme.Radius.small)
+                    .fill(Color.sidebarHighlight))
 
             Text(binding.action)
                 .font(.system(size: Theme.FontSize.control))
-                .foregroundColor(binding.available ? .white.opacity(0.8) : .sidebarTextSecondary)
+                .foregroundColor(.textSecondary)
 
-            Spacer()
-
-            if !binding.available {
-                Text("N/A")
-                    .font(.system(size: Theme.FontSize.footnote, weight: .semibold))
-                    .foregroundColor(.sidebarTextSecondary)
-            }
+            Spacer(minLength: 0)
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 5)
     }
 }

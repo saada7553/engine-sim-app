@@ -164,8 +164,8 @@ enum PromptKeywords {
     // MARK: - Redline
 
     private static func redline(in t: String) -> Double? {
-        if let r = firstCapture(t, #"(\d{4,5})\s?rpm"#), r >= 3000, r <= 12000 { return r }
-        if let r = firstCapture(t, #"(?:redline|rev limit|revs? to|spins? to)\D{0,8}(\d{4,5})"#), r >= 3000, r <= 12000 { return r }
+        if let r = firstCapture(t, #"(\d{4,5})\s?rpm"#), r >= 3000, r <= 18000 { return r }
+        if let r = firstCapture(t, #"(?:redline|rev limit|revs? to|spins? to)\D{0,8}(\d{4,5})"#), r >= 3000, r <= 18000 { return r }
         return nil
     }
 

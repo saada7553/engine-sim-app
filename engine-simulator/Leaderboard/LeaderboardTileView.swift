@@ -201,7 +201,7 @@ struct LeaderboardTileView: View {
                 LazyVStack(spacing: lbRowSpacing) {
                     ForEach(Array(model.entries.enumerated()), id: \.element.id) { index, entry in
                         LeaderboardRow(rank: index + 1, entry: entry, metric: model.metric,
-                                       isMe: entry.username == PlayerIdentity.shared.username)
+                                       isMe: !entry.ownerId.isEmpty && entry.ownerId == PlayerIdentity.shared.playerId)
                     }
                 }
             }
@@ -359,22 +359,34 @@ private struct SubmitStrip: View {
         .foregroundColor(.accentOk)
     }
 
-    private var canSubmit: Bool { userSpec != nil && results.hasDynoResult }
+    private var canSubmit: Bool { userSpec != nil && results.hasPostableResult }
 
     private var titleColor: Color { model.submitError != nil ? .accentDanger : .white }
 
+    /// "480 hp · 320 lb-ft", "5.20s 0-60", or both joined — whatever's captured.
+    private var resultSummary: String {
+        var parts: [String] = []
+        if results.hasDynoResult {
+            parts.append("\(Int(results.peakPowerHp)) hp · \(Int(results.peakTorqueLbFt)) lb-ft")
+        }
+        if let launch = results.bestLaunch("0-60"), launch > 0 {
+            parts.append(String(format: "%.2fs 0-60", launch))
+        }
+        return parts.joined(separator: " · ")
+    }
+
     private var statusTitle: String {
-        if results.posted { return "Posted \(Int(results.peakPowerHp)) hp to the board" }
+        if results.posted { return "Posted to the board" }
         if let error = model.submitError { return error }
         guard userSpec != nil else { return "You've selected a prebuilt engine" }
-        guard results.hasDynoResult else { return "No dyno result yet" }
-        return "\(Int(results.peakPowerHp)) hp · \(Int(results.peakTorqueLbFt)) lb-ft"
+        guard results.hasPostableResult else { return "No result captured yet" }
+        return resultSummary
     }
 
     private var statusDetail: String {
-        if results.posted { return "Run the dyno again to post a new result" }
+        if results.posted { return "Run the dyno or a 0-60 again to post a new result" }
         guard userSpec != nil else { return "Make your own engine to compete" }
-        guard results.hasDynoResult else { return "Run the dyno to capture a peak" }
+        guard results.hasPostableResult else { return "Run the dyno or a 0-60 to capture a result" }
         let cost = EnginePricing.formatted(EnginePricing.buildCost(for: userSpec!))
         return "Build \(cost) — ready to post"
     }

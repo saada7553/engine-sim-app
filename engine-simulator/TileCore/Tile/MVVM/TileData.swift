@@ -79,6 +79,7 @@ enum TileType: String, Codable, CaseIterable, Identifiable {
 
     // Compete
     case leaderboard = "Leaderboard"
+    case community = "Community"
 
     // Oscilloscopes
     case torqueOscilloscope = "Torque Scope"

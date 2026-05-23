@@ -209,6 +209,22 @@ final class PurchaseManager: ObservableObject {
         }
     }
 
+#if DEBUG
+    /// Debug-only: drop Pro so the paywall can be triggered again. In the
+    /// sandbox-key bypass this just flips the in-memory flag; with a real key
+    /// it logs out to a fresh anonymous user so the entitlement clears.
+    func resetPurchasesForDebug() async {
+        if Self.bypassed {
+            isPro = false
+            customerInfo = nil
+            purchaseState = .idle
+            return
+        }
+        await logOut()          // anonymous user → no entitlement on this device
+        purchaseState = .idle
+    }
+#endif
+
     // MARK: Gate helper
 
     /// Run `action` if the user is Pro; otherwise raise the paywall.

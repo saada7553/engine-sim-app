@@ -126,7 +126,7 @@ struct GenSizeStage {
 struct GenRedlineStage {
     @Guide(description: "true only if the user gave an explicit redline / max RPM; false otherwise.")
     var stated: Bool
-    @Guide(description: "Redline RPM (used only when stated).", .range(3000.0...12000.0))
+    @Guide(description: "Redline RPM (used only when stated).", .range(3000.0...18000.0))
     var rpm: Double
 }
 
@@ -296,10 +296,10 @@ struct EngineDesignDraft {
     @Guide(description: "Cylinder layout that matches the description and analysis.")
     var layout: GenLayoutChoice
 
-    @Guide(description: "Total displacement in litres, realistic for THIS engine. economy I4 ~1.6, S2000 ~2.0, 2JZ ~3.0, inline-six ~3.0, LS V8 ~5.7, muscle/monster V8 ~6.2-7.0, V12 ~6.0, sportbike ~1.0, single thumper ~0.5, diesel truck ~6.5.", .range(0.3...30.0))
+    @Guide(description: "Total displacement in litres, realistic for THIS engine. economy I4 ~1.6, S2000 ~2.0, 2JZ ~3.0, inline-six ~3.0, LS V8 ~5.7, muscle/monster V8 ~6.2-7.0, road V12 ~6.0, F1/prototype race engine 1.6-3.0 (small but high-revving), sportbike ~1.0, single thumper ~0.5, diesel truck ~6.5.", .range(0.3...30.0))
     var displacementLitres: Double
 
-    @Guide(description: "Redline RPM. Diesel/truck 4500-5500, economy/worn 5500-6500, daily 6500-7000, sporty NA 7500-8500, race/sportbike/F1 9000-12000. A SLOW or WORN engine MUST be low; a screamer high.", .range(3000.0...12000.0))
+    @Guide(description: "Redline RPM. Diesel/truck 4500-5500, economy/worn 5500-6500, daily 6500-7000, sporty NA 7500-8500, supercar 8500-9500, sportbike 12000-15000, F1/prototype race 15000-18000. A SLOW or WORN engine MUST be low; a race screamer very high.", .range(3000.0...18000.0))
     var redlineRpm: Double
 
     @Guide(description: "Intended power level. weak=slow/gutless/economy/worn; modest=ordinary daily; strong=fast/sporty; extreme=high-horsepower/race/monster.")

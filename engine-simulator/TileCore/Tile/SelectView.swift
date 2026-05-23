@@ -16,8 +16,8 @@ import SwiftUI
 
 private let selectViewHorizontalPadding: CGFloat = 24
 private let selectViewVerticalPadding: CGFloat = 20
-private let cardMinWidth: CGFloat = 150
-private let cardHeight: CGFloat = 92
+private let cardHeight: CGFloat = 64
+private let cardSpacing: CGFloat = 10
 private let cardCornerRadius: CGFloat = Theme.Radius.panel
 private let cardHoverBorder = Color.accentLive.opacity(0.75)
 private let cardIdleBorder = Color.white.opacity(0.15)
@@ -64,6 +64,7 @@ private let tilePreviews: [TileType: TilePreviewMeta] = [
     .zeroToSixtyTimer:  .init(icon: "stopwatch",          summary: "Arm-and-launch 0-60 mph stopwatch"),
 
     .leaderboard:       .init(icon: "trophy",             summary: "Global rankings — post your dyno & launch runs"),
+    .community:         .init(icon: "person.2",           summary: "Browse & download engines shared by other players"),
 
     .torqueOscilloscope:            .init(icon: "waveform.path",        summary: "Crankshaft torque vs crank angle"),
     .powerOscilloscope:             .init(icon: "bolt.fill",            summary: "Instantaneous engine power"),
@@ -97,7 +98,7 @@ private let pickerSections: [TilePreviewSection] = [
     .init(title: "CONTROLS", types: [.engineControls, .ecuTuning, .cylinderControl]),
     .init(title: "DIAGNOSTICS", types: [.engineHealth, .obd2]),
     .init(title: "DRIVER TOOLS", types: [.shiftLight, .zeroToSixtyTimer]),
-    .init(title: "COMPETE", types: [.leaderboard]),
+    .init(title: "COMPETE", types: [.leaderboard, .community]),
     .init(title: "OSCILLOSCOPES", types: [
         .torqueOscilloscope, .powerOscilloscope, .dynoOscilloscope,
         .sparkAdvanceOscilloscope, .pvOscilloscope,
@@ -152,8 +153,6 @@ private struct SectionGrid: View {
     let section: TilePreviewSection
     let onSelect: (TileType) -> Void
 
-    private let columns = [GridItem(.adaptive(minimum: cardMinWidth), spacing: 10)]
-
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(section.title)
@@ -161,11 +160,61 @@ private struct SectionGrid: View {
                 .foregroundColor(sectionTitleColor)
                 .tracking(1.4)
 
-            LazyVGrid(columns: columns, alignment: .leading, spacing: 10) {
+            // Flow layout instead of a fixed-column grid: every card is the
+            // same height and sizes its WIDTH to its text, so a long
+            // description widens its card rather than wrapping and making the
+            // row taller than its neighbours.
+            FlowLayout(spacing: cardSpacing) {
                 ForEach(section.types, id: \.rawValue) { type in
                     PreviewCard(type: type, action: { onSelect(type) })
                 }
             }
+        }
+    }
+}
+
+// MARK: - Flow layout
+//
+// Left-aligned wrapping layout: places each card at its intrinsic size and
+// breaks to a new row when the next one won't fit the available width.
+
+private struct FlowLayout: Layout {
+    var spacing: CGFloat
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout Void) -> CGSize {
+        let maxWidth = proposal.width ?? .infinity
+        var rowWidth: CGFloat = 0, rowHeight: CGFloat = 0
+        var totalWidth: CGFloat = 0, totalHeight: CGFloat = 0
+
+        for size in subviews.map({ $0.sizeThatFits(.unspecified) }) {
+            if rowWidth > 0, rowWidth + spacing + size.width > maxWidth {
+                totalWidth = max(totalWidth, rowWidth)
+                totalHeight += rowHeight + spacing
+                rowWidth = size.width
+                rowHeight = size.height
+            } else {
+                rowWidth += (rowWidth > 0 ? spacing : 0) + size.width
+                rowHeight = max(rowHeight, size.height)
+            }
+        }
+        totalWidth = max(totalWidth, rowWidth)
+        totalHeight += rowHeight
+        return CGSize(width: maxWidth == .infinity ? totalWidth : maxWidth, height: totalHeight)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout Void) {
+        var x = bounds.minX, y = bounds.minY, rowHeight: CGFloat = 0
+
+        for subview in subviews {
+            let size = subview.sizeThatFits(.unspecified)
+            if x > bounds.minX, x + size.width > bounds.maxX {
+                x = bounds.minX
+                y += rowHeight + spacing
+                rowHeight = 0
+            }
+            subview.place(at: CGPoint(x: x, y: y), anchor: .topLeading, proposal: ProposedViewSize(size))
+            x += size.width + spacing
+            rowHeight = max(rowHeight, size.height)
         }
     }
 }
@@ -184,27 +233,24 @@ private struct PreviewCard: View {
 
     var body: some View {
         Button(action: action) {
-            HStack(alignment: .top, spacing: 10) {
+            HStack(spacing: 10) {
                 PreviewIcon(symbol: meta.icon, hovering: hovering)
 
                 VStack(alignment: .leading, spacing: 3) {
                     Text(type.displayName)
                         .font(.system(size: 13, weight: .semibold))
                         .foregroundColor(cardTitleColor)
-                        .lineLimit(2)
-                        .multilineTextAlignment(.leading)
-
                     Text(meta.summary)
                         .font(.system(size: 11))
                         .foregroundColor(cardSubtitleColor)
-                        .lineLimit(2)
-                        .multilineTextAlignment(.leading)
                 }
-
-                Spacer(minLength: 0)
+                // Both lines stay single-line; the card widens to fit them
+                // (handled by FlowLayout) rather than wrapping and growing tall.
+                .lineLimit(1)
+                .fixedSize(horizontal: true, vertical: false)
             }
-            .padding(10)
-            .frame(maxWidth: .infinity, minHeight: cardHeight, alignment: .topLeading)
+            .padding(.horizontal, 12)
+            .frame(height: cardHeight, alignment: .leading)
             .background(
                 RoundedRectangle(cornerRadius: cardCornerRadius)
                     .fill(hovering ? cardHoverBackground : cardBackground)

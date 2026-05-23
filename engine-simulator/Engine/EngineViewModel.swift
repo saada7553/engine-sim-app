@@ -202,7 +202,7 @@ class EngineViewModel: ObservableObject {
         self.gearCount = initialEntry.map(Self.gearCount(for:)) ?? defaultGearCount
         self.gearRatios = initialEntry.flatMap { $0.effectiveSpec?.gearRatios } ?? []
         self.cylindersPerBank = initialEntry.map(Self.cylindersPerBank(for:)) ?? defaultCylindersPerBank
-        self.ecu = Self.makeEcuModel(for: newEngine)
+        self.ecu = Self.makeEcuModel(for: newEngine, savedTune: initialEntry?.spec?.ecuTune)
         self.mostRecentEngineName = initialEntry?.name
         if let engine = newEngine, !engine.loadSucceeded {
             self.failedEngineName = initialEntry?.name ?? "engine"
@@ -210,6 +210,14 @@ class EngineViewModel: ObservableObject {
         // Bind to the freshly-built ECU so edits push through immediately
         // rather than waiting for the next 30 Hz polling tick.
         bindToEcu()
+
+        // Persist captured run results onto the active user engine whenever a
+        // sweep/launch/top-speed finalizes, so the community browser can show
+        // them later. Built-in engines have no spec to write to and are skipped.
+        runResults.onStatsCommitted = { [weak self] stats in
+            guard let self = self, let id = self.engineId else { return }
+            EngineLibrary.shared.updateCapturedStats(forEngineId: id, stats: stats)
+        }
 
         // Rebuild the EngineWrapper whenever the user picks a different engine.
         self.selectionCancellable = EngineLibrary.shared.$selectedEngineId
@@ -305,6 +313,7 @@ class EngineViewModel: ObservableObject {
                 self.runResults.ingestDyno(power: self.oscilloscopeManager.power,
                                            torque: self.oscilloscopeManager.torque,
                                            dynoActive: state.dynoEnabled)
+                self.runResults.recordTopSpeed(mph: state.vehicleSpeed)
 
                 // Sample the user's ECU maps at the live operating point and
                 // push the resulting offset/trim into the engine.
@@ -439,8 +448,9 @@ class EngineViewModel: ObservableObject {
         cylindersPerBank = Self.cylindersPerBank(for: entry)
         pendingGear = nil
         // Rebuild the ECU map: bin range + seed values come from the new
-        // engine's redline and base timing curve.
-        ecu = Self.makeEcuModel(for: newEngine)
+        // engine's redline and base timing curve, then any saved tune for this
+        // engine is layered back on top.
+        ecu = Self.makeEcuModel(for: newEngine, savedTune: entry.spec?.ecuTune)
         bindToEcu()
 
         // Surface load failures so the UI can prompt the user to pick a
@@ -454,12 +464,18 @@ class EngineViewModel: ObservableObject {
     /// base spark-advance curve. The model captures the curve values at init
     /// time so the user gets to see real timing numbers in every cell instead
     /// of a sea of 0°.
-    private static func makeEcuModel(for engine: EngineWrapper?) -> EcuTuneModel {
+    private static func makeEcuModel(for engine: EngineWrapper?,
+                                     savedTune: EcuTune? = nil) -> EcuTuneModel {
         let redline = engine?.getEngineRedline() ?? 6500.0
         let provider: EcuBaseTimingProvider = { [weak engine] rpm in
             return engine?.getBaseTimingAdvance(forRpm: rpm) ?? 0.0
         }
-        return EcuTuneModel(redlineRpm: redline, baseTiming: provider)
+        let model = EcuTuneModel(redlineRpm: redline, baseTiming: provider)
+        // Restore the engine's saved tune (if any) over the freshly-seeded
+        // factory map, so a user's edits persist across swaps/relaunches and a
+        // downloaded engine arrives already tuned.
+        if let savedTune { model.apply(savedTune) }
+        return model
     }
 
     /// Subscribe to ECU map changes so that edits push to the C++ engine on
@@ -474,6 +490,22 @@ class EngineViewModel: ObservableObject {
                 self.applyEcuTune(engine: engine)
             }
             .store(in: &ecuCancellables)
+
+        // Persist tune edits onto the owning engine's spec (debounced so a
+        // slider drag across cells writes once it settles, not per bump). The
+        // saved tune then survives swaps/relaunches and ships when published.
+        Publishers.CombineLatest(ecu.$ignitionMap, ecu.$fuelMap)
+            .dropFirst()
+            .debounce(for: .seconds(0.5), scheduler: RunLoop.main)
+            .sink { [weak self] _ in self?.persistTune() }
+            .store(in: &ecuCancellables)
+    }
+
+    /// Write the current ECU tune onto the active user engine. No-op for
+    /// built-in engines (EngineLibrary skips entries without a spec).
+    private func persistTune() {
+        guard let id = engineId else { return }
+        EngineLibrary.shared.updateEcuTune(forEngineId: id, tune: ecu.export())
     }
 
     /// Forward gear count for the entry, preferring the editable spec and

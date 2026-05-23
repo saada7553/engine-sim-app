@@ -33,6 +33,7 @@ private enum BuiltInLayoutId {
     // back to Default instead of silently mapping into the new one.
     static let diagnostic = UUID(uuidString: "0F1E1100-0000-0000-0000-000000000006")!
     static let leaderboard = UUID(uuidString: "0F1E1100-0000-0000-0000-000000000007")!
+    static let community   = UUID(uuidString: "0F1E1100-0000-0000-0000-000000000008")!
 }
 
 // MARK: - Construction helpers
@@ -71,6 +72,7 @@ enum BuiltInLayouts {
         track,
         diagnostic,
         leaderboard,
+        community,
     ]
 
     /// Loads on app launch. Engine 3D dominates with a slim right column
@@ -386,5 +388,16 @@ enum BuiltInLayouts {
         ])
         #endif
     }
+
+    /// A single full-screen browser for engines shared by the community —
+    /// publish your own, sort/filter the catalog, and download others'. It's a
+    /// browsing surface, not a driving one, so it takes the whole window.
+    static let community: TileLayout = TileLayout(
+        id: BuiltInLayoutId.community,
+        name: "Community",
+        rootData: BuiltInBuilder.leaf(.community,
+                                      size: CGSize(width: 1600, height: 1000)),
+        isBuiltIn: true
+    )
 
 }

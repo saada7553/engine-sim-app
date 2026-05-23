@@ -195,6 +195,77 @@ struct TimingPoint: Codable, Equatable, Identifiable {
     enum CodingKeys: String, CodingKey { case rpm, advanceDeg }
 }
 
+// MARK: - Captured run stats
+
+/// Best measured results for an engine, persisted inside the spec so they
+/// travel with it (to disk and, when published, to the cloud). Every field is
+/// 0 until the player actually captures it on a dyno sweep / launch / top-speed
+/// run, so callers must treat 0 as "not recorded yet", not a real result.
+struct CapturedStats: Codable, Equatable {
+    var peakPowerHp: Double
+    var peakPowerRpm: Double
+    var peakTorqueLbFt: Double
+    var peakTorqueRpm: Double
+    var zeroToSixtySec: Double   // 0 = no launch captured
+    var topSpeedMph: Double      // 0 = no top-speed captured
+
+    static let empty = CapturedStats(peakPowerHp: 0, peakPowerRpm: 0,
+                                     peakTorqueLbFt: 0, peakTorqueRpm: 0,
+                                     zeroToSixtySec: 0, topSpeedMph: 0)
+
+    var hasDyno: Bool { peakPowerHp > 0 }
+    var hasLaunch: Bool { zeroToSixtySec > 0 }
+    var hasTopSpeed: Bool { topSpeedMph > 0 }
+
+    /// Combine two captures keeping the best of each field: highest power /
+    /// torque / top speed, and the quickest (lowest non-zero) 0-60. Used when
+    /// merging a fresh run into whatever was already persisted for the engine.
+    static func merge(_ a: CapturedStats?, _ b: CapturedStats) -> CapturedStats {
+        guard let a = a else { return b }
+        var out = a
+        if b.peakPowerHp > out.peakPowerHp {
+            out.peakPowerHp = b.peakPowerHp; out.peakPowerRpm = b.peakPowerRpm
+        }
+        if b.peakTorqueLbFt > out.peakTorqueLbFt {
+            out.peakTorqueLbFt = b.peakTorqueLbFt; out.peakTorqueRpm = b.peakTorqueRpm
+        }
+        if b.topSpeedMph > out.topSpeedMph { out.topSpeedMph = b.topSpeedMph }
+        if b.zeroToSixtySec > 0,
+           out.zeroToSixtySec == 0 || b.zeroToSixtySec < out.zeroToSixtySec {
+            out.zeroToSixtySec = b.zeroToSixtySec
+        }
+        return out
+    }
+}
+
+// MARK: - ECU tune
+
+/// A saved ECU tune: the user-edited ignition (absolute deg BTDC) and fuel
+/// (target AFR) maps, plus the grid axes they were built on. Persisted inside
+/// the spec so a tuned engine keeps its tune across swaps/relaunches and
+/// carries it when shared to the community. The axes let a restore validate the
+/// grid still matches before applying (it always will for the same engine,
+/// since the rpm axis derives deterministically from the redline).
+struct EcuTune: Codable, Equatable {
+    var rpmBins: [Double]
+    var loadBins: [Double]
+    var ignitionMap: [[Double]]   // [loadIdx][rpmIdx] absolute deg BTDC
+    var fuelMap: [[Double]]       // [loadIdx][rpmIdx] target AFR
+}
+
+// MARK: - Community provenance
+
+/// Stamped onto an engine that was downloaded from the community browser, so
+/// the app can show who built it and — critically — refuse to let a different
+/// player re-publish someone else's engine as their own.
+struct CommunityOrigin: Codable, Equatable {
+    /// Stable id of the author (see PlayerIdentity.playerId) — the real owner
+    /// check. `authorUsername` is kept only for display.
+    var authorId: String
+    var authorUsername: String
+    var sourceRecordName: String
+}
+
 // MARK: - EngineSpec
 
 struct EngineSpec: Codable, Identifiable, Equatable {
@@ -284,6 +355,17 @@ struct EngineSpec: Codable, Identifiable, Equatable {
     var diffRatio: Double
     var tireRadiusIn: Double
     var rollingResistanceN: Double
+
+    // Best results the player has captured for this engine, and (for downloaded
+    // engines) who originally built it. Both are optional and trailing so old
+    // saved specs decode unchanged and the memberwise initializer keeps working
+    // without these arguments.
+    var capturedStats: CapturedStats? = nil
+    var communityOrigin: CommunityOrigin? = nil
+    var ecuTune: EcuTune? = nil
+    /// Optional free-text blurb the builder can fill out; shown when the engine
+    /// is shared to the community. Distinct from `name` (the short title).
+    var engineDescription: String? = nil
 
     // MARK: Derived
 

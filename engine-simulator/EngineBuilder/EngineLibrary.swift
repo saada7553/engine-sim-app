@@ -147,14 +147,9 @@ final class EngineLibrary: ObservableObject {
 
     func saveUserEngine(_ spec: EngineSpec) {
         let mrText = MRWriter.script(for: spec)
-        let mrURL = LibraryPaths.mrFileURL(for: spec)
-        let specURL = LibraryPaths.specFileURL(for: spec)
-
         do {
-            try mrText.data(using: .utf8)?.write(to: mrURL)
-            let encoder = JSONEncoder()
-            encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-            try encoder.encode(spec).write(to: specURL)
+            try mrText.data(using: .utf8)?.write(to: LibraryPaths.mrFileURL(for: spec))
+            try writeSpecJSON(spec)
         } catch {
             print("EngineLibrary: failed to write user engine \(spec.name): \(error)")
             return
@@ -162,6 +157,67 @@ final class EngineLibrary: ObservableObject {
 
         reloadEntries()
         selectedEngineId = spec.id
+    }
+
+    /// Persist the captured run results onto a user engine. Rewrites only the
+    /// spec JSON (the .mr script doesn't depend on stats, so it's left alone)
+    /// and merges with whatever was already recorded so a worse run never
+    /// clobbers a better one. No-op for built-in engines, which have no spec.
+    func updateCapturedStats(forEngineId id: UUID, stats: CapturedStats) {
+        guard let index = entries.firstIndex(where: { $0.id == id }),
+              var spec = entries[index].spec else { return }
+        let merged = CapturedStats.merge(spec.capturedStats, stats)
+        guard merged != spec.capturedStats else { return }   // nothing new
+        spec.capturedStats = merged
+        do {
+            try writeSpecJSON(spec)
+        } catch {
+            print("EngineLibrary: failed to persist stats for \(spec.name): \(error)")
+            return
+        }
+        // Update the in-memory entry in place rather than re-reading the whole
+        // directory — this fires frequently during a run, so keep it cheap.
+        var updated = entries[index]
+        updated.spec = spec
+        entries[index] = updated
+    }
+
+    /// Persist the user-edited ECU tune onto a user engine so it survives
+    /// engine swaps / relaunches and is carried along when the engine is shared
+    /// to the community. Rewrites only the spec JSON (the tune doesn't affect
+    /// the .mr script). No-op for built-in engines and for an unchanged tune.
+    func updateEcuTune(forEngineId id: UUID, tune: EcuTune) {
+        guard let index = entries.firstIndex(where: { $0.id == id }),
+              var spec = entries[index].spec else { return }
+        guard spec.ecuTune != tune else { return }
+        spec.ecuTune = tune
+        do {
+            try writeSpecJSON(spec)
+        } catch {
+            print("EngineLibrary: failed to persist tune for \(spec.name): \(error)")
+            return
+        }
+        var updated = entries[index]
+        updated.spec = spec
+        entries[index] = updated
+    }
+
+    /// Copy a community engine into the local garage as a fresh, independent
+    /// user engine. It gets a new local id and is stamped with its origin so it
+    /// can never be re-published under a different player's name.
+    @discardableResult
+    func downloadCommunityEngine(spec: EngineSpec, origin: CommunityOrigin) -> UUID {
+        var copy = spec
+        copy.id = UUID()
+        copy.communityOrigin = origin
+        saveUserEngine(copy)
+        return copy.id
+    }
+
+    private func writeSpecJSON(_ spec: EngineSpec) throws {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        try encoder.encode(spec).write(to: LibraryPaths.specFileURL(for: spec))
     }
 
     func deleteUserEngine(id: UUID) {

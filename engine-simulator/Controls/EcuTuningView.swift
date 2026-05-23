@@ -485,10 +485,7 @@ private struct EcuTuningEditor: View {
     }
 
     private func formatValue(_ value: Double) -> String {
-        switch activeMap {
-        case .ignition: return String(format: "%+.1f", value)
-        case .fuel:     return String(format: "%.1f", value)
-        }
+        EcuMapStyle.format(value: value, kind: activeMap)
     }
 
     private func formatStep(_ mult: Double) -> String {
@@ -498,9 +495,7 @@ private struct EcuTuningEditor: View {
         }
     }
 
-    private func rpmLabel(_ rpm: Double) -> String {
-        rpm >= 1000 ? String(format: "%.1fk", rpm / 1000.0) : String(format: "%.0f", rpm)
-    }
+    private func rpmLabel(_ rpm: Double) -> String { EcuMapStyle.rpmLabel(rpm) }
 
     private func cellLabel(_ coord: EcuCellCoord) -> String {
         let safe = ecu.clampToBounds(coord)
@@ -519,12 +514,7 @@ private struct EcuTuningEditor: View {
     /// Fuel: a richer target (lower AFR) → red, leaner → blue, so the hot end
     /// always reads as "more fuel / more timing".
     private func heatColor(for value: Double) -> Color {
-        let r = activeMap == .ignition ? EcuTuneModel.ignitionRange : EcuTuneModel.fuelRange
-        let norm = (value - r.lowerBound) / (r.upperBound - r.lowerBound)
-        let clamped = max(0.0, min(1.0, norm))
-        // Ignition reddens as the value rises; fuel reddens as AFR falls.
-        let hue = activeMap == .ignition ? (0.62 - clamped * 0.62) : (clamped * 0.62)
-        return Color(hue: hue, saturation: 0.62, brightness: 0.58)
+        EcuMapStyle.heatColor(value: value, kind: activeMap)
     }
 
     private func pixelPos(rpm: Double, loadKpa: Double,

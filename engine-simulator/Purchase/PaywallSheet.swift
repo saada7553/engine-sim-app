@@ -37,6 +37,12 @@ private let heroBackground = Color.black.opacity(0.55)
 private let heroBorder = Color.strokeFaint
 private let heroAnnotationBg = Color.black.opacity(0.50)
 private let heroAnnotationBorder = Color.white.opacity(0.06)
+/// Fixed height reserved for the name+subtitle block: enough for a name that
+/// wraps to two full-size lines PLUS the subtitle line. The name is never
+/// shrunk or truncated — it wraps within this space — and because the height
+/// is fixed, the strip and the whole paywall window stay a constant size as
+/// engines with longer names scroll past. Short names just center in it.
+private let annotationTextHeight: CGFloat = 52
 
 private let ctaIdleFill = Color.accentLive
 private let ctaIdleText = Color.black
@@ -257,14 +263,18 @@ struct PaywallSheet: View {
     // MARK: Hero
 
     private var hero: some View {
-        ZStack(alignment: .bottom) {
-            heroBackdrop
-            PaywallEngineHero(carousel: carousel)
-                .frame(height: heroHeight)
-
+        // Carousel strip (arrows + name + progress) sits as its own row ABOVE
+        // the 3D view rather than overlaid on it. Overlaying made the centered
+        // engine read as off-center because the controls covered its lower
+        // half — the iOS layout already does it this way.
+        VStack(spacing: 0) {
             heroAnnotation
+            ZStack {
+                heroBackdrop
+                PaywallEngineHero(carousel: carousel)
+            }
+            .frame(height: heroHeight)
         }
-        .frame(height: heroHeight)
         .overlay(
             RoundedRectangle(cornerRadius: heroCorner)
                 .stroke(heroBorder, lineWidth: 1)
@@ -295,23 +305,38 @@ struct PaywallSheet: View {
             HStack(alignment: .center, spacing: 10) {
                 carouselArrow(systemName: "chevron.left", help: "Previous engine",
                               action: { carousel.previous() })
-                Text(carousel.currentName.uppercased())
-                    .modifier(RetroFont(size: Theme.FontSize.control, weight: .bold))
-                    .tracking(2.5)
-                    .foregroundColor(.white)
-                    .id(carousel.currentName)
-                    .transition(.opacity)
-                Spacer()
-                Text(carousel.currentSubtitle)
-                    .font(.system(size: 11, weight: .medium, design: .monospaced))
-                    .foregroundColor(bodyText)
-                    .id(carousel.currentSubtitle)
-                    .transition(.opacity)
+                // Name over subtitle, each on its own full-width line. Stacked
+                // (rather than side-by-side) so even the longest name gets the
+                // whole width and stays on one readable line at full size. The
+                // block has a fixed two-line height, so the strip — and the
+                // window — never changes size as engines scroll by.
+                VStack(spacing: 3) {
+                    Text(carousel.currentName.uppercased())
+                        .modifier(RetroFont(size: Theme.FontSize.control, weight: .bold))
+                        .tracking(2.5)
+                        .foregroundColor(.white)
+                        // Wrap (up to two lines) at full size — never shrink,
+                        // never truncate. The fixed block height below reserves
+                        // room for both lines so nothing gets clipped.
+                        .lineLimit(2)
+                        .multilineTextAlignment(.center)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .id(carousel.currentName)
+                        .transition(.opacity)
+                    Text(carousel.currentSubtitle)
+                        .font(.system(size: 11, weight: .medium, design: .monospaced))
+                        .foregroundColor(bodyText)
+                        .lineLimit(1)
+                        .id(carousel.currentSubtitle)
+                        .transition(.opacity)
+                }
+                .frame(maxWidth: .infinity)
+                .frame(height: annotationTextHeight)
                 carouselArrow(systemName: "chevron.right", help: "Next engine",
                               action: { carousel.next() })
             }
             .padding(.horizontal, 14)
-            .padding(.vertical, 10)
+            .padding(.vertical, 8)
             // macOS gets the dark strip behind the carousel name; on iOS
             // the hero is edge-to-edge so that strip reads as a random
             // black bar across the screen. Fade it to clear at the edges

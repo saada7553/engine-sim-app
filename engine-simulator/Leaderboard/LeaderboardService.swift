@@ -12,7 +12,8 @@
 //  ── Manual CloudKit Dashboard setup (one-time) ───────────────────────────
 //  Record type `EngineLeaderboardEntry` with these fields. Mark the sort
 //  fields SORTABLE and `engineClassRaw` + `username` QUERYABLE:
-//    username (String, queryable)        engineName (String)
+//    ownerId (String)                    username (String, queryable)
+//    engineName (String)
 //    engineClassRaw (String, queryable)  layoutRaw (String)
 //    specJSON (String)                   appVersion (String)
 //    buildCostTotal (Double)             buildCostEngine (Double)
@@ -53,7 +54,7 @@ enum LeaderboardError: LocalizedError {
         switch self {
         case .notConfigured: return "The leaderboard isn't set up in this build yet."
         case .noUsername:    return "Set a leaderboard name before posting."
-        case .noPowerResult: return "Do a dyno run first — there's no peak power to post."
+        case .noPowerResult: return "Capture a dyno run or a 0-60 first — there's nothing to post yet."
         }
     }
 }
@@ -82,12 +83,18 @@ final class LeaderboardService {
     @discardableResult
     func submit(_ submission: LeaderboardSubmission) async throws -> LeaderboardEntry {
         let username = PlayerIdentity.shared.username
+        let ownerId = PlayerIdentity.shared.playerId
         guard !username.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             throw LeaderboardError.noUsername
         }
-        guard submission.peakPowerHp > 0 else { throw LeaderboardError.noPowerResult }
+        // A run is postable with either a dyno peak or a launch time — a 0-60
+        // can be shared on its own (it lands on the 0-60 board), and a dyno
+        // sweep can be shared without ever launching.
+        guard submission.peakPowerHp > 0 || submission.zeroToSixtySec > 0 else {
+            throw LeaderboardError.noPowerResult
+        }
 
-        let record = makeRecord(from: submission, username: username)
+        let record = makeRecord(from: submission, username: username, ownerId: ownerId)
         // CloudKit doesn't enforce uniqueness, so the record carries a
         // deterministic ID derived from the run. Re-posting the identical run
         // overwrites that one record (.allKeys ignores the change tag) rather
@@ -131,13 +138,14 @@ final class LeaderboardService {
 
     // MARK: Record mapping
 
-    private func makeRecord(from s: LeaderboardSubmission, username: String) -> CKRecord {
+    private func makeRecord(from s: LeaderboardSubmission, username: String, ownerId: String) -> CKRecord {
         let breakdown = EnginePricing.price(for: s.spec)
         let engineCost = breakdown.engineCost
         let displacement = s.spec.displacementLitres
-        let recordID = CKRecord.ID(recordName: Self.runKey(username: username, submission: s))
+        let recordID = CKRecord.ID(recordName: Self.runKey(ownerId: ownerId, submission: s))
         let record = CKRecord(recordType: Self.recordType, recordID: recordID)
 
+        record["ownerId"] = ownerId as CKRecordValue
         record["username"] = username as CKRecordValue
         record["engineName"] = s.spec.name as CKRecordValue
         record["engineClassRaw"] = EngineClass.from(s.spec.layout).rawValue as CKRecordValue
@@ -162,11 +170,12 @@ final class LeaderboardService {
         return record
     }
 
-    /// Stable record name for a run: the same player + spec + captured peaks
-    /// always hash to the same name, so resubmitting overwrites in place.
-    private static func runKey(username: String, submission s: LeaderboardSubmission) -> String {
+    /// Stable record name for a run: the same player (by stable id) + spec +
+    /// captured peaks always hash to the same name, so resubmitting overwrites
+    /// in place — and two players sharing a username can't collide.
+    private static func runKey(ownerId: String, submission s: LeaderboardSubmission) -> String {
         let raw = [
-            username,
+            ownerId,
             encodeSpec(s.spec),
             String(format: "%.2f", s.peakPowerHp),
             String(format: "%.2f", s.peakTorqueLbFt),
@@ -183,6 +192,7 @@ final class LeaderboardService {
 
         return LeaderboardEntry(
             id: record.recordID.recordName,
+            ownerId: record["ownerId"] as? String ?? "",
             username: username,
             engineName: record["engineName"] as? String ?? "Engine",
             engineClass: engineClass,
@@ -210,6 +220,7 @@ final class LeaderboardService {
         let breakdown = EnginePricing.price(for: s.spec)
         return LeaderboardEntry(
             id: record.recordID.recordName,
+            ownerId: PlayerIdentity.shared.playerId,
             username: username,
             engineName: s.spec.name,
             engineClass: EngineClass.from(s.spec.layout),

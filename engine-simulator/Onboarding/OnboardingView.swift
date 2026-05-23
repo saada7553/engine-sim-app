@@ -13,6 +13,10 @@
 //
 
 import SwiftUI
+#if os(iOS)
+import Combine
+import UIKit
+#endif
 
 // MARK: - Layout constants
 
@@ -50,6 +54,16 @@ private let onboardingCanvasHeight: CGFloat = 620
 // Never enlarge past the reference size; only shrink to fit smaller screens.
 private let onboardingMaxScale: CGFloat = 1.0
 
+#if os(iOS)
+// When the keyboard is up on the name step we drop the header, footer and
+// leaderboard preview and lay out only the title + field against this much
+// shorter reference height, so the field scales up to fill the space ABOVE the
+// keyboard at a readable size instead of the whole page shrinking to a sliver.
+private let onboardingCompactCanvasHeight: CGFloat = 230
+// The name field reads better as a single centred column than full-bleed.
+private let usernameColumnMaxWidth: CGFloat = 560
+#endif
+
 // MARK: - Steps
 
 enum OnboardingStep: Int, CaseIterable {
@@ -74,25 +88,121 @@ struct OnboardingView: View {
     // leave to the left; going back reverses both so the motion matches the
     // BACK button rather than always sliding forward.
     @State private var goingBack = false
+    #if os(iOS)
+    @State private var keyboardVisible = false
+    #endif
 
     var body: some View {
+        ZStack {
+            Color.appBackground.ignoresSafeArea()
+            rootContent
+        }
+        #if os(iOS)
+        .onReceive(Self.keyboardChanges) { visible in
+            withAnimation(.easeOut(duration: 0.25)) { keyboardVisible = visible }
+        }
+        #endif
+    }
+
+    @ViewBuilder
+    private var rootContent: some View {
+        #if os(iOS)
+        // The name step gets a dedicated keyboard-aware layout; the rest use the
+        // standard scaled tutorial canvas.
+        if step == .username {
+            iosUsernameScreen
+        } else {
+            scaledCanvas
+        }
+        #else
+        scaledCanvas
+        #endif
+    }
+
+    /// The standard tutorial page: the reference canvas aspect-fit into the
+    /// available space so it never clips on any screen size.
+    private var scaledCanvas: some View {
         GeometryReader { geo in
-            // Aspect-fit the reference canvas into the available space so the
-            // tutorial never clips, on any screen size or platform.
             let scale = min(geo.size.width / onboardingCanvasWidth,
                             geo.size.height / onboardingCanvasHeight,
                             onboardingMaxScale)
-            ZStack {
-                Color.appBackground.ignoresSafeArea()
-
-                pageCanvas
-                    .frame(width: onboardingCanvasWidth, height: onboardingCanvasHeight)
-                    .scaleEffect(scale)
-                    .frame(width: geo.size.width, height: geo.size.height)
-            }
+            pageCanvas
+                .frame(width: onboardingCanvasWidth, height: onboardingCanvasHeight)
+                .scaleEffect(scale)
+                .frame(width: geo.size.width, height: geo.size.height)
         }
         .ignoresSafeArea()
     }
+
+    #if os(iOS)
+    /// Fires `true`/`false` as the software keyboard shows/hides.
+    private static var keyboardChanges: AnyPublisher<Bool, Never> {
+        Publishers.Merge(
+            NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification).map { _ in true },
+            NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification).map { _ in false }
+        ).eraseToAnyPublisher()
+    }
+
+    /// Name entry on iOS. The field lives in one stable column the whole time so
+    /// editing never drops focus; only the surrounding chrome (header, footer,
+    /// preview) and the reference height change when the keyboard appears, so the
+    /// title + field scale up to fill the space above the keyboard at a readable
+    /// size rather than the page shrinking to a sliver.
+    private var iosUsernameScreen: some View {
+        let compact = keyboardVisible
+        let designHeight = compact ? onboardingCompactCanvasHeight : onboardingCanvasHeight
+        return GeometryReader { geo in
+            let scale = min(geo.size.width / onboardingCanvasWidth,
+                            geo.size.height / designHeight,
+                            onboardingMaxScale)
+            usernameCanvas(compact: compact)
+                .frame(width: onboardingCanvasWidth, height: designHeight)
+                .scaleEffect(scale)
+                .frame(width: geo.size.width, height: geo.size.height)
+        }
+        // Honour the keyboard region so `geo` reports the space above it.
+        .ignoresSafeArea(.container, edges: .all)
+    }
+
+    private func usernameCanvas(compact: Bool) -> some View {
+        VStack(spacing: 0) {
+            if !compact { wordmarkHeader }
+
+            Spacer(minLength: compact ? 0 : pagePadding)
+
+            VStack(alignment: .leading, spacing: compact ? Theme.Space.xxl : Theme.Space.section) {
+                if compact {
+                    Text("Claim your name")
+                        .modifier(RetroFont(size: titleSize))
+                        .foregroundColor(.textPrimary)
+                } else {
+                    OnboardingStepHeader(
+                        index: 1,
+                        title: "Claim your name",
+                        subtitle: "This is how you show up on the global leaderboard. You can rename it later from the sidebar.")
+                }
+
+                OnboardingUsernameField(username: $draftUsername,
+                                        errorText: usernameError,
+                                        onSubmit: advance)
+
+                if !compact {
+                    OnboardingPreviewPanel(title: "GLOBAL LEADERBOARD") {
+                        MiniLeaderboard(youName: draftUsername.trimmingCharacters(in: .whitespacesAndNewlines))
+                    }
+                    .frame(maxHeight: onboardingPreviewMaxHeight)
+                }
+            }
+            .frame(maxWidth: usernameColumnMaxWidth, alignment: .leading)
+
+            Spacer(minLength: compact ? 0 : pagePadding)
+
+            if !compact { footer.frame(maxWidth: onboardingContentMaxWidth) }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding(pagePadding)
+    }
+    #endif
 
     private var pageCanvas: some View {
         VStack(spacing: 0) {
@@ -266,8 +376,6 @@ struct OnboardingUsernamePage: View {
     let errorText: String?
     let onSubmit: () -> Void
 
-    @FocusState private var fieldFocused: Bool
-
     private var trimmed: String {
         username.trimmingCharacters(in: .whitespacesAndNewlines)
     }
@@ -280,7 +388,9 @@ struct OnboardingUsernamePage: View {
                         index: 1,
                         title: "Claim your name",
                         subtitle: "This is how you show up on the global leaderboard. You can rename it later from the sidebar.")
-                    usernameField
+                    OnboardingUsernameField(username: $username,
+                                            errorText: errorText,
+                                            onSubmit: onSubmit)
                 }
             },
             preview: {
@@ -289,8 +399,20 @@ struct OnboardingUsernamePage: View {
                 }
             })
     }
+}
 
-    private var usernameField: some View {
+/// The reusable name input: dark field with a legible custom placeholder, an
+/// inline hint / error line, and platform-correct Return handling. Shared by the
+/// macOS two-column page and the iOS keyboard-aware screen so the field behaves
+/// identically wherever it appears.
+struct OnboardingUsernameField: View {
+    @Binding var username: String
+    let errorText: String?
+    let onSubmit: () -> Void
+
+    @FocusState private var fieldFocused: Bool
+
+    var body: some View {
         VStack(alignment: .leading, spacing: Theme.Space.md) {
             ZStack(alignment: .leading) {
                 // SwiftUI's built-in placeholder is nearly invisible on the dark

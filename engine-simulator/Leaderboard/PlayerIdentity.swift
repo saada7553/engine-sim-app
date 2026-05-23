@@ -28,6 +28,7 @@ final class PlayerIdentity: ObservableObject {
     private enum Keys {
         static let username = "player.username"
         static let onboarded = "player.hasCompletedOnboarding"
+        static let playerId = "player.stableId"
     }
 
     /// The current leaderboard name. Empty until the player sets one.
@@ -36,12 +37,42 @@ final class PlayerIdentity: ObservableObject {
     /// Whether the player has finished the first-launch tutorial.
     @Published private(set) var hasCompletedOnboarding: Bool
 
+    /// Stable, opaque identity for this player — the real key for "is this
+    /// mine" on the leaderboard and community board. Usernames are NOT unique
+    /// (two people can pick "Bob"), so matching on the name wrongly highlighted
+    /// rows and let a same-named player target someone else's engine. This id
+    /// is generated once and mirrored into iCloud key-value storage, so it's
+    /// the same across the player's own devices but distinct between people.
+    let playerId: String
+
     private let defaults: UserDefaults
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
         self.username = defaults.string(forKey: Keys.username) ?? ""
         self.hasCompletedOnboarding = defaults.bool(forKey: Keys.onboarded)
+        self.playerId = Self.resolvePlayerId(defaults: defaults)
+    }
+
+    /// Read the stable id, preferring an iCloud-synced value so a second device
+    /// on the same Apple ID inherits the same identity. Falls back to a local
+    /// value, generating and persisting one (locally + iCloud) on first launch.
+    private static func resolvePlayerId(defaults: UserDefaults) -> String {
+        let cloud = NSUbiquitousKeyValueStore.default
+        if let synced = cloud.string(forKey: Keys.playerId), !synced.isEmpty {
+            defaults.set(synced, forKey: Keys.playerId)
+            return synced
+        }
+        if let local = defaults.string(forKey: Keys.playerId), !local.isEmpty {
+            cloud.set(local, forKey: Keys.playerId)
+            cloud.synchronize()
+            return local
+        }
+        let fresh = UUID().uuidString
+        defaults.set(fresh, forKey: Keys.playerId)
+        cloud.set(fresh, forKey: Keys.playerId)
+        cloud.synchronize()
+        return fresh
     }
 
     /// Persist a validated, trimmed username. Callers must validate first via

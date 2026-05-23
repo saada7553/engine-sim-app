@@ -118,6 +118,12 @@ struct Engine3DProceduralView: _SCNViewRepresentable {
     }
 
     private func configureLights(in scene: SCNScene) {
+        Self.addStandardLights(to: scene)
+    }
+
+    /// The three-light rig (key / fill / ambient) shared by the live tile and
+    /// the community preview renderer so both light engines identically.
+    static func addStandardLights(to scene: SCNScene) {
         let key = SCNNode()
         key.light = SCNLight()
         key.light?.type = .directional
@@ -160,7 +166,7 @@ struct Engine3DProceduralView: _SCNViewRepresentable {
         }
     }
 
-    fileprivate static func placeCameraStatic(_ cameraNode: SCNNode, params p: EngineGeometryParams) {
+    static func placeCameraStatic(_ cameraNode: SCNNode, params p: EngineGeometryParams) {
         // 1) Bounding-sphere radius — fits the engine in any view direction.
         let halfL = Float(p.blockLength * 0.5)
         let halfW = Float(p.blockWidth  * 0.5)

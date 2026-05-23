@@ -33,8 +33,33 @@ final class RunResultsStore: ObservableObject {
     /// True while a dyno sweep is actively being recorded.
     @Published private(set) var dynoRecording: Bool = false
 
+    /// Best top speed (mph) observed for the current engine. Persisted with the
+    /// engine so the community browser can show it; 0 until the car has moved.
+    @Published private(set) var topSpeedMph: Double = 0
+
     /// A dyno sweep has produced a usable peak that can be submitted.
     var hasDynoResult: Bool { peakPowerHp > 0 }
+
+    /// A 0-60 launch has been captured — postable on its own, even with no dyno.
+    var hasLaunchResult: Bool { (bestLaunchSec["0-60"] ?? 0) > 0 }
+
+    /// Any postable result exists (dyno peak or launch time).
+    var hasPostableResult: Bool { hasDynoResult || hasLaunchResult }
+
+    /// Fired whenever a best result is finalized (a sweep freezes, a launch
+    /// completes, or a new top speed is set) so the owner can persist these
+    /// numbers onto the engine. Carries the full current best-of snapshot.
+    var onStatsCommitted: ((CapturedStats) -> Void)?
+
+    /// The current best-of snapshot, suitable for persisting onto the engine.
+    var snapshot: CapturedStats {
+        CapturedStats(peakPowerHp: peakPowerHp, peakPowerRpm: peakPowerRpm,
+                      peakTorqueLbFt: peakTorqueLbFt, peakTorqueRpm: peakTorqueRpm,
+                      zeroToSixtySec: bestLaunchSec["0-60"] ?? 0,
+                      topSpeedMph: topSpeedMph)
+    }
+
+    private func commitStats() { onStatsCommitted?(snapshot) }
 
     /// Whether the current captured result has already been posted to the
     /// leaderboard. Cleared the instant a new sweep begins so each unique run
@@ -56,7 +81,29 @@ final class RunResultsStore: ObservableObject {
     func resetForEngineChange() {
         clearDynoPeaks()
         dynoRecording = false
+        topSpeedMph = 0
         bestLaunchSec.removeAll()
+    }
+
+    // MARK: Top speed ingestion
+
+    /// Minimum gap between top-speed persistence commits. The live max climbs
+    /// continuously during a pull; without this it would fire a disk write
+    /// every poll. The displayed value still updates immediately — only the
+    /// persistence callback is throttled.
+    private let topSpeedCommitInterval: TimeInterval = 1.5
+    private var lastTopSpeedCommit: Date = .distantPast
+
+    /// Feed the live vehicle speed (mph) each poll, keeping the running max.
+    /// Updates the published value immediately; throttles the persistence
+    /// commit so a sustained pull doesn't hammer the disk.
+    func recordTopSpeed(mph: Double) {
+        guard mph > topSpeedMph else { return }
+        topSpeedMph = mph
+        let now = Date()
+        guard now.timeIntervalSince(lastTopSpeedCommit) >= topSpeedCommitInterval else { return }
+        lastTopSpeedCommit = now
+        commitStats()
     }
 
     // MARK: Dyno ingestion
@@ -70,6 +117,7 @@ final class RunResultsStore: ObservableObject {
             dynoRecording = true
         } else if !dynoActive && dynoRecording {
             dynoRecording = false // sweep ended — freeze the captured peak
+            commitStats()         // persist the frozen peak onto the engine
         }
         guard dynoRecording else { return }
         absorbPeak(from: power, kilowatts: true)
@@ -104,5 +152,11 @@ final class RunResultsStore: ObservableObject {
         guard seconds > 0 else { return }
         if let existing = bestLaunchSec[targetId], existing <= seconds { return }
         bestLaunchSec[targetId] = seconds
+        if targetId == "0-60" {
+            // A fresh best is a new postable result — re-arm the post button
+            // (mirrors how a new dyno sweep clears `posted`).
+            posted = false
+            commitStats()
+        }
     }
 }
