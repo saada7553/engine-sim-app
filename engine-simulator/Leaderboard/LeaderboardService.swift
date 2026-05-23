@@ -26,6 +26,7 @@
 
 import Foundation
 import CloudKit
+import CryptoKit
 import Security
 
 // MARK: - Submission input
@@ -65,65 +66,14 @@ final class LeaderboardService {
     /// Rename to match the container you create in Xcode's iCloud capability.
     static let containerIdentifier = "iCloud.com.simulation.engine-simulator"
     private static let recordType = "EngineLeaderboardEntry"
-    private static let defaultFetchLimit = 100
-
-    /// True only when the app actually carries the CloudKit entitlement.
-    /// Touching ANY CloudKit API (even creating the container) crashes the
-    /// process when it's missing, so this is checked before every CloudKit
-    /// call and the container is created lazily — never when unconfigured.
-    let isConfigured: Bool
+    // Top N per category. CloudKit pulls every matching record up to this cap,
+    // so it doubles as the rate-limit on how much each fetch can pull down.
+    private static let defaultFetchLimit = 50
 
     private lazy var database: CKDatabase =
         CKContainer(identifier: Self.containerIdentifier).publicCloudDatabase
 
-    private init() {
-        isConfigured = Self.hasCloudKitEntitlement()
-    }
-
-    private static let entitlementKey = "com.apple.developer.icloud-services"
-
-    /// Whether the binary carries the CloudKit entitlement, determined WITHOUT
-    /// touching CloudKit (which crashes when it's absent). macOS reads its own
-    /// entitlements via the Security framework; iOS reads the embedded
-    /// provisioning profile (SecTask is macOS-only).
-    private static func hasCloudKitEntitlement() -> Bool {
-        #if os(macOS)
-        guard let task = SecTaskCreateFromSelf(nil),
-              let raw = SecTaskCopyValueForEntitlement(task, entitlementKey as CFString, nil)
-        else { return false }
-        return entitlementGrantsCloudKit(raw)
-        #elseif targetEnvironment(simulator)
-        // The simulator has no signed entitlements, so any CloudKit call would
-        // crash — treat it as unconfigured (the board shows its "not set up"
-        // state). Test CloudKit on a real device or on macOS.
-        return false
-        #else
-        // Device builds: dev / ad-hoc / TestFlight embed a provisioning profile
-        // we can read. An App Store build has none — in that case the iCloud
-        // capability was necessarily configured to ship, so trust it.
-        guard let url = Bundle.main.url(forResource: "embedded", withExtension: "mobileprovision"),
-              let data = try? Data(contentsOf: url),
-              let text = String(data: data, encoding: .isoLatin1),
-              let open = text.range(of: "<plist"),
-              let close = text.range(of: "</plist>"),
-              let plistData = String(text[open.lowerBound..<close.upperBound]).data(using: .isoLatin1),
-              let plist = try? PropertyListSerialization.propertyList(from: plistData, options: [],
-                                                                      format: nil) as? [String: Any],
-              let entitlements = plist["Entitlements"] as? [String: Any]
-        else { return true }
-        return entitlementGrantsCloudKit(entitlements[entitlementKey])
-        #endif
-    }
-
-    private static func entitlementGrantsCloudKit(_ value: Any?) -> Bool {
-        if let services = value as? [String] {
-            return services.contains("CloudKit") || services.contains("CloudKit-Anonymous")
-        }
-        if let single = value as? String {
-            return single == "CloudKit" || single == "CloudKit-Anonymous"
-        }
-        return false
-    }
+    private init() { }
 
     // MARK: Submit
 
@@ -131,7 +81,6 @@ final class LeaderboardService {
     /// responsible for ensuring the engine is user-built (no prebuilts).
     @discardableResult
     func submit(_ submission: LeaderboardSubmission) async throws -> LeaderboardEntry {
-        guard isConfigured else { throw LeaderboardError.notConfigured }
         let username = PlayerIdentity.shared.username
         guard !username.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             throw LeaderboardError.noUsername
@@ -139,7 +88,13 @@ final class LeaderboardService {
         guard submission.peakPowerHp > 0 else { throw LeaderboardError.noPowerResult }
 
         let record = makeRecord(from: submission, username: username)
-        let saved = try await database.save(record)
+        // CloudKit doesn't enforce uniqueness, so the record carries a
+        // deterministic ID derived from the run. Re-posting the identical run
+        // overwrites that one record (.allKeys ignores the change tag) rather
+        // than creating a duplicate — at most one board entry per unique run.
+        let (saveResults, _) = try await database.modifyRecords(
+            saving: [record], deleting: [], savePolicy: .allKeys, atomically: true)
+        let saved = try saveResults[record.recordID]?.get() ?? record
         return Self.entry(from: saved) ?? Self.fallbackEntry(from: record, username: username,
                                                               submission: submission)
     }
@@ -151,7 +106,6 @@ final class LeaderboardService {
     func fetch(metric: LeaderboardMetric,
                engineClass: EngineClass? = nil,
                limit: Int = defaultFetchLimit) async throws -> [LeaderboardEntry] {
-        guard isConfigured else { return [] }
         let query = CKQuery(recordType: Self.recordType, predicate: predicate(metric, engineClass))
         query.sortDescriptors = [NSSortDescriptor(key: metric.recordKey, ascending: !metric.descending)]
 
@@ -181,7 +135,8 @@ final class LeaderboardService {
         let breakdown = EnginePricing.price(for: s.spec)
         let engineCost = breakdown.engineCost
         let displacement = s.spec.displacementLitres
-        let record = CKRecord(recordType: Self.recordType)
+        let recordID = CKRecord.ID(recordName: Self.runKey(username: username, submission: s))
+        let record = CKRecord(recordType: Self.recordType, recordID: recordID)
 
         record["username"] = username as CKRecordValue
         record["engineName"] = s.spec.name as CKRecordValue
@@ -205,6 +160,20 @@ final class LeaderboardService {
         record["zeroToSixtySec"] = s.zeroToSixtySec as CKRecordValue
 
         return record
+    }
+
+    /// Stable record name for a run: the same player + spec + captured peaks
+    /// always hash to the same name, so resubmitting overwrites in place.
+    private static func runKey(username: String, submission s: LeaderboardSubmission) -> String {
+        let raw = [
+            username,
+            encodeSpec(s.spec),
+            String(format: "%.2f", s.peakPowerHp),
+            String(format: "%.2f", s.peakTorqueLbFt),
+            String(format: "%.3f", s.zeroToSixtySec)
+        ].joined(separator: "|")
+        let digest = SHA256.hash(data: Data(raw.utf8))
+        return "run-" + digest.map { String(format: "%02x", $0) }.joined()
     }
 
     private static func entry(from record: CKRecord) -> LeaderboardEntry? {

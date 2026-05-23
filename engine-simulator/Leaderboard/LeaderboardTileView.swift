@@ -4,7 +4,7 @@
 //
 //  The global leaderboard tile. Top: board picker + engine-class filter and a
 //  submit strip that posts the active engine's captured dyno/launch result.
-//  Below: the ranked rows, each of which can be downloaded and re-raced.
+//  Below: the ranked rows.
 //
 //  Built-in engines can't compete — only user-built engines (those with a
 //  spec) can submit, and a run needs a captured dyno peak first.
@@ -27,17 +27,17 @@ private let lbChipRowInset: CGFloat = 4
 // scale on iOS — the original 7–12pt instrument sizes were unreadable there,
 // so iOS is sized up to compensate while macOS stays compact.
 #if os(macOS)
-private let lbHeaderFont: CGFloat = 11
-private let lbChipFont: CGFloat = 11
-private let lbStatusTitleFont: CGFloat = 12
-private let lbStatusDetailFont: CGFloat = 10
-private let lbButtonFont: CGFloat = 10
-private let lbRankFont: CGFloat = 13
-private let lbNameFont: CGFloat = 13
-private let lbRowDetailFont: CGFloat = 10
-private let lbMetricFont: CGFloat = 16
-private let lbMetricUnitFont: CGFloat = 8
-private let lbNoticeFont: CGFloat = 12
+private let lbHeaderFont: CGFloat = 14
+private let lbChipFont: CGFloat = 12
+private let lbStatusTitleFont: CGFloat = 14
+private let lbStatusDetailFont: CGFloat = 12
+private let lbButtonFont: CGFloat = 12
+private let lbRankFont: CGFloat = 17
+private let lbNameFont: CGFloat = 16
+private let lbRowDetailFont: CGFloat = 13
+private let lbMetricFont: CGFloat = 21
+private let lbMetricUnitFont: CGFloat = 11
+private let lbNoticeFont: CGFloat = 14
 #else
 private let lbHeaderFont: CGFloat = 14
 private let lbChipFont: CGFloat = 14
@@ -62,29 +62,47 @@ final class LeaderboardViewModel: ObservableObject {
     @Published private(set) var entries: [LeaderboardEntry] = []
     @Published private(set) var isLoading = false
     @Published private(set) var errorText: String?
-    @Published private(set) var lastSubmitMessage: String?
+    /// Set only when a post fails; cleared when a new run starts. Success is
+    /// reflected by RunResultsStore.posted, never by a lingering message here.
+    @Published private(set) var submitError: String?
+
+    /// Short-lived per-category cache so toggling between boards (or away and
+    /// back) doesn't refire a CloudKit query for results we just pulled.
+    private var cache: [String: (entries: [LeaderboardEntry], at: Date)] = [:]
+    private let cacheTTL: TimeInterval = 60
 
     /// Reload key — any change reruns the fetch via `.task(id:)`.
     var filterKey: String { "\(metric.rawValue)|\(engineClass?.rawValue ?? "global")" }
 
-    /// Whether CloudKit is actually wired up in this build. Drives a distinct
-    /// "not set up" state instead of a misleading empty board.
-    var isConfigured: Bool { LeaderboardService.shared.isConfigured }
+    func clearSubmitError() { submitError = nil }
 
-    func load() async {
-        guard isConfigured else { entries = []; errorText = nil; return }
+    /// `force` skips the cache — used by pull-to-refresh and right after a post
+    /// so a freshly submitted entry shows up immediately.
+    func load(force: Bool = false) async {
+        let key = filterKey
+        if !force, let cached = cache[key], Date().timeIntervalSince(cached.at) < cacheTTL {
+            entries = cached.entries
+            errorText = nil
+            return
+        }
         isLoading = true
         errorText = nil
         do {
-            entries = try await LeaderboardService.shared.fetch(metric: metric, engineClass: engineClass)
+            let fetched = try await LeaderboardService.shared.fetch(metric: metric, engineClass: engineClass)
+            entries = fetched
+            cache[key] = (fetched, Date())
         } catch {
+            print("Leaderboard Fetch Error: \(error)")
             entries = []
             errorText = "Leaderboard unavailable. Check your connection and iCloud sign-in."
         }
         isLoading = false
     }
 
-    func submit(spec: EngineSpec, results: RunResultsStore) async {
+    /// Returns true only if the run actually reached the backend. On success
+    /// the run is marked posted so it can't be submitted again.
+    func submit(spec: EngineSpec, results: RunResultsStore) async -> Bool {
+        submitError = nil
         let submission = LeaderboardSubmission(
             spec: spec,
             peakPowerHp: results.peakPowerHp,
@@ -94,16 +112,45 @@ final class LeaderboardViewModel: ObservableObject {
             zeroToSixtySec: results.bestLaunch("0-60") ?? 0
         )
         do {
-            try await LeaderboardService.shared.submit(submission)
-            lastSubmitMessage = "Posted \(Int(results.peakPowerHp)) hp to the board."
-            await load()
+            let saved = try await LeaderboardService.shared.submit(submission)
+            results.markPosted()
+            await load(force: true)   // skip cache so the new entry shows
+            // CloudKit's query index lags a few seconds behind a save, so the
+            // refetch above often won't include the just-posted run yet. Merge
+            // it in locally so the player sees their entry immediately.
+            mergeOptimistic(saved)
+            return true
         } catch {
-            lastSubmitMessage = error.localizedDescription
+            submitError = error.localizedDescription
+            return false
         }
     }
 
+    /// Insert a freshly-posted entry into the current board if it belongs there,
+    /// keeping the list sorted by the active metric. Reconciled by the next real
+    /// fetch once CloudKit has indexed the record.
+    private func mergeOptimistic(_ entry: LeaderboardEntry) {
+        guard qualifies(entry) else { return }
+        var list = entries.filter { $0.id != entry.id }
+        list.append(entry)
+        list.sort { lhs, rhs in
+            let a = lhs.metricValue(for: metric), b = rhs.metricValue(for: metric)
+            return metric.descending ? a > b : a < b
+        }
+        entries = list
+        cache[filterKey] = (list, Date())
+    }
+
+    /// Whether an entry passes the board's current metric/class filters.
+    private func qualifies(_ entry: LeaderboardEntry) -> Bool {
+        if let engineClass, entry.engineClass != engineClass { return false }
+        if metric == .zeroToSixty, entry.zeroToSixtySec <= 0 { return false }
+        return true
+    }
+
     /// Copy a board engine into the local library as a fresh user engine so it
-    /// can be inspected, tuned and re-raced.
+    /// can be inspected, tuned and re-raced. Retained for future use — the
+    /// download button was removed from the row UI but the backend path stays.
     func downloadAndRace(_ entry: LeaderboardEntry) {
         guard var spec = LeaderboardService.decodeSpec(entry.specJSON) else { return }
         spec.id = UUID()    // a new local engine, independent of the author's
@@ -140,13 +187,8 @@ struct LeaderboardTileView: View {
     }
 
     @ViewBuilder private var rankings: some View {
-        if !model.isConfigured {
-            centered {
-                LeaderboardNotice(symbol: "icloud.slash",
-                                  text: "Leaderboard isn't set up in this build yet. The rest of the loop still works — drive, dyno and time your engine.")
-            }
-        } else if model.isLoading && model.entries.isEmpty {
-            centered { ProgressView().controlSize(.small) }
+        if model.isLoading && model.entries.isEmpty {
+            centered { ProgressView().controlSize(.small).tint(.accentLive) }
         } else if let error = model.errorText {
             centered { LeaderboardNotice(symbol: "wifi.slash", text: error) }
         } else if model.entries.isEmpty {
@@ -159,11 +201,12 @@ struct LeaderboardTileView: View {
                 LazyVStack(spacing: lbRowSpacing) {
                     ForEach(Array(model.entries.enumerated()), id: \.element.id) { index, entry in
                         LeaderboardRow(rank: index + 1, entry: entry, metric: model.metric,
-                                       isMe: entry.username == PlayerIdentity.shared.username,
-                                       onDownload: { model.downloadAndRace(entry) })
+                                       isMe: entry.username == PlayerIdentity.shared.username)
                     }
                 }
             }
+            .tint(.accentLive)
+            .refreshable { await model.load(force: true) }
         }
     }
 
@@ -265,50 +308,74 @@ private struct SubmitStrip: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(statusTitle)
                     .font(.system(size: lbStatusTitleFont, weight: .semibold, design: .monospaced))
-                    .foregroundColor(.white)
+                    .foregroundColor(titleColor)
                     .lineLimit(1)
                 Text(statusDetail)
                     .font(.system(size: lbStatusDetailFont, design: .monospaced))
-                    .foregroundColor(.textMuted)
+                    .foregroundColor(.textSecondary)
                     .lineLimit(1)
             }
             Spacer()
-            if canSubmit {
-                Button(action: submit) {
-                    HStack(spacing: 5) {
-                        if submitting { ProgressView().controlSize(.small) }
-                        Text(submitting ? "POSTING" : "POST RUN")
-                            .font(.system(size: lbButtonFont, weight: .bold, design: .monospaced))
-                            .tracking(1)
-                    }
-                    .foregroundColor(.black)
-                    .padding(.horizontal, 12).padding(.vertical, 7)
-                    .background(Capsule().fill(Color.accentLive))
-                }
-                .buttonStyle(.plain)
-                .disabled(submitting)
+            if results.posted {
+                postedBadge
+            } else if canSubmit {
+                postButton
             }
         }
         .padding(10)
         .background(RoundedRectangle(cornerRadius: Theme.Radius.panel).fill(Color.surfaceFaint))
         .overlay(RoundedRectangle(cornerRadius: Theme.Radius.panel)
             .stroke(Color.strokeFaint, lineWidth: Theme.Stroke.thin))
+        // A fresh dyno sweep clears the posted flag in RunResultsStore; clear
+        // any stale error here at the same moment so the strip resets cleanly.
+        .onChange(of: results.dynoRecording) { _, recording in
+            if recording { model.clearSubmitError() }
+        }
     }
 
-    private var canSubmit: Bool { model.isConfigured && userSpec != nil && results.hasDynoResult }
+    private var postButton: some View {
+        Button(action: submit) {
+            HStack(spacing: 5) {
+                if submitting { ProgressView().controlSize(.small) }
+                Text(submitting ? "POSTING" : "POST RUN")
+                    .font(.system(size: lbButtonFont, weight: .bold, design: .monospaced))
+                    .tracking(1)
+            }
+            .foregroundColor(.black)
+            .padding(.horizontal, 12).padding(.vertical, 7)
+            .background(Capsule().fill(Color.accentLive))
+        }
+        .buttonStyle(.plain)
+        .disabled(submitting)
+    }
+
+    private var postedBadge: some View {
+        HStack(spacing: 5) {
+            Image(systemName: "checkmark.circle.fill")
+            Text("POSTED")
+                .font(.system(size: lbButtonFont, weight: .bold, design: .monospaced))
+                .tracking(1)
+        }
+        .foregroundColor(.accentOk)
+    }
+
+    private var canSubmit: Bool { userSpec != nil && results.hasDynoResult }
+
+    private var titleColor: Color { model.submitError != nil ? .accentDanger : .white }
 
     private var statusTitle: String {
-        if let message = model.lastSubmitMessage { return message }
-        guard userSpec != nil else { return "This is a prebuilt engine" }
+        if results.posted { return "Posted \(Int(results.peakPowerHp)) hp to the board" }
+        if let error = model.submitError { return error }
+        guard userSpec != nil else { return "You've selected a prebuilt engine" }
         guard results.hasDynoResult else { return "No dyno result yet" }
         return "\(Int(results.peakPowerHp)) hp · \(Int(results.peakTorqueLbFt)) lb-ft"
     }
 
     private var statusDetail: String {
+        if results.posted { return "Run the dyno again to post a new result" }
         guard userSpec != nil else { return "Make your own engine to compete" }
         guard results.hasDynoResult else { return "Run the dyno to capture a peak" }
         let cost = EnginePricing.formatted(EnginePricing.buildCost(for: userSpec!))
-        guard model.isConfigured else { return "Build \(cost) — leaderboard not set up yet" }
         return "Build \(cost) — ready to post"
     }
 
@@ -329,9 +396,6 @@ private struct LeaderboardRow: View {
     let entry: LeaderboardEntry
     let metric: LeaderboardMetric
     let isMe: Bool
-    let onDownload: () -> Void
-
-    @State private var confirmingDownload = false
 
     var body: some View {
         HStack(spacing: 8) {
@@ -343,11 +407,11 @@ private struct LeaderboardRow: View {
             VStack(alignment: .leading, spacing: 1) {
                 Text(entry.username)
                     .font(.system(size: lbNameFont, weight: .semibold, design: .monospaced))
-                    .foregroundColor(isMe ? .accentLive : .white)
+                    .foregroundColor(isMe ? .accentLive : .textPrimary)
                     .lineLimit(1)
                 Text("\(entry.engineName) · \(entry.engineClass.shortLabel) · \(EnginePricing.formatted(entry.buildCostTotal))")
                     .font(.system(size: lbRowDetailFont, design: .monospaced))
-                    .foregroundColor(.textMuted)
+                    .foregroundColor(.textSecondary)
                     .lineLimit(1)
             }
 
@@ -356,30 +420,15 @@ private struct LeaderboardRow: View {
             VStack(alignment: .trailing, spacing: 1) {
                 Text(metric.formatted(entry.metricValue(for: metric)))
                     .font(.system(size: lbMetricFont, weight: .bold, design: .monospaced))
-                    .foregroundColor(.white)
+                    .foregroundColor(.textPrimary)
                 Text(metric.unit)
-                    .font(.system(size: lbMetricUnitFont, design: .monospaced))
-                    .foregroundColor(.textFaint)
+                    .font(.system(size: lbMetricUnitFont, weight: .medium, design: .monospaced))
+                    .foregroundColor(.textMuted)
             }
-
-            Button(action: { confirmingDownload = true }) {
-                Image(systemName: "square.and.arrow.down")
-                    .font(.system(size: 13))
-                    .foregroundColor(.textSecondary)
-            }
-            .buttonStyle(.plain)
-            .help("Download & race this engine")
         }
         .padding(.horizontal, 9).padding(.vertical, 7)
         .background(RoundedRectangle(cornerRadius: Theme.Radius.control)
             .fill(isMe ? Color.accentLive.opacity(0.10) : Color.surfaceLow))
-        .confirmationDialog("Download \(entry.engineName)?",
-                            isPresented: $confirmingDownload, titleVisibility: .visible) {
-            Button("Add to my engines") { onDownload() }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("Copies this build into your library so you can tune and race it.")
-        }
     }
 
     private var rankColor: Color {

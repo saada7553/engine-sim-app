@@ -10,15 +10,18 @@
 //
 
 import SwiftUI
+import Combine
 
 // MARK: - Layout constants
 
 private let controlRowSpacing: CGFloat = 30
-private let checkRowSpacing: CGFloat = 16
-private let stepNumberSize: CGFloat = 22
+private let tutorialRowSpacing: CGFloat = 14
 private let bodyTextSize: CGFloat = 13
-private let keyCapSize = CGSize(width: 60, height: 46)
 private let previewStackSpacing = Theme.Space.lg
+
+// iOS throttle demo width — keeps the reused top-bar slider from filling the
+// whole preview panel.
+private let throttleDemoWidth: CGFloat = 220
 
 // ECU heatmap miniature — mirrors EcuTuningView.heatColor's blue→green→red ramp.
 private let ecuCols = 8
@@ -30,80 +33,106 @@ private let ecuHeatBlueHue = 0.62
 private let ecuHeatSaturation = 0.62
 private let ecuHeatBrightness = 0.58
 
+// macOS key legend chip
+private let keyChipMinWidth: CGFloat = 30
+private let keyLegendItemWidth: CGFloat = 132
+private let keyLegendColumnSpacing: CGFloat = 14
+private let keyLegendRowSpacing: CGFloat = 8
+
+// MARK: - Onboarding demo state
+//
+// A throwaway stand-in for the engine while the first-launch tutorial is up.
+// Both the on-screen demo controls and the macOS keyboard drive THIS object, so
+// the ignition / starter / clutch respond on screen without ever touching the
+// real EngineViewModel. Nothing here feeds the simulation.
+
+final class OnboardingEngineDemo: ObservableObject {
+    static let shared = OnboardingEngineDemo()
+
+    @Published var ignitionOn = false
+    @Published var cranking = false
+    @Published var clutchEngaged = false
+
+    // Everything is a plain toggle in the tutorial — press (or the key) flips it
+    // on/off, in any order. Nothing here is gated or auto-resets.
+    func toggleIgnition() { ignitionOn.toggle() }
+    func toggleStarter() { cranking.toggle() }
+    func toggleClutch() { clutchEngaged.toggle() }
+
+    /// Wipe state so replaying the tutorial always starts cold.
+    func reset() {
+        ignitionOn = false
+        cranking = false
+        clutchEngaged = false
+    }
+}
+
 // MARK: - Step 2: Start an engine
 
 struct StartEngineDemo: View {
-    @State private var ignitionOn = false
-    @State private var cranking = false
-    @State private var clutchWorked = false
+    @ObservedObject private var demo = OnboardingEngineDemo.shared
+    #if os(iOS)
+    @State private var throttle = 0.0
+    #endif
 
-    private var clutchStepText: String {
-        #if os(macOS)
-        return "Tap and release the Shift key to let the clutch out"
-        #else
-        return "Tap the CLUTCH pedal to disengage, release to drive"
-        #endif
-    }
+    private let clutchStepText = "Tap the clutch to disengage, tap again to drive"
 
     var body: some View {
         OnboardingTwoColumn(
-            text: {
-                VStack(alignment: .leading, spacing: Theme.Space.section) {
-                    OnboardingStepHeader(
-                        index: 2,
-                        title: "Bring it to life",
-                        subtitle: "Every engine starts the same way. Try the real controls, they're the exact switches on the dash.")
-
-                    VStack(alignment: .leading, spacing: checkRowSpacing) {
-                        TutorialStepRow(number: 1, text: "Flip the ignition to RUN", done: ignitionOn)
-                        TutorialStepRow(number: 2, text: "Hold the starter to crank it over", done: cranking)
-                        TutorialStepRow(number: 3, text: clutchStepText, done: clutchWorked)
-                    }
-
-                    if allDone {
-                        Label("It fires, you're driving.", systemImage: "checkmark.seal.fill")
-                            .modifier(RetroFont(size: Theme.FontSize.control))
-                            .foregroundColor(.accentOk)
-                            .transition(.opacity)
-                    }
-                }
-                .animation(.easeInOut(duration: 0.2), value: allDone)
-            },
+            text: { textColumn },
             preview: {
                 OnboardingPreviewPanel(title: "START SEQUENCE") {
-                    controlRow.padding(.vertical, Theme.Space.xl)
+                    previewBody.padding(.vertical, Theme.Space.xl)
                 }
             })
+        .onAppear { demo.reset() }
     }
 
-    private var allDone: Bool { ignitionOn && cranking && clutchWorked }
+    private var textColumn: some View {
+        VStack(alignment: .leading, spacing: Theme.Space.section) {
+            OnboardingStepHeader(
+                index: 2,
+                title: "Bring it to life",
+                subtitle: "Every engine starts the same way. These are the real switches from the dash, so go ahead and play with them.")
 
-    private var controlRow: some View {
-        HStack(alignment: .top, spacing: controlRowSpacing) {
-            ArmedIgnitionSwitch(isOn: ignitionOn) { ignitionOn.toggle() }
-
-            StarterButton(running: cranking) {
-                if ignitionOn { cranking = true }
+            VStack(alignment: .leading, spacing: tutorialRowSpacing) {
+                OnboardingListRow(text: "Flip the ignition switch to RUN")
+                OnboardingListRow(text: "Press the starter to crank it over")
+                OnboardingListRow(text: clutchStepText)
             }
 
-            clutchControl
+            #if os(iOS)
+            OnboardingNote(text: "If it won't catch, feed in a little throttle and crank again.")
+            #else
+            MacKeyLegend()
+            #endif
         }
     }
 
     @ViewBuilder
-    private var clutchControl: some View {
-        #if os(macOS)
-        VStack(spacing: Theme.Bar.captionGap) {
-            KeyCap(symbol: "⇧", label: "SHIFT", pressed: clutchWorked) { clutchWorked = true }
-            DashCaption(text: "CLUTCH", active: clutchWorked)
+    private var previewBody: some View {
+        #if os(iOS)
+        VStack(spacing: previewStackSpacing) {
+            controlRow
+            TopBarThrottleSlider(value: $throttle)
+                .frame(width: throttleDemoWidth)
         }
         #else
-        DashImageWarningTile(label: "CLUTCH",
-                             active: clutchWorked,
-                             accent: .accentClutch,
-                             imageName: "clutch",
-                             onTap: { clutchWorked = true })
+        controlRow
         #endif
+    }
+
+    private var controlRow: some View {
+        HStack(alignment: .top, spacing: controlRowSpacing) {
+            ArmedIgnitionSwitch(isOn: demo.ignitionOn) { demo.toggleIgnition() }
+            StarterButton(running: demo.cranking, action: demo.toggleStarter)
+            // The same tappable clutch tile the dash uses, on both platforms.
+            DashImageWarningTile(label: "CLUTCH",
+                                 active: demo.clutchEngaged,
+                                 accent: .accentClutch,
+                                 imageName: "clutch",
+                                 onTap: demo.toggleClutch)
+        }
     }
 }
 
@@ -117,13 +146,11 @@ struct BuildTunePage: View {
                     OnboardingStepHeader(
                         index: 3,
                         title: "Build it. Tune it.",
-                        subtitle: "Design your own engine, or describe one and let the AI draft it. A fresh build rarely runs clean on the first crank, but that's the fun part.")
+                        subtitle: "Design your own engine, or describe one and let the AI draft it for you. A fresh build rarely runs clean on the first crank, and sorting that out is the fun part.")
 
-                    VStack(alignment: .leading, spacing: checkRowSpacing) {
-                        TutorialBullet(icon: "slider.horizontal.3",
-                                       text: "Reshape the ignition & fuel maps in ECU Tuning until it idles smooth and pulls hard.")
-                        TutorialBullet(icon: "exclamationmark.triangle.fill",
-                                       text: "Trouble codes in the OBD-II readout tell you exactly what your tune is fighting.")
+                    VStack(alignment: .leading, spacing: tutorialRowSpacing) {
+                        OnboardingListRow(text: "Reshape the ignition and fuel maps in ECU Tuning until it idles smooth and pulls hard.")
+                        OnboardingListRow(text: "Trouble codes in the OBD-II readout tell you what your tune is fighting.")
                     }
                 }
             },
@@ -156,10 +183,10 @@ struct ReadyPage: View {
                         title: greeting,
                         subtitle: "Fire up a built-in engine to get a feel for it, then make one your own. Clean, powerful builds climb the ranks.")
 
-                    VStack(alignment: .leading, spacing: Theme.Space.md) {
-                        NextStepLine(text: "Pick an engine from the sidebar")
-                        NextStepLine(text: "Hit the starter and drive")
-                        NextStepLine(text: "Build New Engine when you're ready")
+                    VStack(alignment: .leading, spacing: tutorialRowSpacing) {
+                        OnboardingListRow(text: "Pick an engine from the sidebar")
+                        OnboardingListRow(text: "Hit the starter and drive")
+                        OnboardingListRow(text: "Build a new engine when you're ready")
                     }
                 }
             },
@@ -171,105 +198,96 @@ struct ReadyPage: View {
     }
 }
 
-// MARK: - Shared tutorial widgets
+// MARK: - Shared tutorial list rows
+//
+// Every page lists its points the same way: a plain text line, no bullet glyph
+// or icon, so the prose stays clean and consistent across the flow.
 
-struct TutorialStepRow: View {
-    let number: Int
+/// A plain, unmarked list line. Wraps freely so long lines never truncate.
+struct OnboardingListRow: View {
     let text: String
-    let done: Bool
 
     var body: some View {
-        HStack(spacing: Theme.Space.xl) {
-            ZStack {
-                Circle()
-                    .fill(done ? Color.accentOk : Color.surfaceRaised)
-                    .frame(width: stepNumberSize, height: stepNumberSize)
-                if done {
-                    Image(systemName: "checkmark")
-                        .font(.system(size: 11, weight: .bold))
-                        .foregroundColor(.white)
-                } else {
-                    Text("\(number)")
-                        .modifier(RetroFont(size: Theme.FontSize.footnote))
-                        .foregroundColor(.textSecondary)
-                }
-            }
-            Text(text)
-                .font(.system(size: bodyTextSize))
-                .foregroundColor(done ? .textPrimary : .textSecondary)
-            Spacer(minLength: 0)
-        }
-        .animation(.easeInOut(duration: 0.2), value: done)
+        Text(text)
+            .font(.system(size: bodyTextSize))
+            .foregroundColor(.textSecondary)
+            .lineSpacing(2)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
-struct TutorialBullet: View {
-    let icon: String
+/// A quieter aside (tips, hints) — same family as the list rows but dimmer.
+struct OnboardingNote: View {
     let text: String
 
     var body: some View {
-        HStack(alignment: .top, spacing: Theme.Space.xl) {
-            Image(systemName: icon)
-                .font(.system(size: 13, weight: .semibold))
+        Text(text)
+            .font(.system(size: Theme.FontSize.callout))
+            .foregroundColor(.textMuted)
+            .lineSpacing(2)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+// MARK: - macOS keyboard legend
+//
+// macOS players can drive entirely from the keyboard, so the start page spells
+// out the bindings and notes that the on-screen dash controls do the same job.
+// Chip styling matches ControlsMenuView so the keys read identically wherever
+// they appear.
+
+#if os(macOS)
+/// Two-column key reference. Rows are laid out explicitly (no ForEach) so they
+/// slide in as one piece with the page transition — a ForEach gives its rows
+/// their own insertion transition, which made the hints pop in after the rest
+/// of the card had already moved.
+private struct MacKeyLegend: View {
+    var body: some View {
+        VStack(alignment: .leading, spacing: Theme.Space.lg) {
+            Text("KEYBOARD")
+                .modifier(RetroFont(size: Theme.FontSize.footnote))
+                .tracking(2)
                 .foregroundColor(.accentLive)
-                .frame(width: stepNumberSize)
-            Text(text)
-                .font(.system(size: bodyTextSize))
-                .foregroundColor(.textSecondary)
-                .lineSpacing(2)
-                .fixedSize(horizontal: false, vertical: true)
-            Spacer(minLength: 0)
+
+            VStack(alignment: .leading, spacing: keyLegendRowSpacing) {
+                legendRow(("A", "Ignition"), ("S", "Starter"))
+                legendRow(("⇧", "Clutch"), ("Space", "Throttle"))
+                legendRow(("↑ ↓", "Shift gears"), ("D", "Dyno"))
+                legendRow(("H", "Throttle hold"), nil)
+            }
+
+            OnboardingNote(text: "Every key has a switch on the dash too, so you can point and click instead.")
         }
     }
-}
 
-private struct NextStepLine: View {
-    let text: String
+    private func legendRow(_ left: (String, String), _ right: (String, String)?) -> some View {
+        HStack(spacing: keyLegendColumnSpacing) {
+            keyCell(left)
+            if let right { keyCell(right) }
+        }
+    }
 
-    var body: some View {
+    private func keyCell(_ binding: (key: String, action: String)) -> some View {
         HStack(spacing: Theme.Space.md) {
-            Text("▸")
-                .modifier(RetroFont(size: Theme.FontSize.control))
-                .foregroundColor(.accentLive)
-            Text(text)
-                .font(.system(size: bodyTextSize))
+            Text(binding.key)
+                .font(.system(size: Theme.FontSize.footnote, weight: .semibold, design: .monospaced))
+                .foregroundColor(.textPrimary)
+                .frame(minWidth: keyChipMinWidth)
+                .padding(.horizontal, Theme.Space.sm)
+                .padding(.vertical, Theme.Space.xs)
+                .background(RoundedRectangle(cornerRadius: Theme.Radius.small)
+                    .fill(Color.sidebarHighlight))
+            Text(binding.action)
+                .font(.system(size: Theme.FontSize.callout))
                 .foregroundColor(.textSecondary)
+                .lineLimit(1)
         }
+        .frame(width: keyLegendItemWidth, alignment: .leading)
     }
 }
-
-// MARK: - Keyboard key cap (macOS clutch = Shift)
-
-struct KeyCap: View {
-    let symbol: String
-    let label: String
-    let pressed: Bool
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            VStack(spacing: 1) {
-                Text(symbol)
-                    .font(.system(size: 18, weight: .bold, design: .monospaced))
-                Text(label)
-                    .modifier(RetroFont(size: Theme.FontSize.micro))
-                    .tracking(0.5)
-            }
-            .foregroundColor(pressed ? .accentClutch : .textPrimary)
-            .frame(width: keyCapSize.width, height: keyCapSize.height)
-            .background(
-                RoundedRectangle(cornerRadius: Theme.Radius.control)
-                    .fill(Color.sidebarHighlight)
-                    .overlay(RoundedRectangle(cornerRadius: Theme.Radius.control)
-                        .stroke(pressed ? Color.accentClutch : Color.strokeStrong,
-                                lineWidth: Theme.Stroke.thin)))
-            .offset(y: pressed ? 2 : 0)
-            .shadow(color: .black.opacity(0.5), radius: pressed ? 1 : 3, y: pressed ? 1 : 2)
-        }
-        .buttonStyle(.plain)
-        .animation(.easeInOut(duration: 0.12), value: pressed)
-    }
-}
+#endif
 
 // MARK: - ECU map miniature
 

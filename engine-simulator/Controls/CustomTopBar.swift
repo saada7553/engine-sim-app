@@ -774,7 +774,9 @@ private let topBarSliderHandleBorder = Color.white.opacity(0.45)
 private let topBarSliderLabelColor = Color.white.opacity(0.55)
 private let topBarSliderValueColor = Color.accentLive
 
-private struct TopBarThrottleSlider: View {
+// Internal so the onboarding tutorial reuses the real throttle slider rather
+// than a lookalike.
+struct TopBarThrottleSlider: View {
     @Binding var value: Double
 
     var body: some View {

@@ -298,16 +298,21 @@ private struct BuildCostChip: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            Text("BUILD")
+            Text("COST")
                 .font(.system(size: Theme.FontSize.footnote, weight: .bold, design: .monospaced))
                 .tracking(2)
                 .foregroundColor(BuilderTheme.label)
             Text(EnginePricing.formatted(EnginePricing.buildCost(for: spec)))
                 .font(.system(size: Theme.FontSize.control, weight: .bold, design: .monospaced))
                 .foregroundColor(.white)
+                .lineLimit(1)
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 6)
+        // Never let a long price get truncated by the header's flexible layout.
+        .fixedSize()
+        // Match BuilderNavButton's padding so the chip is the same height as
+        // the Cancel / Save buttons sitting beside it in the header.
+        .padding(.horizontal, 14)
+        .padding(.vertical, 11)
         .background(
             RoundedRectangle(cornerRadius: Theme.Radius.control)
                 .fill(Color.surfaceLow)

@@ -25,8 +25,6 @@ private let promptExamples: [String] = [
     "Angry American muscle V8 with a deep rumble",
     "Turbocharged inline-6 like a 2JZ, built for drift",
     "High-revving naturally aspirated F1 V12",
-    "Economical little inline-3 city car engine",
-    "Boxer-4 rally engine with anti-lag burble",
 ]
 
 struct AIEnginePromptView: View {
@@ -71,21 +69,27 @@ struct AIEnginePromptView: View {
 
             promptEditor
 
-            // While generating, the indicator takes the place of the examples
-            // and button so the page stays put and the prompt stays visible.
+            // While generating, the indicator takes the place of the button and
+            // examples so the page stays put and the prompt stays visible.
             if isGenerating {
                 GeneratingIndicator()
                     .padding(.top, 6)
             } else {
-                examples
-
                 if let errorText {
                     Text(errorText)
                         .font(.system(size: Theme.FontSize.callout, weight: .regular, design: .monospaced))
                         .foregroundColor(.accentDanger)
                 }
 
-                generateButton
+                // Examples and the Generate button share one row, top-aligned,
+                // so the button is always in view right beside the suggestions
+                // rather than buried below them.
+                HStack(alignment: .top, spacing: 20) {
+                    examples
+                    Spacer(minLength: 12)
+                    BuilderNavButton(label: "Generate", style: .primary,
+                                     enabled: canGenerate, action: generate)
+                }
             }
         }
         .animation(.easeInOut(duration: 0.25), value: isGenerating)
@@ -107,11 +111,7 @@ struct AIEnginePromptView: View {
                 .scrollContentBackground(.hidden)
                 .frame(minHeight: PromptLayout.editorMinHeight)
                 .disabled(isGenerating)
-                .onChange(of: prompt) { _, newValue in
-                    if newValue.count > AIEngineGeneration.maxPromptLength {
-                        prompt = String(newValue.prefix(AIEngineGeneration.maxPromptLength))
-                    }
-                }
+                .onChange(of: prompt) { _, newValue in handlePromptChange(newValue) }
         }
         .padding(12)
         .background(
@@ -142,14 +142,6 @@ struct AIEnginePromptView: View {
         }
     }
 
-    private var generateButton: some View {
-        HStack {
-            Spacer()
-            BuilderNavButton(label: "Generate", style: .primary,
-                             enabled: canGenerate, action: generate)
-        }
-    }
-
     // MARK: Header
 
     private var header: some View {
@@ -173,6 +165,22 @@ struct AIEnginePromptView: View {
     }
 
     // MARK: Actions
+
+    /// Keep the prompt within the length cap, and on iOS treat a trailing
+    /// newline (Return) as "dismiss the keyboard": TextEditor inserts a newline
+    /// we don't want in a single-line description, so strip it and drop focus.
+    private func handlePromptChange(_ newValue: String) {
+        #if os(iOS)
+        if newValue.hasSuffix("\n") {
+            prompt = String(newValue.dropLast())
+            editorFocused = false
+            return
+        }
+        #endif
+        if newValue.count > AIEngineGeneration.maxPromptLength {
+            prompt = String(newValue.prefix(AIEngineGeneration.maxPromptLength))
+        }
+    }
 
     private func generate() {
         let text = prompt

@@ -54,8 +54,24 @@ final class KeyboardController {
         }
     }
 
+    /// Engine keys that should never reach the system while the tutorial is up,
+    /// so pressing them drives the demo (or does nothing) instead of beeping.
+    private static let engineKeyCodes: Set<UInt16> = [
+        KeyCode.a, KeyCode.s, KeyCode.d, KeyCode.h,
+        KeyCode.space, KeyCode.arrowUp, KeyCode.arrowDown
+    ]
+
     /// Returns nil to consume the event, or the event itself to pass it through.
     private func handle(_ event: NSEvent) -> NSEvent? {
+        // While the first-launch tutorial is up the live engine must stay dead.
+        // Engine keys instead drive the tutorial's on-screen demo controls and
+        // are swallowed so they don't beep — except while the username field is
+        // being edited, where every key must reach the text field.
+        if !PlayerIdentity.shared.hasCompletedOnboarding {
+            guard !isEditingText else { return event }
+            return handleOnboardingKey(event)
+        }
+
         guard !isEditingText else { return event }
 
         switch event.type {
@@ -67,6 +83,35 @@ final class KeyboardController {
             return handleKeyDown(event)
         case .keyUp:
             return handleKeyUp(event)
+        default:
+            return event
+        }
+    }
+
+    /// Tutorial routing: A toggles the demo ignition, S cranks it, Shift toggles
+    /// the demo clutch — all on `OnboardingEngineDemo`, never the real engine.
+    /// Every other engine key is swallowed so the tutorial stays quiet; keys we
+    /// don't own pass through untouched.
+    private func handleOnboardingKey(_ event: NSEvent) -> NSEvent? {
+        let demo = OnboardingEngineDemo.shared
+        switch event.type {
+        case .flagsChanged:
+            let shiftDown = event.modifierFlags.contains(.shift)
+            if shiftDown && !clutchKeyHeld { demo.toggleClutch() }
+            clutchKeyHeld = shiftDown
+            return event
+        case .keyDown:
+            guard event.modifierFlags.isDisjoint(with: Self.menuModifiers) else { return event }
+            if !event.isARepeat {
+                switch event.keyCode {
+                case KeyCode.a: demo.toggleIgnition()
+                case KeyCode.s: demo.toggleStarter()
+                default: break
+                }
+            }
+            return Self.engineKeyCodes.contains(event.keyCode) ? nil : event
+        case .keyUp:
+            return Self.engineKeyCodes.contains(event.keyCode) ? nil : event
         default:
             return event
         }

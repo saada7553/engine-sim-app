@@ -21,6 +21,35 @@ library.
 1) First, cd into ./build or ./build-debug (production VS debug builds)
 2) Run cmake --build . && ./engine-sim-cli to build and run the binary
 
+## Building the MacOS / iOS Swift app
+
+The native frontend lives in `engine-simulator.xcworkspace` and is built with
+Xcode, not cmake. The command line tools alone are not enough — `xcodebuild`
+needs the full Xcode, so pass `DEVELOPER_DIR` explicitly:
+
+```bash
+# macOS app
+DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcodebuild \
+  -workspace engine-simulator.xcworkspace -scheme engine-simulator \
+  -destination 'platform=macOS' -configuration Debug build
+
+# iOS app (pick a real simulator from -showdestinations)
+DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcodebuild \
+  -workspace engine-simulator.xcworkspace -scheme engine-simulator \
+  -destination 'platform=iOS Simulator,name=iPhone 16' -configuration Debug build
+```
+
+Pipe through `grep -nE "error:|BUILD SUCCEEDED|BUILD FAILED"` to cut the noise.
+Schemes: `engine-simulator` (release-ish) and `engine-simulator-debug`. List
+destinations with `... -scheme engine-simulator -showdestinations`.
+
+NOTE: the iOS Simulator build currently fails at the embedded CMake phase with
+`CMAKE_APPLE_ARCH_SYSROOTS` — the C++ engine-sim libs only generate for macOS
+right now, not the iOS SDK. This is an infra/config issue, not a Swift one, so
+verify Swift/SwiftUI changes against the **macOS** target. iOS-only SwiftUI
+paths still need to be reasoned about by hand until the iOS CMake build is set
+up.
+
 ## IMPORTANT: Sound Notification
 
 After finishing responding to my request or running a command, run this command 3 times to notify me by sound:
@@ -39,14 +68,3 @@ You should also play this noise if you need my permission to do something / are 
 5) Do not redefine exsiting colors, read the color file and you should reuse the existing ones, if you need a new color that does not exist and is radically different from the exisitng ones, then you can add it.
 
 # Current TODOs: 
-
-2) Hitting the repair button should clear any OBD2 codes
-5) Fuel turning on the ecu needs work
-    - Currently, the entire map says 1s. What do these 1s mean? aren't they supposed to be seperate values? 
-    - Lets brainstorm what they should be, what does the 1 represent, etc.
-6) When they user changes ecu settings, they can throw the AFR / other engine parameters out of whack, if this happens, the OBD2 scanner should report warining / errors relating to these changes to let the user know there is a problem with their tune
-7) I need to add vehicle breaking to this so the car vehicle speed can slowly come down
-    - On macos, this should be a slider on the control pannel, think about the best way to incorporate this in 
-8) Coolant & Oil problems
-    - When driving hard, the coolant cools down instead of heating up
-    - Turning the pumps on / off seems to have very little effect on the engine, think about how the cooland / oil should change the engine, think aobut what happens in a real engine. The pump state has what effect on the temps? think about all this and make the required changes.

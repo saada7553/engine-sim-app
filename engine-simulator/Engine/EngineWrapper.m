@@ -292,6 +292,12 @@ static const double kCylinderPressurePeakDecay = 0.985;
 
             _sim->startFrame(1.0 / 30.0);
             while (_sim->simulateStep()) {
+                // This loop runs ~333 substeps per frame (10 kHz sim / 30 fps),
+                // each allocating an EngineState and several NSMutableArrays.
+                // The sim runs on a bare std::thread with no run loop, so without
+                // a local pool every autoreleased temporary leaks permanently and
+                // the process is OOM-killed within minutes. Drain per substep.
+                @autoreleasepool {
 
                 // --- GATHER DATA (ScopePoint Implementation) ---
                 EngineState *state = [[EngineState alloc] init];
@@ -441,8 +447,12 @@ static const double kCylinderPressurePeakDecay = 0.985;
                 // Update C++ Oscilloscopes
                 _oscilloscopeCluster->sample();
                 
+                // Assigning to the strong property retains `state` past the
+                // pool drain below, so the kept frame survives while every
+                // per-substep temporary is freed immediately.
                 self.latestState = state;
-                
+
+                } // @autoreleasepool
             }
             _sim->endFrame();
             

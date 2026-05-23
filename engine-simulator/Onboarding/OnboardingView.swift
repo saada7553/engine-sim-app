@@ -32,9 +32,23 @@ let onboardingLeaderboardFontSize: CGFloat = 15
 let onboardingLeaderboardFontSize: CGFloat = 18
 #endif
 private let ctaCorner = Theme.Radius.control
-private let ctaHPadding: CGFloat = 22
-private let ctaVPadding: CGFloat = 10
+private let ctaHPadding: CGFloat = 30
+private let ctaVPadding: CGFloat = 13
 private let usernameFieldSize: CGFloat = 17
+
+// Caps the preview column so a page never stretches into a tall empty
+// rectangle (the previews are short; without a ceiling the framed RetroPanel
+// grows to fill all the vertical space the page is offered).
+private let onboardingPreviewMaxHeight: CGFloat = 300
+
+// The whole tutorial is laid out once at this reference size and then scaled to
+// fit whatever window or device it runs on (see OnboardingView.body). This way
+// the proportions are identical on a Mac window and an iPhone in landscape
+// without hardcoding per-screen numbers — the content just shrinks to fit.
+private let onboardingCanvasWidth = onboardingContentMaxWidth + pagePadding * 2
+private let onboardingCanvasHeight: CGFloat = 620
+// Never enlarge past the reference size; only shrink to fit smaller screens.
+private let onboardingMaxScale: CGFloat = 1.0
 
 // MARK: - Steps
 
@@ -56,26 +70,51 @@ struct OnboardingView: View {
     @State private var draftUsername = ""
     @State private var isChecking = false
     @State private var usernameError: String?
+    // Drives the page slide direction. Forward pages enter from the right and
+    // leave to the left; going back reverses both so the motion matches the
+    // BACK button rather than always sliding forward.
+    @State private var goingBack = false
 
     var body: some View {
-        ZStack {
-            Color.appBackground.ignoresSafeArea()
+        GeometryReader { geo in
+            // Aspect-fit the reference canvas into the available space so the
+            // tutorial never clips, on any screen size or platform.
+            let scale = min(geo.size.width / onboardingCanvasWidth,
+                            geo.size.height / onboardingCanvasHeight,
+                            onboardingMaxScale)
+            ZStack {
+                Color.appBackground.ignoresSafeArea()
 
-            VStack(spacing: 0) {
-                wordmarkHeader
-
-                pageContent
-                    .frame(maxWidth: onboardingContentMaxWidth, maxHeight: .infinity)
-                    .id(step)
-                    .transition(.asymmetric(
-                        insertion: .move(edge: .trailing).combined(with: .opacity),
-                        removal: .move(edge: .leading).combined(with: .opacity)))
-
-                footer
-                    .frame(maxWidth: onboardingContentMaxWidth)
+                pageCanvas
+                    .frame(width: onboardingCanvasWidth, height: onboardingCanvasHeight)
+                    .scaleEffect(scale)
+                    .frame(width: geo.size.width, height: geo.size.height)
             }
-            .padding(pagePadding)
         }
+        .ignoresSafeArea()
+    }
+
+    private var pageCanvas: some View {
+        VStack(spacing: 0) {
+            wordmarkHeader
+
+            Spacer(minLength: pagePadding)
+
+            pageContent
+                .frame(maxWidth: onboardingContentMaxWidth)
+                .id(step)
+                .transition(.asymmetric(
+                    insertion: .move(edge: goingBack ? .leading : .trailing)
+                        .combined(with: .opacity),
+                    removal: .move(edge: goingBack ? .trailing : .leading)
+                        .combined(with: .opacity)))
+
+            Spacer(minLength: pagePadding)
+
+            footer
+                .frame(maxWidth: onboardingContentMaxWidth)
+        }
+        .padding(pagePadding)
     }
 
     // MARK: Header
@@ -140,7 +179,7 @@ struct OnboardingView: View {
     private var footer: some View {
         HStack {
             if !step.isFirst {
-                Button(action: { withAnimation { step = step.previous } }) {
+                Button(action: { goingBack = true; withAnimation { step = step.previous } }) {
                     Text("BACK")
                         .modifier(RetroFont(size: Theme.FontSize.control))
                         .tracking(1)
@@ -156,7 +195,11 @@ struct OnboardingView: View {
     private var continueButton: some View {
         Button(action: advance) {
             HStack(spacing: 8) {
-                if isChecking { ProgressView().controlSize(.small) }
+                if isChecking {
+                    ProgressView()
+                        .controlSize(.small)
+                        .tint(.white)
+                }
                 Text(continueLabel)
                     .modifier(RetroFont(size: Theme.FontSize.control))
                     .tracking(1)
@@ -188,6 +231,7 @@ struct OnboardingView: View {
     // MARK: Navigation
 
     private func advance() {
+        goingBack = false
         switch step {
         case .username: validateUsername()
         case .ready:    identity.completeOnboarding()
@@ -222,6 +266,8 @@ struct OnboardingUsernamePage: View {
     let errorText: String?
     let onSubmit: () -> Void
 
+    @FocusState private var fieldFocused: Bool
+
     private var trimmed: String {
         username.trimmingCharacters(in: .whitespacesAndNewlines)
     }
@@ -233,7 +279,7 @@ struct OnboardingUsernamePage: View {
                     OnboardingStepHeader(
                         index: 1,
                         title: "Claim your name",
-                        subtitle: "This is how you show up on the global leaderboard. Make it yours — you can rename it later from the sidebar.")
+                        subtitle: "This is how you show up on the global leaderboard. You can rename it later from the sidebar.")
                     usernameField
                 }
             },
@@ -246,29 +292,51 @@ struct OnboardingUsernamePage: View {
 
     private var usernameField: some View {
         VStack(alignment: .leading, spacing: Theme.Space.md) {
-            TextField("Username", text: $username)
-                .textFieldStyle(.plain)
-                .font(.system(size: usernameFieldSize, weight: .bold, design: .monospaced))
-                .foregroundColor(.textPrimary)
-                .padding(.horizontal, Theme.Space.xxl)
-                .padding(.vertical, Theme.Space.xl)
-                .background(
-                    RoundedRectangle(cornerRadius: Theme.Radius.panel)
-                        .fill(Color.surfaceLow)
-                        .overlay(RoundedRectangle(cornerRadius: Theme.Radius.panel)
-                            .stroke(errorText == nil ? Color.strokeStrong : Color.accentDanger,
-                                    lineWidth: Theme.Stroke.thin)))
-                .onSubmit(onSubmit)
-                #if os(iOS)
-                .autocorrectionDisabled()
-                .textInputAutocapitalization(.never)
-                #endif
+            ZStack(alignment: .leading) {
+                // SwiftUI's built-in placeholder is nearly invisible on the dark
+                // field, so draw our own in a legible muted tone instead.
+                if username.isEmpty {
+                    Text("Username")
+                        .font(.system(size: usernameFieldSize, weight: .bold, design: .monospaced))
+                        .foregroundColor(.textMuted)
+                }
+                TextField("", text: $username)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: usernameFieldSize, weight: .bold, design: .monospaced))
+                    .foregroundColor(.textPrimary)
+                    .focused($fieldFocused)
+                    .onSubmit(handleReturn)
+                    #if os(iOS)
+                    .submitLabel(.done)
+                    .autocorrectionDisabled()
+                    .textInputAutocapitalization(.never)
+                    #endif
+            }
+            .padding(.horizontal, Theme.Space.xxl)
+            .padding(.vertical, Theme.Space.xl)
+            .background(
+                RoundedRectangle(cornerRadius: Theme.Radius.panel)
+                    .fill(Color.surfaceLow)
+                    .overlay(RoundedRectangle(cornerRadius: Theme.Radius.panel)
+                        .stroke(errorText == nil ? Color.strokeStrong : Color.accentDanger,
+                                lineWidth: Theme.Stroke.thin)))
 
-            Text(errorText ?? "\(UsernameRules.minLength)–\(UsernameRules.maxLength) characters · letters, numbers, _ or -")
+            Text(errorText ?? "\(UsernameRules.minLength) to \(UsernameRules.maxLength) characters · letters, numbers, _ or -")
                 .font(.system(size: Theme.FontSize.callout))
                 .foregroundColor(errorText == nil ? .textMuted : .accentDanger)
                 .fixedSize(horizontal: false, vertical: true)
         }
+    }
+
+    /// On macOS, Return advances to the next page. On iOS the keyboard's Done
+    /// key should only dismiss the keyboard so the player can review the field
+    /// and tap CONTINUE deliberately.
+    private func handleReturn() {
+        #if os(macOS)
+        onSubmit()
+        #else
+        fieldFocused = false
+        #endif
     }
 }
 
@@ -329,6 +397,7 @@ struct OnboardingPreviewPanel<Content: View>: View {
             }
             .frame(maxWidth: .infinity)
         }
+        .frame(maxHeight: onboardingPreviewMaxHeight)
     }
 }
 

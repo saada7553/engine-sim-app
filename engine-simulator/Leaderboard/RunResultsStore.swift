@@ -36,6 +36,13 @@ final class RunResultsStore: ObservableObject {
     /// A dyno sweep has produced a usable peak that can be submitted.
     var hasDynoResult: Bool { peakPowerHp > 0 }
 
+    /// Whether the current captured result has already been posted to the
+    /// leaderboard. Cleared the instant a new sweep begins so each unique run
+    /// can be posted at most once (no spamming the post button).
+    @Published private(set) var posted: Bool = false
+
+    func markPosted() { posted = true }
+
     // MARK: Launch times (best per target id; lower is better)
 
     @Published private(set) var bestLaunchSec: [String: Double] = [:]
@@ -86,6 +93,7 @@ final class RunResultsStore: ObservableObject {
     private func clearDynoPeaks() {
         peakPowerHp = 0; peakPowerRpm = 0
         peakTorqueLbFt = 0; peakTorqueRpm = 0
+        posted = false
     }
 
     // MARK: Launch ingestion
