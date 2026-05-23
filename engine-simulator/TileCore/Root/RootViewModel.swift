@@ -21,6 +21,10 @@ class RootViewModel: ObservableObject, Observable {
     /// While true, the detail area shows the engine builder instead of the tile layout.
     @Published var isBuildingEngine: Bool = false
 
+    /// Drives the Settings surface (a floating sheet on macOS, a full-page
+    /// takeover on iOS). Opened from the sidebar footer's gear button.
+    @Published var isPresentingSettings: Bool = false
+
     /// The saved engine being edited, if the builder was opened from an
     /// existing user engine. Nil for a fresh build. Cleared when the builder
     /// closes so the next "Build New Engine" starts blank.
@@ -138,6 +142,11 @@ class RootViewModel: ObservableObject, Observable {
         hoveredTile = nil
         hoverPosition = nil
         browserMode = .operational
+        // Synchronous: the tile-tree rebuild reuses the shared engine VM (no
+        // C++ reload) and is cheap. Any heavy tile in the new layout (the 3D
+        // view, the community/leaderboard boards) shows its OWN completion-
+        // driven loader as it comes up — there's no global overlay to drift
+        // off-center or linger.
         rootTile = TileViewModel(engineVm: engineVm, data: newRootData)
         focusedTile = findFirstLeaf(in: rootTile)
         activeLayoutId = layoutId

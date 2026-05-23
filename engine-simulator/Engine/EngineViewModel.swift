@@ -72,6 +72,12 @@ class EngineViewModel: ObservableObject {
     /// hard-reset when the engine changes can use `.id(engineVm.engineId)`.
     @Published var engineId: UUID?
 
+    /// True from the moment the user picks a new engine until the C++ engine
+    /// for it has finished compiling/booting on the background queue. Drives
+    /// the dashboard loading indicator (3D tile overlay) so a slow swap reads
+    /// as "loading" rather than a frozen UI.
+    @Published var isSwappingEngine: Bool = false
+
     /// Set when the most-recent engine load failed (compile error / null
     /// engine). RootView observes this to surface a user-facing alert. Carries
     /// the name of the engine that failed so the alert can reference it.
@@ -189,13 +195,31 @@ class EngineViewModel: ObservableObject {
 
     let oscilloscopeManager: OscilloscopeManager
     private var timer: Timer?
-    private var selectionCancellable: AnyCancellable?
+    private var selectionCancellables = Set<AnyCancellable>()
     private var ecuCancellables = Set<AnyCancellable>()
+
+    /// Serial queue that the heavy C++ engine compile/setup (and the matching
+    /// teardown) runs on, off the main thread. Serial so the process-global
+    /// `chdir` the loader does can't race between an outgoing teardown and an
+    /// incoming build.
+    private let engineLoadQueue = DispatchQueue(label: "com.enginesim.engine-load",
+                                                qos: .userInitiated)
+    /// Coalescing state for engine selection. Every selection bumps
+    /// `requestedGeneration` and records `requestedEntry`; a queued background
+    /// build checks the generation when it STARTS and bails if a newer
+    /// selection has already arrived. So a single tap loads immediately (no
+    /// debounce latency) while a burst still only ever fully compiles the
+    /// engine the user lands on. Guarded by `loadLock` (touched from both the
+    /// main thread and `engineLoadQueue`).
+    private let loadLock = NSLock()
+    private var requestedGeneration: Int = 0
+    private var requestedEntry: EngineEntry?
 
     init(oscillioscopeManager: OscilloscopeManager) {
         self.oscilloscopeManager = oscillioscopeManager
         let initialEntry = EngineLibrary.shared.selectedEntry
         let newEngine = initialEntry.map { EngineWrapper(mrPath: $0.mrPath) } ?? EngineWrapper()
+        newEngine?.setDamageEnabled(AppSettings.shared.engineDamageEnabled)
         self.engine = newEngine
         self.redline = newEngine?.getEngineRedline() ?? 6500.0
         self.engineId = EngineLibrary.shared.selectedEngineId
@@ -219,14 +243,27 @@ class EngineViewModel: ObservableObject {
             EngineLibrary.shared.updateCapturedStats(forEngineId: id, stats: stats)
         }
 
-        // Rebuild the EngineWrapper whenever the user picks a different engine.
-        self.selectionCancellable = EngineLibrary.shared.$selectedEngineId
+        // Engine swap on selection. `beginEngineSwap` runs immediately (tear
+        // down the old engine, quiet the dashboard, raise the loader);
+        // `loadEngine` kicks off the off-main compile right away — no debounce,
+        // so a single tap is instant. Bursts coalesce via the generation check
+        // inside `loadEngine`, not by waiting.
+        EngineLibrary.shared.$selectedEngineId
             .dropFirst()
             .sink { [weak self] newId in
                 guard let self = self, let id = newId,
                       let entry = EngineLibrary.shared.entry(for: id) else { return }
-                self.swapEngine(to: entry)
+                self.beginEngineSwap()
+                self.loadEngine(for: entry)
             }
+            .store(in: &selectionCancellables)
+
+        // Push the "drive freely" damage toggle into the live engine whenever it
+        // changes (and once now, on subscribe). Survives engine swaps because
+        // `adopt` re-applies it to each freshly-built engine.
+        AppSettings.shared.$engineDamageEnabled
+            .sink { [weak self] enabled in self?.engine?.setDamageEnabled(enabled) }
+            .store(in: &selectionCancellables)
 
         // Setup Polling Timer (30 Hz) that runs even during UI interactions
         let timer = Timer(timeInterval: 1.0/30.0, repeats: true) { [weak self] _ in
@@ -257,8 +294,9 @@ class EngineViewModel: ObservableObject {
                 self.intakeAFR = state.intakeAFR
                 self.exhaustO2 = state.exhaustO2
 
-                // Tuning data
-                self.ignitionOffset = state.ignitionOffset
+                // Tuning data. `ignitionOffset` is owned by applyEcuTune (it
+                // publishes deviation-from-stock + surge); the C++ scalar now
+                // only holds the surge, so we don't mirror it back here.
                 self.fuelTrim = state.fuelTrim
                 self.ignitionMap = state.ignitionMap
 
@@ -347,17 +385,19 @@ class EngineViewModel: ObservableObject {
         fuelTrim = trim
     }
 
-    /// Read the live operating point, look the absolute spark advance + fuel
-    /// trim out of the ECU maps, and push them into the C++ engine. Since
-    /// the engine's own timing curve already supplies a base, we send only
-    /// the delta (mapValue − baseAtRpm) — the engine then computes
-    /// total = base + delta which equals the map value. Single source of
-    /// truth: the cell.
+    /// Per-tick application of the ECU tune to the engine. The ignition map's
+    /// full shape now lives in the C++ engine (pushed by `pushIgnitionMap` on
+    /// every edit), so here we only feed the live load — letting the engine's
+    /// own 2D lookup track the operating point at simulation rate — and ride
+    /// the "chaos surge" on the scalar ignition offset. Fuel is still a single
+    /// scalar trim. The published `ignitionOffset` stays the deviation from the
+    /// engine's stock curve (+ surge) so OBD2 and the live cell read correctly.
     private func applyEcuTune(engine: EngineWrapper) {
         let loadKpa = manifoldPressureToAbsoluteKpa(manifoldPressure)
-        let targetAdvance = ecu.ignitionAdvance(rpm: rpm, loadKpa: loadKpa)
+        engine.setIgnitionLoadKpa(loadKpa)
+
+        let mapAdvance = ecu.ignitionAdvance(rpm: rpm, loadKpa: loadKpa)
         let baseAdvance = ecu.baseTiming(at: rpm)
-        var delta = targetAdvance - baseAdvance
         var trim = ecu.fuelTrim(rpm: rpm, loadKpa: loadKpa)
 
         // A jagged map runs the engine erratically. Fuel trim alone has weak
@@ -371,17 +411,40 @@ class EngineViewModel: ObservableObject {
         // so applying it with the engine off would leave ADV / Δ / trim (and the
         // spark chart) oscillating on a dead, stationary car.
         let chaos = (runningSince != nil) ? tuneChaos() : 0.0
+        var surge = 0.0
         if chaos > 0 {
             let t = Date().timeIntervalSinceReferenceDate
-            delta += chaosWave(t, phase: 0.0) * chaos * ignitionChaosAmplitudeDeg
+            surge = chaosWave(t, phase: 0.0) * chaos * ignitionChaosAmplitudeDeg
             trim += chaosWave(t, phase: 2.3) * chaos * fuelChaosAmplitude
             trim = min(chaosTrimMax, max(chaosTrimMin, trim))
         }
         if tuneChaosLevel != chaos { tuneChaosLevel = chaos }
 
-        engine.setIgnitionOffset(delta)
+        // Scalar offset now carries only the surge — the map supplies the base
+        // shape. The published value still reads as deviation-from-stock so the
+        // diagnostics that key off it are unchanged.
+        engine.setIgnitionOffset(surge)
         engine.setFuelTrim(trim)
+        ignitionOffset = (mapAdvance - baseAdvance) + surge
         ecu.recordSample(rpm: rpm, loadKpa: loadKpa)
+    }
+
+    /// Mirror the full 2D ignition map into the C++ engine so spark timing
+    /// takes the tune's shape across rpm AND load (not just a scalar offset).
+    /// Called on every map edit and once when an engine is wired. The map stays
+    /// the Swift source of truth that gets persisted/shared; this only copies
+    /// it into the running engine.
+    private func pushIgnitionMap(engine: EngineWrapper) {
+        let rpmBins = ecu.rpmBins.map { NSNumber(value: $0) }
+        let loadBins = ecu.loadBins.map { NSNumber(value: $0) }
+        // Row-major [load][rpm]: ecu.ignitionMap is already indexed
+        // [loadIdx][rpmIdx], so flattening its rows in order matches.
+        var advances: [NSNumber] = []
+        advances.reserveCapacity(ecu.loadBins.count * ecu.rpmBins.count)
+        for loadRow in ecu.ignitionMap {
+            for advance in loadRow { advances.append(NSNumber(value: advance)) }
+        }
+        engine.setIgnitionTimingMapRpm(rpmBins, load: loadBins, advancesDeg: advances)
     }
 
     /// 0 (clean tune) → 1 (wildly jagged). Whichever map is more broken wins,
@@ -414,32 +477,66 @@ class EngineViewModel: ObservableObject {
         engine?.shutdown()
     }
 
-    /// Tear down the current EngineWrapper and bring up a fresh one bound to
-    /// the selected entry's .mr file. Resets transient UI state so the gauges
-    /// don't carry stale values across the swap.
-    private func swapEngine(to entry: EngineEntry) {
-        engine?.shutdown()
-        engine = nil
+    /// Stage one of an engine swap (main thread, fires immediately on
+    /// selection): tear the current engine down so its audio stops and the
+    /// gauges go quiet, raise the loading flag, and reset transient UI state.
+    /// The teardown's thread `join` runs on the background queue so a still-
+    /// running sim frame can't block the UI. Idempotent across rapid taps —
+    /// once the engine is nil, repeat calls only refresh the loader/state.
+    private func beginEngineSwap() {
+        isSwappingEngine = true
+
+        if let outgoing = engine {
+            engine = nil
+            engineLoadQueue.async { outgoing.shutdown() }
+        }
 
         // Captured leaderboard results belong to the outgoing engine.
         runResults.resetForEngineChange()
+        resetTransientRunState()
+    }
 
-        // Reset transient state so old values don't bleed through during the swap.
-        rpm = 0
-        gear = 0
-        isIgnitionOn = false
-        isStarterOn = false
-        runningSince = nil
-        autoKilledStarterOnSeizure = false
-        vehicleSpeed = 0
-        distanceTravelled = 0
-        fuelConsumed = 0
-        throttlePosition = 0
-        throttleHeld = false
-        revActive = false
-        revTarget = 0
+    /// Compile and boot the chosen engine off the main thread, then adopt it
+    /// back on main. Coalesces a burst of selections: each call records itself
+    /// as the latest request, and a queued build bails the moment it sees a
+    /// newer one — so spamming the sidebar fully compiles only the final pick,
+    /// while a lone tap starts building right away.
+    private func loadEngine(for entry: EngineEntry) {
+        loadLock.lock()
+        requestedGeneration &+= 1
+        let generation = requestedGeneration
+        requestedEntry = entry
+        loadLock.unlock()
 
-        let newEngine = EngineWrapper(mrPath: entry.mrPath)
+        isSwappingEngine = true
+
+        engineLoadQueue.async { [weak self] in
+            guard let self = self else { return }
+
+            // Superseded while we waited our turn on the serial queue — skip the
+            // expensive compile entirely.
+            self.loadLock.lock()
+            let isLatest = (generation == self.requestedGeneration)
+            self.loadLock.unlock()
+            guard isLatest else { return }
+
+            let newEngine = EngineWrapper(mrPath: entry.mrPath)
+
+            DispatchQueue.main.async {
+                // One more check: a newer selection may have arrived during the
+                // build. If so, throw this engine away rather than adopt it.
+                self.loadLock.lock()
+                let stillLatest = (generation == self.requestedGeneration)
+                self.loadLock.unlock()
+                guard stillLatest else { newEngine?.shutdown(); return }
+                self.adopt(newEngine, for: entry)
+            }
+        }
+    }
+
+    /// Wire a freshly-built engine into the live view model (main thread).
+    private func adopt(_ newEngine: EngineWrapper?, for entry: EngineEntry) {
+        newEngine?.setDamageEnabled(AppSettings.shared.engineDamageEnabled)
         engine = newEngine
         redline = newEngine?.getEngineRedline() ?? 6500.0
         engineId = entry.id
@@ -458,6 +555,25 @@ class EngineViewModel: ObservableObject {
         mostRecentEngineName = entry.name
         emptyPollStreak = 0
         failedEngineName = (newEngine?.loadSucceeded == true) ? nil : entry.name
+        isSwappingEngine = false
+    }
+
+    /// Zero out the live readouts so values from the outgoing engine don't
+    /// linger under the loader while the new one boots.
+    private func resetTransientRunState() {
+        rpm = 0
+        gear = 0
+        isIgnitionOn = false
+        isStarterOn = false
+        runningSince = nil
+        autoKilledStarterOnSeizure = false
+        vehicleSpeed = 0
+        distanceTravelled = 0
+        fuelConsumed = 0
+        throttlePosition = 0
+        throttleHeld = false
+        revActive = false
+        revTarget = 0
     }
 
     /// Build an EcuTuneModel seeded from the engine's current redline and
@@ -482,11 +598,17 @@ class EngineViewModel: ObservableObject {
     /// the next runloop tick instead of waiting for the 30 Hz polling cycle.
     private func bindToEcu() {
         ecuCancellables.removeAll()
+
+        // Mirror the freshly-built (or just-restored) map into the engine right
+        // away, so spark timing takes the tune's shape before the first edit.
+        if let engine { pushIgnitionMap(engine: engine) }
+
         Publishers.CombineLatest(ecu.$ignitionMap, ecu.$fuelMap)
-            .dropFirst()  // initial publish on subscribe — no engine call yet
+            .dropFirst()  // initial publish on subscribe — handled above
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in
                 guard let self = self, let engine = self.engine else { return }
+                self.pushIgnitionMap(engine: engine)
                 self.applyEcuTune(engine: engine)
             }
             .store(in: &ecuCancellables)

@@ -5,6 +5,25 @@
 #include "../include/units.h"
 
 #include <cmath>
+#include <algorithm>
+
+namespace {
+    // Bracket `v` within an ascending bin array, returning the low/high indices
+    // and the interpolation fraction between them. Clamps at both ends.
+    void bracketBins(double v, const double *bins, int n,
+                     int &lo, int &hi, double &frac) {
+        if (n <= 1 || v <= bins[0]) { lo = hi = 0; frac = 0.0; return; }
+        if (v >= bins[n - 1]) { lo = hi = n - 1; frac = 0.0; return; }
+        for (int i = 0; i < n - 1; ++i) {
+            if (v >= bins[i] && v < bins[i + 1]) {
+                lo = i; hi = i + 1;
+                frac = (v - bins[i]) / (bins[i + 1] - bins[i]);
+                return;
+            }
+        }
+        lo = hi = n - 1; frac = 0.0;
+    }
+}
 
 IgnitionModule::IgnitionModule() {
     m_plugs = nullptr;
@@ -118,11 +137,66 @@ bool IgnitionModule::isPlugEnabled(int cylinderIndex) const {
 }
 
 double IgnitionModule::getTimingAdvance() {
-    return m_timingCurve->sampleTriangle(-m_crankshaft->m_body.v_theta) + m_ignitionOffset;
+    const double w = -m_crankshaft->m_body.v_theta;
+    const double load = m_mapCurrentLoad.load(std::memory_order_relaxed);
+    double base;
+    {
+        std::lock_guard<std::mutex> lock(m_mapMutex);
+        base = m_hasTimingMap
+            ? sampleTimingMap(w, load)
+            : m_timingCurve->sampleTriangle(w);
+    }
+    return base + m_ignitionOffset;
 }
 
 double IgnitionModule::getTimingAdvanceForRpm(double rpm) {
+    // Pure base curve — kept stable so the Swift ECU model can seed its cells
+    // and compute deviations against the engine's stock timing.
     return m_timingCurve->sampleTriangle(units::rpm(rpm));
+}
+
+double IgnitionModule::getTunedAdvanceForRpm(double rpm) {
+    const double w = units::rpm(rpm);
+    const double load = m_mapCurrentLoad.load(std::memory_order_relaxed);
+    std::lock_guard<std::mutex> lock(m_mapMutex);
+    return m_hasTimingMap
+        ? sampleTimingMap(w, load)
+        : m_timingCurve->sampleTriangle(w);
+}
+
+void IgnitionModule::setTimingMap(const double *wBins, int nW,
+                                  const double *loadBins, int nLoad,
+                                  const double *advRad) {
+    std::lock_guard<std::mutex> lock(m_mapMutex);
+    if (nW <= 0 || nLoad <= 0) { m_hasTimingMap = false; return; }
+    const int cw = std::min(nW, MaxMapRpmBins);
+    const int cl = std::min(nLoad, MaxMapLoadBins);
+    for (int i = 0; i < cw; ++i) m_mapW[i] = wBins[i];
+    for (int j = 0; j < cl; ++j) m_mapLoad[j] = loadBins[j];
+    // Source is row-major with stride nW; our buffer uses stride MaxMapRpmBins.
+    for (int j = 0; j < cl; ++j) {
+        for (int i = 0; i < cw; ++i) {
+            m_mapAdv[j * MaxMapRpmBins + i] = advRad[j * nW + i];
+        }
+    }
+    m_mapRpmCount = cw;
+    m_mapLoadCount = cl;
+    m_hasTimingMap = true;
+}
+
+// Caller must hold m_mapMutex.
+double IgnitionModule::sampleTimingMap(double w, double loadKpa) const {
+    int xl, xh, yl, yh;
+    double xf, yf;
+    bracketBins(w, m_mapW, m_mapRpmCount, xl, xh, xf);
+    bracketBins(loadKpa, m_mapLoad, m_mapLoadCount, yl, yh, yf);
+    const double v00 = m_mapAdv[yl * MaxMapRpmBins + xl];
+    const double v10 = m_mapAdv[yl * MaxMapRpmBins + xh];
+    const double v01 = m_mapAdv[yh * MaxMapRpmBins + xl];
+    const double v11 = m_mapAdv[yh * MaxMapRpmBins + xh];
+    const double v0 = v00 + xf * (v10 - v00);
+    const double v1 = v01 + xf * (v11 - v01);
+    return v0 + yf * (v1 - v0);
 }
 
 IgnitionModule::SparkPlug *IgnitionModule::getPlug(int i) {

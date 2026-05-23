@@ -115,7 +115,7 @@ struct CommunityTileView: View {
 
     @ViewBuilder private var gridOrState: some View {
         if model.isLoading && model.engines.isEmpty {
-            stateBox { ProgressView().controlSize(.small).tint(.accentLive) }
+            stateBox { DashLoader(diameter: 30, label: "Loading engines") }
         } else if let error = model.errorText {
             stateBox { CommunityNotice(symbol: "wifi.slash", text: error) }
         } else if model.engines.isEmpty {
@@ -228,7 +228,7 @@ private struct PublishStrip: View {
     private var publishButton: some View {
         Button(action: publish) {
             HStack(spacing: 5) {
-                if publishing { ProgressView().controlSize(.small) }
+                if publishing { DashLoader(diameter: 13, tint: .black) }
                 Text(buttonLabel)
                     .font(.system(size: cButtonFont, weight: .bold, design: .monospaced))
                     .tracking(1)
@@ -469,7 +469,7 @@ private struct EngineThumbnail: View {
                     .font(.system(size: 30))
                     .foregroundColor(.textFaint)
             } else {
-                ProgressView().controlSize(.small).tint(.accentLive)
+                DashLoader(diameter: 22)
             }
         }
         .task(id: spec?.id) { await loadImage() }
@@ -490,7 +490,7 @@ private struct LoadMoreButton: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: 6) {
-                if isLoading { ProgressView().controlSize(.small) }
+                if isLoading { DashLoader(diameter: 13, tint: .textSecondary) }
                 Text(isLoading ? "LOADING" : "LOAD MORE")
                     .font(.system(size: cButtonFont, weight: .bold, design: .monospaced))
                     .tracking(1)

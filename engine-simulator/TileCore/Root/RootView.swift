@@ -66,7 +66,19 @@ struct RootView: View {
             // nested EngineViewModel reference inside RootView itself wasn't
             // firing updates reliably.
             EngineLoadAlertHost(vm: vm.engineVm)
+
+            // iOS settings take over the content area (like the community engine
+            // detail). macOS uses a floating sheet — see the modifier below.
+            #if !os(macOS)
+            if vm.isPresentingSettings {
+                SettingsView(onClose: { vm.isPresentingSettings = false })
+                    .transition(.opacity)
+            }
+            #endif
         }
+        #if !os(macOS)
+        .animation(.easeInOut(duration: 0.2), value: vm.isPresentingSettings)
+        #endif
         .alert("Save Workspace", isPresented: $vm.isPresentingSaveLayout) {
             TextField("Layout Name", text: $vm.pendingLayoutName)
             Button("Cancel", role: .cancel) { vm.cancelSaveLayout() }
@@ -82,6 +94,11 @@ struct RootView: View {
         #if os(macOS)
         .sheet(isPresented: $purchaseManager.isPresentingPaywall) {
             PaywallSheet(manager: purchaseManager)
+        }
+        // Settings as a floating popup, matching the paywall / community detail.
+        .sheet(isPresented: $vm.isPresentingSettings) {
+            SettingsView(onClose: { vm.isPresentingSettings = false })
+                .environmentObject(purchaseManager)
         }
         #else
         .fullScreenCover(isPresented: $purchaseManager.isPresentingPaywall) {

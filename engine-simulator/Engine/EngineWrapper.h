@@ -175,6 +175,19 @@ typedef NS_ENUM(NSInteger, EngineScopeType) {
 - (void)setIgnitionOffset:(double)offset;
 - (void)setFuelTrim:(double)trim;
 
+/// Push the full 2D ignition tune into the engine. `rpmBins` (rpm) and
+/// `loadBins` (kPa absolute) are the axes; `advancesDeg` holds the per-cell
+/// spark advance in degrees, row-major as [load][rpm] (loadBins.count *
+/// rpmBins.count entries). Once set, the engine's spark timing follows the
+/// map's shape across both rpm and load instead of a single scalar offset.
+- (void)setIgnitionTimingMapRpm:(NSArray<NSNumber *> *)rpmBins
+                           load:(NSArray<NSNumber *> *)loadBins
+                    advancesDeg:(NSArray<NSNumber *> *)advancesDeg;
+
+/// Feed the live manifold load (kPa absolute) so the 2D map lookup tracks the
+/// current operating point. Cheap; call every tick.
+- (void)setIgnitionLoadKpa:(double)loadKpa;
+
 /// Sample the engine's base timing curve (in degrees BTDC) at an arbitrary
 /// rpm. The curve is built into the engine when the .mr file loads, so this
 /// gives the ECU map a single source of truth to populate itself from.
@@ -184,6 +197,10 @@ typedef NS_ENUM(NSInteger, EngineScopeType) {
 - (void)setCoolantPumpEnabled:(BOOL)enabled;
 - (void)setOilPumpEnabled:(BOOL)enabled;
 - (void)repairEngine;
+/// Master damage switch. When NO, the engine can't be damaged (money-shift,
+/// over-rev, wear are all suppressed and existing damage heals) — "drive
+/// freely" mode.
+- (void)setDamageEnabled:(BOOL)enabled;
 
 // Per-cylinder spark control. Cutting ignition stops that cylinder's plug
 // from firing; the charge is drawn in and pumped out unburnt.

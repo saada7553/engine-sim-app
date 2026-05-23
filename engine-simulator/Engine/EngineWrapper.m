@@ -23,6 +23,7 @@
 #include "s_audio_file.h"
 #include "oscilloscope_cluster.h"
 #include <thread>
+#include <vector>
 #include <atomic>
 #include <cmath>
 
@@ -593,6 +594,29 @@ static const double kCylinderPressurePeakDecay = 0.985;
     }
 }
 
+- (void)setIgnitionTimingMapRpm:(NSArray<NSNumber *> *)rpmBins
+                           load:(NSArray<NSNumber *> *)loadBins
+                    advancesDeg:(NSArray<NSNumber *> *)advancesDeg {
+    if (!_engine) return;
+    const int nRpm = (int)rpmBins.count;
+    const int nLoad = (int)loadBins.count;
+    if (nRpm <= 0 || nLoad <= 0) return;
+    if ((int)advancesDeg.count != nRpm * nLoad) return;
+
+    // Convert to the engine's internal units: rpm → rad/s, degrees → radians.
+    // Load stays in kPa to match the live load fed via setIgnitionLoadKpa.
+    std::vector<double> w(nRpm), load(nLoad), adv(nRpm * nLoad);
+    for (int i = 0; i < nRpm; ++i)  w[i]    = units::rpm(rpmBins[i].doubleValue);
+    for (int j = 0; j < nLoad; ++j) load[j] = loadBins[j].doubleValue;
+    for (int k = 0; k < nRpm * nLoad; ++k) adv[k] = kDegToRad(advancesDeg[k].doubleValue);
+
+    _engine->setIgnitionTimingMap(w.data(), nRpm, load.data(), nLoad, adv.data());
+}
+
+- (void)setIgnitionLoadKpa:(double)loadKpa {
+    if (_engine) _engine->setIgnitionLoad(loadKpa);
+}
+
 - (void)setFuelTrim:(double)trim {
     if (_engine) {
         _engine->setFuelTrim(trim);
@@ -680,6 +704,10 @@ static const double kCylinderPressurePeakDecay = 0.985;
 }
 - (void)repairEngine {
     if (_sim) _sim->repairThermalAndDamage();
+}
+
+- (void)setDamageEnabled:(BOOL)enabled {
+    if (_sim) _sim->setDamageEnabled(enabled ? true : false);
 }
 
 - (void)setCylinderIgnitionEnabled:(int)cylinder enabled:(BOOL)enabled {

@@ -306,9 +306,7 @@ struct OnboardingView: View {
         Button(action: advance) {
             HStack(spacing: 8) {
                 if isChecking {
-                    ProgressView()
-                        .controlSize(.small)
-                        .tint(.white)
+                    DashLoader(diameter: 13, tint: .white)
                 }
                 Text(continueLabel)
                     .modifier(RetroFont(size: Theme.FontSize.control))

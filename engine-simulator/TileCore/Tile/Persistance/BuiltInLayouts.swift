@@ -80,7 +80,7 @@ enum BuiltInLayouts {
     /// big RPM gauge.
     static let defaultLayout: TileLayout = TileLayout(
         id: BuiltInLayoutId.default,
-        name: "Default",
+        name: "Simple",
         rootData: BuiltInBuilder.split(.horizontal, [
             BuiltInBuilder.leaf(.engine3DProcedural,
                                 size: CGSize(width: 1080, height: 1000)),
@@ -108,10 +108,10 @@ enum BuiltInLayouts {
 
     /// macOS Cockpit: the original 3D-over-controls + 8-gauge grid.
     /// iOS Cockpit: 3D engine takes the bulk of the left column (it's the
-    /// star of the cockpit), shifter is shorter underneath. On the right
-    /// the two intake/AFR gauges are replaced by the clutch + intake
-    /// cross-section drawings so the user can see what their right thumb
-    /// is doing on the throttle slider.
+    /// star of the cockpit), shifter is shorter underneath. Middle column is
+    /// the at-a-glance driving trio (RPM, vehicle speed, dyno); the right
+    /// column carries the intake story top-to-bottom — manifold pressure, the
+    /// intake-manifold cross-section, then the live flow curve.
     private static var cockpitRoot: TileData {
         #if os(macOS)
         return BuiltInBuilder.split(.horizontal, [
@@ -145,17 +145,18 @@ enum BuiltInLayouts {
                                     size: CGSize(width: 680, height: 420)),
             ], size: CGSize(width: 680, height: 1000)),
             BuiltInBuilder.split(.horizontal, [
+                // Middle column: RPM, vehicle speed, dyno.
                 BuiltInBuilder.split(.vertical, [
-                    BuiltInBuilder.leaf(.rpmGauge,                  size: CGSize(width: 460, height: 250)),
-                    BuiltInBuilder.leaf(.manifoldPressureGauge,     size: CGSize(width: 460, height: 250)),
-                    BuiltInBuilder.leaf(.clutchPanel,               size: CGSize(width: 460, height: 250)),
-                    BuiltInBuilder.leaf(.dynoOscilloscope,          size: CGSize(width: 460, height: 250)),
+                    BuiltInBuilder.leaf(.rpmGauge,                  size: CGSize(width: 460, height: 333)),
+                    BuiltInBuilder.leaf(.speedometerGauge,          size: CGSize(width: 460, height: 333)),
+                    BuiltInBuilder.leaf(.dynoOscilloscope,          size: CGSize(width: 460, height: 334)),
                 ], size: CGSize(width: 460, height: 1000)),
+                // Right column: manifold pressure, intake-manifold
+                // cross-section, flow curve.
                 BuiltInBuilder.split(.vertical, [
-                    BuiltInBuilder.leaf(.speedometerGauge,          size: CGSize(width: 460, height: 250)),
-                    BuiltInBuilder.leaf(.volumetricEfficiencyGauge, size: CGSize(width: 460, height: 250)),
-                    BuiltInBuilder.leaf(.intakePanel,               size: CGSize(width: 460, height: 250)),
-                    BuiltInBuilder.leaf(.flowOscilloscope,          size: CGSize(width: 460, height: 250)),
+                    BuiltInBuilder.leaf(.manifoldPressureGauge,     size: CGSize(width: 460, height: 333)),
+                    BuiltInBuilder.leaf(.intakePanel,               size: CGSize(width: 460, height: 333)),
+                    BuiltInBuilder.leaf(.flowOscilloscope,          size: CGSize(width: 460, height: 334)),
                 ], size: CGSize(width: 460, height: 1000)),
             ], size: CGSize(width: 920, height: 1000)),
         ])

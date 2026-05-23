@@ -225,7 +225,7 @@ void OscilloscopeCluster::sample() {
         for (int i = 0; i < sparkSampleCount; ++i) {
             const double rpm = (sparkMaxRpm * i) / (sparkSampleCount - 1);
             const double advanceRad = engine->getIgnitionOffset()
-                                    + engine->getTimingAdvanceForRpm(rpm);
+                                    + engine->getTunedAdvanceForRpm(rpm);
             m_sparkAdvanceScope->addDataPoint(rpm, advanceRad * radToDeg);
         }
     }

@@ -222,7 +222,7 @@ struct CommunityDetailOverlay: View {
     private var downloadButton: some View {
         Button(action: download) {
             HStack(spacing: 6) {
-                if downloading { ProgressView().controlSize(.small) }
+                if downloading { DashLoader(diameter: 13, tint: .black) }
                 Image(systemName: downloaded ? "checkmark.circle.fill" : "square.and.arrow.down")
                 Text(downloaded ? "ADDED TO GARAGE" : "DOWNLOAD")
                     .font(.system(size: 14, weight: .bold, design: .monospaced)).tracking(1)
@@ -241,7 +241,7 @@ struct CommunityDetailOverlay: View {
         Button(action: unpublish) {
             HStack(spacing: 6) {
                 if unpublishing {
-                    ProgressView().controlSize(.small)
+                    DashLoader(diameter: 13, tint: .textSecondary)
                 } else {
                     Image(systemName: "trash").font(.system(size: 12, weight: .semibold))
                 }

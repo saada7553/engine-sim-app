@@ -14,15 +14,14 @@ import SwiftUI
 
 private let cellSpacing: CGFloat = 1
 private let cellCornerRadius: CGFloat = Theme.Radius.lamp
-// iOS shrinks the Y-axis label channel and drops the rotated "MAP (kPa)"
-// title so the heatmap gets back the dead space on the left.
-#if os(macOS)
-private let labelChannelWidth: CGFloat = 44
-#else
-private let labelChannelWidth: CGFloat = 26
-#endif
-private let labelChannelHeight: CGFloat = 20
-private let stepBumpScale: Double = 5.0  // big-bump button multiplies the per-cell step
+// Left gutter that carries the load-axis header + numbers. Kept narrow (no
+// rotated axis title) so the heatmap gets the width on both platforms.
+private let labelChannelWidth: CGFloat = 30
+private let labelChannelHeight: CGFloat = 22
+private let liveDotSize: CGFloat = 6
+// The coarse ± step is this multiple of the per-cell fine step (0.5° / 0.1
+// AFR), so the buttons offer both a fine nudge and a big jump.
+private let coarseStepScale: Double = 10.0
 
 /// Thin wrapper that only observes vm. When the engine is swapped, vm.ecu is
 /// replaced with a brand-new EcuTuneModel — keying the inner editor's `.id`
@@ -35,6 +34,9 @@ struct EcuTuningView: View {
     var body: some View {
         EcuTuningEditor(vm: vm, ecu: vm.ecu)
             .id(ObjectIdentifier(vm.ecu))
+            // Same engine-swap loader the 3D tile uses — until the new engine is
+            // adopted, the map below is the *previous* engine's tune, so cover it.
+            .loadingOverlay(vm.isSwappingEngine, label: "Loading engine")
     }
 }
 
@@ -44,50 +46,72 @@ private struct EcuTuningEditor: View {
     @State private var activeMap: EcuMapKind = .ignition
     @State private var selectedCell: EcuCellCoord = EcuCellCoord(loadIndex: 0, rpmIndex: 0)
     #if !os(macOS)
-    /// Active paint delta; nil = read-only. Tapping a paint pill sets this,
-    /// then dragging across the heatmap bumps each cell the finger crosses.
-    @State private var paintMode: IosPaintMode? = nil
-    /// Last cell painted in the current drag, so we don't bump the same
-    /// cell repeatedly while the finger sits over it.
+    /// Armed paint amount (the exact signed bump applied per cell) or nil when
+    /// off. Touch's advantage over the desktop click model: arm a ± step with a
+    /// button, then drag across the heatmap to bump every cell you cross.
+    @State private var paintDelta: Double? = nil
+    /// Last cell painted this drag, so holding the finger still over one cell
+    /// doesn't bump it repeatedly.
     @State private var lastPaintedCell: EcuCellCoord? = nil
     #endif
 
     var body: some View {
-        VStack(spacing: Theme.Space.md) {
-            tabBar
+        VStack(spacing: Theme.Space.sm) {
             mapBody
-            #if os(macOS)
-            controlRow
-            liveReadouts
-            #else
-            // iOS replaces the click-+/- row with a paint-mode bar: pick a
-            // delta and drag across the heatmap to bump cells. liveReadouts
-            // stays but scales smaller so it fits without scrolling.
-            iosPaintBar
-            iosLiveReadouts
-            #endif
+            bottomBar
         }
-        #if os(macOS)
-        .padding(Theme.Space.lg)
-        #else
         .padding(Theme.Space.sm)
-        #endif
         .background(Color.appBackground)
         .onAppear { selectTopLeftCell() }
     }
 
-    // MARK: - Tabs
+    // MARK: - Bottom bar (edit controls + map selector)
 
-    private var tabBar: some View {
-        HStack(spacing: 6) {
-            TabButton(label: "IGNITION", active: activeMap == .ignition) {
-                activeMap = .ignition
-            }
-            TabButton(label: "FUEL", active: activeMap == .fuel) {
-                activeMap = .fuel
-            }
-            Spacer()
+    /// Everything that isn't the graph lives in one bottom strip: the edit
+    /// controls on the left, and the map selector + legend filling what used
+    /// to be empty space on the right. The heatmap takes the freed top space.
+    private var bottomBar: some View {
+        HStack(alignment: .center, spacing: Theme.Space.md) {
+            editControls
+            Spacer(minLength: Theme.Space.sm)
+            mapSelector
         }
+    }
+
+    /// Map tabs over the legend, right-aligned so it sits in the bottom-right
+    /// corner. The legend keeps the grid self-explanatory: a key for the green
+    /// tracer dot and a plain-language label for what the cell numbers mean.
+    private var mapSelector: some View {
+        VStack(alignment: .trailing, spacing: Theme.Space.xs) {
+            HStack(spacing: Theme.Space.sm) {
+                TabButton(label: "IGNITION", active: activeMap == .ignition) {
+                    selectMap(.ignition)
+                }
+                TabButton(label: "FUEL", active: activeMap == .fuel) {
+                    selectMap(.fuel)
+                }
+            }
+            HStack(spacing: Theme.Space.md) {
+                HStack(spacing: 4) {
+                    Circle()
+                        .fill(Color.accentOk)
+                        .frame(width: liveDotSize, height: liveDotSize)
+                    Text("ENGINE NOW")
+                        .modifier(RetroFont(size: Theme.FontSize.caption))
+                        .foregroundColor(.white.opacity(0.55))
+                }
+                Text(cellLegend)
+                    .modifier(RetroFont(size: Theme.FontSize.callout, weight: .bold))
+                    .foregroundColor(.white)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+            }
+        }
+    }
+
+    /// Plain-language description of what each cell's number represents.
+    private var cellLegend: String {
+        activeMap == .ignition ? "SPARK TIMING (°)" : "AIR–FUEL RATIO"
     }
 
     /// Cell the live tracer dot is currently sitting in. Used to draw the
@@ -103,22 +127,20 @@ private struct EcuTuningEditor: View {
 
     private var mapBody: some View {
         HStack(alignment: .top, spacing: 4) {
-            // Rotated Y-axis title eats ~14pt of width and isn't needed on
-            // iOS where every pt of heatmap counts.
-            #if os(macOS)
-            Text("MAP  (kPa)")
-                .modifier(RetroFont(size: Theme.FontSize.footnote))
-                .foregroundColor(.white.opacity(0.45))
-                .tracking(1.0)
-                .rotationEffect(.degrees(-90))
-                .fixedSize()
-                .frame(width: 14)
-                .padding(.top, labelChannelHeight)
-            #endif
-
-            // Y axis numeric labels (load, high at top).
+            // Load axis: a compact "LOAD / kPa" header sits above the numeric
+            // bins (high load at top). No rotated title — that was the big
+            // dead-space gutter on the left.
             VStack(spacing: cellSpacing) {
-                Color.clear.frame(height: labelChannelHeight)
+                VStack(spacing: 0) {
+                    Text("LOAD")
+                        .modifier(RetroFont(size: Theme.FontSize.caption))
+                        .foregroundColor(.white.opacity(0.55))
+                    Text("kPa")
+                        .modifier(RetroFont(size: Theme.FontSize.micro))
+                        .foregroundColor(.white.opacity(0.4))
+                }
+                .frame(height: labelChannelHeight)
+
                 ForEach((0..<ecu.loadBins.count).reversed(), id: \.self) { rowIdx in
                     Text("\(Int(ecu.loadBins[rowIdx]))")
                         .modifier(RetroFont(size: Theme.FontSize.footnote))
@@ -132,16 +154,11 @@ private struct EcuTuningEditor: View {
             VStack(spacing: 2) {
                 heatmapGrid
                 xAxisLabels
-                // x-axis title is helpful on macOS, redundant on iOS where
-                // the bin numbers right above clearly read as RPM.
-                #if os(macOS)
-                Text("ENGINE  SPEED  (rpm)")
-                    .modifier(RetroFont(size: Theme.FontSize.footnote))
-                    .foregroundColor(.white.opacity(0.45))
-                    .tracking(1.0)
+                Text("RPM")
+                    .modifier(RetroFont(size: Theme.FontSize.caption))
+                    .foregroundColor(.white.opacity(0.5))
+                    .tracking(1.5)
                     .frame(maxWidth: .infinity)
-                    .padding(.top, 1)
-                #endif
             }
         }
     }
@@ -168,25 +185,20 @@ private struct EcuTuningEditor: View {
                 tracerLayer(cellW: cellW, cellH: cellH)
             }
             #if !os(macOS)
-            // Paint-mode drag: dragging across the heatmap with an active
-            // paint mode bumps every cell the finger crosses by that delta.
+            // Touch: one gesture handles both modes. A paint direction armed →
+            // bump every cell the finger crosses; nothing armed → tap selects.
             .contentShape(Rectangle())
             .gesture(
                 DragGesture(minimumDistance: 0)
                     .onChanged { value in
-                        guard let mode = paintMode else { return }
+                        // Paint only while a step is armed; otherwise the touch
+                        // is a no-op (the ± buttons say to arm first).
+                        guard let delta = paintDelta else { return }
                         guard let coord = cellAt(point: value.location,
-                                                  cellW: cellW,
-                                                  cellH: cellH) else { return }
+                                                 cellW: cellW, cellH: cellH) else { return }
                         if coord == lastPaintedCell { return }
                         lastPaintedCell = coord
-                        // Don't touch selectedCell — the iOS heatmap has
-                        // no yellow "selected" outline anymore. The paint
-                        // bar reads its current cell from `lastPaintedCell`
-                        // (see iosPaintBar's value lookup below).
-                        ecu.bumpCell(in: activeMap,
-                                     at: coord,
-                                     by: mode.delta(step: mapStep()))
+                        ecu.bumpCell(in: activeMap, at: coord, by: delta)
                     }
                     .onEnded { _ in lastPaintedCell = nil }
             )
@@ -196,48 +208,44 @@ private struct EcuTuningEditor: View {
     }
 
     #if !os(macOS)
-    /// Map a touch point inside the heatmap into a cell coordinate, or nil
-    /// if the touch fell outside any cell. The visual layout reverses load
-    /// bins (highest at top), so y → row needs the same flip.
+    /// Map a touch point inside the heatmap to a cell coordinate (nil if
+    /// outside). The grid renders load high-to-low top-to-bottom, so the
+    /// visual row is flipped back to a load-bin index.
     private func cellAt(point: CGPoint, cellW: CGFloat, cellH: CGFloat) -> EcuCellCoord? {
         let rpmCount = ecu.rpmBins.count
         let loadCount = ecu.loadBins.count
         guard rpmCount > 0, loadCount > 0, cellW > 0, cellH > 0 else { return nil }
         let col = Int(point.x / (cellW + cellSpacing))
         let rowVisual = Int(point.y / (cellH + cellSpacing))
-        guard col >= 0 && col < rpmCount,
-              rowVisual >= 0 && rowVisual < loadCount else { return nil }
-        let row = (loadCount - 1) - rowVisual
-        return EcuCellCoord(loadIndex: row, rpmIndex: col)
+        guard col >= 0, col < rpmCount, rowVisual >= 0, rowVisual < loadCount else { return nil }
+        return EcuCellCoord(loadIndex: (loadCount - 1) - rowVisual, rpmIndex: col)
     }
     #endif
 
+    /// Click (macOS) selects a cell for the stepper. On touch the grid-level
+    /// drag gesture handles selection/painting, so the cell is a plain face
+    /// there (a per-cell Button would swallow the drag).
     private func cellView(rowIdx: Int, colIdx: Int) -> some View {
         let coord = EcuCellCoord(loadIndex: rowIdx, rpmIndex: colIdx)
         let isLive = (liveCell == coord)
         // The live cell shows the value the engine is ACTUALLY applying. On a
         // bad tune that includes the runtime chaos surge, so the live cell's
-        // number and colour jitter in lock-step with ADV / TRIM instead of
+        // number and colour jitter in lock-step with the engine instead of
         // sitting frozen at the stored value. Every other cell shows its
-        // stored tune value as before.
+        // stored tune value.
         let chaos = isLive ? vm.tuneChaosLevel : 0.0
         let value = (chaos > 0 ? liveAppliedValue() : nil)
             ?? ecu.value(in: activeMap, at: coord)
-        // iOS doesn't render a yellow "selected cell" outline — selection
-        // would fight with the paint-mode drag (the per-cell Button consumed
-        // gestures, and dragging would leave a yellow trail across cells
-        // the user had no intention of "selecting"). On macOS keep the
-        // tap-to-select Button so the +/− controlRow knows which cell to
-        // edit.
         #if os(macOS)
-        let isSelected = selectedCell == coord
         return Button {
             selectedCell = coord
         } label: {
-            cellFace(value: value, isLive: isLive, isSelected: isSelected, chaos: chaos)
+            cellFace(value: value, isLive: isLive,
+                     isSelected: selectedCell == coord, chaos: chaos)
         }
         .buttonStyle(.plain)
         #else
+        // Touch paints directly, so there's no "selected cell" to outline.
         return cellFace(value: value, isLive: isLive, isSelected: false, chaos: chaos)
         #endif
     }
@@ -328,47 +336,22 @@ private struct EcuTuningEditor: View {
         .allowsHitTesting(false)
     }
 
-    // MARK: - Control row (always visible)
+    // MARK: - Edit controls
 
-    /// One always-visible row with the selected cell readout, per-cell ± edits
-    /// and map-wide actions (bump-all / smooth / reset). Nothing appears or
-    /// disappears based on selection state.
-    private var controlRow: some View {
-        let coord = selectedCell
-        let value = ecu.value(in: activeMap, at: coord)
-        return HStack(spacing: 8) {
-            VStack(alignment: .leading, spacing: 1) {
-                Text(cellLabel(coord))
-                    .modifier(RetroFont(size: Theme.FontSize.footnote))
-                    .foregroundColor(.white.opacity(0.7))
-                    .monospacedDigit()
-                    .frame(width: 140, alignment: .leading)
-                Text(formatValue(value))
-                    .modifier(RetroFont(size: Theme.FontSize.title))
-                    .foregroundColor(.white)
-                    .monospacedDigit()
-                    .frame(width: 140, alignment: .leading)
+    /// Two clearly-labelled scopes of editing, identical on both platforms.
+    /// ADJUST CELL nudges the selected cell (yellow outline); WHOLE MAP shifts
+    /// or reshapes every cell at once. Each ± button carries its step and unit
+    /// — a fine nudge and a coarse jump per direction — so nothing is an
+    /// unlabelled glyph.
+    private var editControls: some View {
+        VStack(alignment: .leading, spacing: Theme.Space.xs) {
+            scopeRow(title: adjustTitle) {
+                cellButton(-coarseStep)
+                cellButton(-mapStep())
+                cellButton(+mapStep())
+                cellButton(+coarseStep)
             }
-            .frame(width: 140, alignment: .leading)
-
-            HStack(spacing: 3) {
-                EditButton(label: "− \(formatStep(stepBumpScale))") {
-                    ecu.bumpCell(in: activeMap, at: coord, by: -mapStep() * stepBumpScale)
-                }
-                EditButton(label: "−") {
-                    ecu.bumpCell(in: activeMap, at: coord, by: -mapStep())
-                }
-                EditButton(label: "+") {
-                    ecu.bumpCell(in: activeMap, at: coord, by: +mapStep())
-                }
-                EditButton(label: "+ \(formatStep(stepBumpScale))") {
-                    ecu.bumpCell(in: activeMap, at: coord, by: +mapStep() * stepBumpScale)
-                }
-            }
-
-            Spacer(minLength: 8)
-
-            HStack(spacing: 3) {
+            scopeRow(title: "WHOLE MAP") {
                 SmallActionButton(label: "−ALL") { ecu.bumpAll(in: activeMap, by: -mapStep()) }
                 SmallActionButton(label: "+ALL") { ecu.bumpAll(in: activeMap, by: +mapStep()) }
                 SmallActionButton(label: "SMOOTH") { ecu.smooth(activeMap) }
@@ -376,104 +359,68 @@ private struct EcuTuningEditor: View {
                 SmallActionButton(label: "RESET") { ecu.reset(activeMap) }
             }
         }
-        .padding(.horizontal, 6)
-        .padding(.vertical, 6)
-        .background(RoundedRectangle(cornerRadius: Theme.Radius.small).fill(Color.white.opacity(0.04)))
     }
 
-    // MARK: - iOS paint-mode UI
+    /// A labelled row of action buttons. The leading title names what the
+    /// buttons in the row affect.
+    private func scopeRow<Buttons: View>(title: String,
+                                          @ViewBuilder buttons: () -> Buttons) -> some View {
+        HStack(spacing: Theme.Space.sm) {
+            Text(title)
+                .modifier(RetroFont(size: Theme.FontSize.caption))
+                .foregroundColor(.white.opacity(0.45))
+                .frame(width: 84, alignment: .leading)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+            buttons()
+        }
+    }
+
+    /// One ± step button, labelled with its signed step + unit. macOS bumps the
+    /// selected cell immediately; touch arms that exact step (highlighted) so a
+    /// drag across the grid paints by it.
+    @ViewBuilder private func cellButton(_ delta: Double) -> some View {
+        let label = (delta < 0 ? "−" : "+") + stepLabel(abs(delta))
+        #if os(macOS)
+        SmallActionButton(label: label) {
+            ecu.bumpCell(in: activeMap, at: selectedCell, by: delta)
+        }
+        #else
+        SmallActionButton(label: label,
+                          accent: paintDelta == delta ? (delta < 0 ? .accentDanger : .accentOk) : .white) {
+            togglePaint(delta)
+        }
+        #endif
+    }
+
+    /// macOS edits one cell at a time; touch paints, so the label teaches the
+    /// gesture and reflects the armed state.
+    private var adjustTitle: String {
+        #if os(macOS)
+        return "ADJUST CELL"
+        #else
+        return paintDelta == nil ? "PAINT CELLS" : "DRAG TO PAINT"
+        #endif
+    }
+
+    /// Coarse step = the fine per-cell step scaled up, for big jumps.
+    private var coarseStep: Double { mapStep() * coarseStepScale }
+
+    private func selectMap(_ kind: EcuMapKind) {
+        activeMap = kind
+        #if !os(macOS)
+        // A step armed on one map is meaningless on the other (different unit
+        // and magnitude), so disarm on switch.
+        paintDelta = nil
+        #endif
+    }
 
     #if !os(macOS)
-    /// Top-row pills on iOS: pick a delta to paint when dragging across
-    /// the heatmap. Tap again to clear and return to read-only mode.
-    private var iosPaintBar: some View {
-        // Show the most recently painted cell so the user can verify the
-        // delta they're applying; falls back to the live operating cell
-        // before they've touched the heatmap.
-        let displayCell = lastPaintedCell ?? liveCell ?? selectedCell
-        return HStack(spacing: 6) {
-            VStack(alignment: .leading, spacing: 1) {
-                Text(cellLabel(displayCell))
-                    .modifier(RetroFont(size: Theme.FontSize.caption))
-                    .foregroundColor(.white.opacity(0.55))
-                    .monospacedDigit()
-                    .frame(width: 90, alignment: .leading)
-                Text(formatValue(ecu.value(in: activeMap, at: displayCell)))
-                    .modifier(RetroFont(size: Theme.FontSize.control))
-                    .foregroundColor(.white)
-                    .monospacedDigit()
-                    .frame(width: 90, alignment: .leading)
-            }
-            .frame(width: 90, alignment: .leading)
-
-            // Centered paint-mode pills — only ± at the bigger step now
-            // (4 buttons was too many; the small step is rarely the
-            // useful one when you can also drag-paint freely).
-            Spacer()
-            HStack(spacing: 8) {
-                ForEach(iosPaintOptions, id: \.self) { mode in
-                    IosPaintPill(
-                        label: mode.label(step: mapStep()),
-                        active: paintMode == mode,
-                        accent: mode.accent
-                    ) {
-                        paintMode = (paintMode == mode) ? nil : mode
-                    }
-                }
-            }
-            Spacer()
-
-            SmallActionButton(label: "SMOOTH") { ecu.smooth(activeMap) }
-            SmallActionButton(label: "BAD", accent: .accentDanger) { ecu.corrupt(activeMap) }
-            SmallActionButton(label: "RESET") { ecu.reset(activeMap) }
-        }
-        .padding(.horizontal, 4)
-        .padding(.vertical, 5)
-        .background(RoundedRectangle(cornerRadius: Theme.Radius.small).fill(Color.white.opacity(0.04)))
-    }
-
-    /// Just the big-step ± modes. We expose only these on iOS — the small
-    /// step is rarely what you want when you can drag across many cells.
-    private var iosPaintOptions: [IosPaintMode] { [.decBig, .incBig] }
-
-    /// Compact stack of live engine telemetry on iOS — narrower than the
-    /// macOS row so it sits on a single line at iPad widths.
-    private var iosLiveReadouts: some View {
-        let totalAdvance = ecu.baseTiming(at: vm.rpm) + vm.ignitionOffset
-        return HStack(spacing: 10) {
-            Readout(label: "RPM", value: String(format: "%.0f", vm.rpm))
-            Readout(label: "MAP", value: String(format: "%.0f", clampedLiveLoadKpa()))
-            Readout(label: "ADV", value: String(format: "%.1f°", totalAdvance))
-            Readout(label: "Δ", value: String(format: "%+.1f°", vm.ignitionOffset))
-            Readout(label: "TRIM", value: String(format: "%.2f", vm.fuelTrim))
-            Readout(label: "AFR", value: String(format: "%.1f", vm.intakeAFR))
-            Spacer()
-        }
+    /// Arm `delta` as the paint step, or disarm if it's already armed.
+    private func togglePaint(_ delta: Double) {
+        paintDelta = (paintDelta == delta) ? nil : delta
     }
     #endif
-
-    // MARK: - Live readouts
-
-    private var liveReadouts: some View {
-        // Absolute spark advance currently being commanded = base curve at this
-        // rpm + the offset we last pushed to the engine. Matches the live cell
-        // value the user sees on the map.
-        let totalAdvance = ecu.baseTiming(at: vm.rpm) + vm.ignitionOffset
-        return HStack(spacing: 14) {
-            Readout(label: "RPM", value: String(format: "%.0f", vm.rpm))
-            Readout(label: "MAP",
-                    value: String(format: "%.0f kPa", clampedLiveLoadKpa()))
-            Readout(label: "ADV",
-                    value: String(format: "%.1f°", totalAdvance))
-            Readout(label: "Δ",
-                    value: String(format: "%+.1f°", vm.ignitionOffset))
-            Readout(label: "TRIM",
-                    value: String(format: "%.2fx", vm.fuelTrim))
-            Readout(label: "AFR",
-                    value: String(format: "%.1f", vm.intakeAFR))
-            Spacer()
-        }
-    }
 
     // MARK: - Helpers
 
@@ -484,30 +431,19 @@ private struct EcuTuningEditor: View {
         }
     }
 
+    /// Format a step magnitude with the active map's unit, for the ± labels.
+    private func stepLabel(_ value: Double) -> String {
+        switch activeMap {
+        case .ignition: return String(format: "%.1f°", value)
+        case .fuel:     return String(format: "%.1f", value)
+        }
+    }
+
     private func formatValue(_ value: Double) -> String {
         EcuMapStyle.format(value: value, kind: activeMap)
     }
 
-    private func formatStep(_ mult: Double) -> String {
-        switch activeMap {
-        case .ignition: return String(format: "%.1f°", mapStep() * mult)
-        case .fuel:     return String(format: "%.1f", mapStep() * mult)
-        }
-    }
-
     private func rpmLabel(_ rpm: Double) -> String { EcuMapStyle.rpmLabel(rpm) }
-
-    private func cellLabel(_ coord: EcuCellCoord) -> String {
-        let safe = ecu.clampToBounds(coord)
-        let rpm = ecu.rpmBins[safe.rpmIndex]
-        let load = ecu.loadBins[safe.loadIndex]
-        let unit = activeMap == .ignition ? "° adv" : "AFR"
-        return "\(rpmLabel(rpm)) RPM · \(Int(load)) kPa · \(unit)"
-    }
-
-    private func clampedLiveLoadKpa() -> Double {
-        return max(0, ecu.currentLoadKpa)
-    }
 
     /// Cold-blue → green → red rainbow over the editable range, matching how
     /// HP Tuners / EFILive colour their tables. Ignition: more advance → red.
@@ -564,79 +500,6 @@ private struct EcuTuningEditor: View {
 
 // MARK: - Small UI pieces
 
-#if !os(macOS)
-
-/// Paint delta selected in the iOS paint bar. Dragging across the heatmap
-/// while a mode is active bumps each cell the finger crosses.
-private enum IosPaintMode: Hashable {
-    case decBig
-    case decSmall
-    case incSmall
-    case incBig
-
-    static let allOptions: [IosPaintMode] = [.decBig, .decSmall, .incSmall, .incBig]
-
-    func delta(step: Double) -> Double {
-        switch self {
-        case .decBig:   return -step * stepBumpScale
-        case .decSmall: return -step
-        case .incSmall: return +step
-        case .incBig:   return +step * stepBumpScale
-        }
-    }
-
-    func label(step: Double) -> String {
-        switch self {
-        case .decBig:   return "−\(IosPaintMode.formatStep(step * stepBumpScale))"
-        case .decSmall: return "−\(IosPaintMode.formatStep(step))"
-        case .incSmall: return "+\(IosPaintMode.formatStep(step))"
-        case .incBig:   return "+\(IosPaintMode.formatStep(step * stepBumpScale))"
-        }
-    }
-
-    var accent: Color {
-        switch self {
-        case .decBig, .decSmall: return .accentDanger
-        case .incSmall, .incBig: return .accentOk
-        }
-    }
-
-    private static func formatStep(_ s: Double) -> String {
-        s == s.rounded() ? "\(Int(s))" : String(format: "%.1f", s)
-    }
-}
-
-private struct IosPaintPill: View {
-    let label: String
-    let active: Bool
-    let accent: Color
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            Text(label)
-                .modifier(RetroFont(size: Theme.FontSize.body, weight: .bold))
-                .lineLimit(1)
-                .minimumScaleFactor(0.7)
-                .fixedSize()
-                .foregroundColor(active ? .black : accent)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 5)
-                .background(
-                    RoundedRectangle(cornerRadius: Theme.Radius.small)
-                        .fill(active ? accent : accent.opacity(0.12))
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: Theme.Radius.small)
-                        .stroke(accent.opacity(active ? 1.0 : 0.6), lineWidth: 1)
-                )
-        }
-        .buttonStyle(.plain)
-    }
-}
-
-#endif
-
 private struct TabButton: View {
     let label: String
     let active: Bool
@@ -663,53 +526,3 @@ private struct TabButton: View {
     }
 }
 
-private struct EditButton: View {
-    let label: String
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            Text(label)
-                .modifier(RetroFont(size: Theme.FontSize.control))
-                .lineLimit(1)
-                .minimumScaleFactor(0.6)
-                .fixedSize()
-                .foregroundColor(.white)
-                .frame(minWidth: 36)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 6)
-                .background(
-                    LinearGradient(colors: [Color(white: 0.22), Color(white: 0.10)],
-                                   startPoint: .top, endPoint: .bottom)
-                )
-                .overlay(RoundedRectangle(cornerRadius: Theme.Radius.small).stroke(Color.white.opacity(0.2), lineWidth: 0.7))
-                .cornerRadius(3)
-        }
-        .buttonStyle(.plain)
-    }
-}
-
-private struct Readout: View {
-    let label: String
-    let value: String
-    /// Fixed width pinned to the worst-case value so the row doesn't shift
-    /// when digits arrive (e.g. RPM going from "0" → "8500"). Each readout
-    /// reserves enough room for its label *and* its widest expected value.
-    var valueWidth: CGFloat = 56
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 1) {
-            Text(label)
-                .modifier(RetroFont(size: Theme.FontSize.caption))
-                .foregroundColor(.white.opacity(0.5))
-            Text(value)
-                .modifier(RetroFont(size: Theme.FontSize.callout))
-                .foregroundColor(.white)
-                // Mono digits + a fixed leading-aligned frame: digits
-                // never reflow even as the value grows.
-                .monospacedDigit()
-                .frame(width: valueWidth, alignment: .leading)
-        }
-        .frame(width: valueWidth, alignment: .leading)
-    }
-}

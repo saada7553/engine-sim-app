@@ -97,8 +97,13 @@ struct ThrottleView: View {
                 #endif
             }
         }
+        // The dark frame is desktop chrome. On iOS the tile is full-bleed and
+        // this fill bled past the tile into the safe area, so it's dropped —
+        // the AspectFitContainer already paints the panel background.
+        #if os(macOS)
         .background(Color.black.opacity(0.2))
         .border(Color.white.opacity(0.1), width: 1)
+        #endif
     }
 
     private func clampedRunnerCount(_ raw: Int) -> Int {
@@ -143,8 +148,6 @@ struct ClutchPanelView: View {
         }
         .padding(6)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color.black.opacity(0.2))
-        .border(Color.white.opacity(0.1), width: 1, edges: [.bottom])
     }
 }
 
@@ -165,8 +168,6 @@ struct IntakePanelView: View {
         }
         .padding(6)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color.black.opacity(0.2))
-        .border(Color.white.opacity(0.1), width: 1, edges: [.bottom])
     }
 
     private func clampedRunnerCount(_ raw: Int) -> Int {

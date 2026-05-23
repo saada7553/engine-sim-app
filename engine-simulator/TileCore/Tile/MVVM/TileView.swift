@@ -59,9 +59,9 @@ struct TileView: View {
         // resolve to the procedural renderer. Old layouts saved with the
         // legacy type still load — they just get the new rendering.
         case .engine3DView, .engine3DProcedural:
-            return AnyView(Engine3DProceduralView(vm: tile.engineVm).id(engineResetId))
+            return AnyView(Engine3DTile(vm: tile.engineVm).id(engineResetId))
         case .engine3DWireframe:
-            return AnyView(Engine3DProceduralView(vm: tile.engineVm, wireframe: true).id(engineResetId))
+            return AnyView(Engine3DTile(vm: tile.engineVm, wireframe: true).id(engineResetId))
 
         // Gauges
         case .speedometerGauge:

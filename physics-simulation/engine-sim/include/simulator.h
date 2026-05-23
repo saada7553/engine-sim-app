@@ -120,6 +120,12 @@ public:
     void repairThermalAndDamage() {
         if (m_engine) m_engine->getThermalSystem()->repairAll();
     }
+    void setDamageEnabled(bool enabled) {
+        if (m_engine) m_engine->getThermalSystem()->setDamageEnabled(enabled);
+    }
+    bool isDamageEnabled() const {
+        return m_engine ? m_engine->getThermalSystem()->isDamageEnabled() : true;
+    }
 
     Dynamometer m_dyno;
     StarterMotor m_starterMotor;

@@ -43,22 +43,15 @@ final class PurchaseManager: ObservableObject {
 
     private var streamTask: Task<Void, Never>?
 
-    /// True when the RevenueCat SDK has been intentionally skipped because
-    /// the configured API key is a sandbox (`test_`) key. The SDK otherwise
-    /// kills release builds at launch in that case, and we run release
-    /// builds during dev for the performance. Every public method on this
-    /// manager short-circuits when this is set, and `isPro` is forced on so
-    /// paywalls don't gate anything during dev runs. Auto-disengages the
-    /// moment a real `appl_`/`goog_` production key is wired in — no
-    /// build-config flags required.
-    private static var bypassed: Bool = false
-
     private init() {}
 
     // MARK: Bootstrap
 
     /// Configure the SDK and start listening for entitlement changes. Call
-    /// once from the App init, before any view tries to gate something.
+    /// once from the App init, before any view tries to gate something. The
+    /// key is selected by build configuration upstream (test_ in DEBUG,
+    /// production appl_ in release) so the SDK always runs against the store
+    /// that matches the build.
     static func configure(apiKey: String) {
 #if DEBUG
         Purchases.logLevel = .debug
@@ -66,26 +59,7 @@ final class PurchaseManager: ObservableObject {
         Purchases.logLevel = .warn
 #endif
 
-        // Sandbox-key bypass. Release builds with a `test_` key get killed
-        // by the SDK at launch, and we run release builds during dev for
-        // the performance. Skip configure entirely; the user starts non-Pro
-        // so the existing gate paths (locked engine cards, save layout) raise
-        // the paywall normally, and the bypassed `purchaseLifetime()` flips
-        // `isPro` for the rest of the session. State is in-memory only, so a
-        // relaunch resets back to non-Pro. Swapping to a real production key
-        // disengages all of this automatically.
-        if apiKey.hasPrefix("test_") {
-            bypassed = true
-            return
-        }
-
-        // TODO: Remove this bypass once the API key matches the build environment.
-        // This stops RevenueCat from checking if this is a production build while using a debug key.
-        let configuration = Configuration.Builder(withAPIKey: apiKey)
-            .with(dangerousSettings: DangerousSettings(autoSyncPurchases: false))
-            .build()
-
-        Purchases.configure(with: configuration)
+        Purchases.configure(withAPIKey: apiKey)
 
         Task { @MainActor in
             await shared.bootstrap()
@@ -93,7 +67,6 @@ final class PurchaseManager: ObservableObject {
     }
 
     private func bootstrap() async {
-        if Self.bypassed { return }
         await refreshCustomerInfo()
         await refreshOfferings()
 
@@ -117,7 +90,6 @@ final class PurchaseManager: ObservableObject {
     // MARK: Refresh
 
     func logOut() async {
-        if Self.bypassed { return }
         do {
             try await Purchases.shared.logOut()
             await refreshCustomerInfo()
@@ -127,7 +99,6 @@ final class PurchaseManager: ObservableObject {
     }
 
     func refreshCustomerInfo() async {
-        if Self.bypassed { return }
         do {
             let info = try await Purchases.shared.customerInfo()
             apply(info)
@@ -137,7 +108,6 @@ final class PurchaseManager: ObservableObject {
     }
 
     func refreshOfferings() async {
-        if Self.bypassed { return }
         do {
             offerings = try await Purchases.shared.offerings()
         } catch {
@@ -150,12 +120,6 @@ final class PurchaseManager: ObservableObject {
     /// Trigger the App Store sheet to purchase the lifetime product. Updates
     /// `purchaseState` so the paywall can render loading / error UI.
     func purchaseLifetime() async {
-        if Self.bypassed {
-            isPro = true
-            purchaseState = .succeeded
-            isPresentingPaywall = false
-            return
-        }
         guard let package = lifetimePackage() else {
             purchaseState = .error("Lifetime product unavailable. Check your connection and try again.")
             await refreshOfferings()
@@ -186,12 +150,6 @@ final class PurchaseManager: ObservableObject {
     }
 
     func restorePurchases() async {
-        if Self.bypassed {
-            isPro = true
-            purchaseState = .succeeded
-            isPresentingPaywall = false
-            return
-        }
         purchaseState = .loading
         do {
             let info = try await Purchases.shared.restorePurchases()
@@ -210,17 +168,20 @@ final class PurchaseManager: ObservableObject {
     }
 
 #if DEBUG
-    /// Debug-only: drop Pro so the paywall can be triggered again. In the
-    /// sandbox-key bypass this just flips the in-memory flag; with a real key
-    /// it logs out to a fresh anonymous user so the entitlement clears.
+    /// Debug-only: drop Pro so the paywall can be triggered again.
+    ///
+    /// A signed-in user is logged out to a fresh anonymous user, which has no
+    /// entitlement on this device. The Test Store user (and any user who never
+    /// called `logIn`) is already anonymous — RevenueCat throws if you log out
+    /// an anonymous user, so there we just clear the entitlement locally so the
+    /// paywall reappears for this session.
     func resetPurchasesForDebug() async {
-        if Self.bypassed {
+        if Purchases.shared.isAnonymous {
             isPro = false
             customerInfo = nil
-            purchaseState = .idle
-            return
+        } else {
+            await logOut()
         }
-        await logOut()          // anonymous user → no entitlement on this device
         purchaseState = .idle
     }
 #endif

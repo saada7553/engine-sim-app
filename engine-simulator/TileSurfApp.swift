@@ -4,8 +4,21 @@ import WebKit
 import AppKit
 #endif
 
-/// RevenueCat sandbox key. Swap to the production key on release.
+/// RevenueCat public API key, selected by build configuration.
+///
+/// DEBUG builds use the Test Store key (`test_`), which lets the purchase
+/// flow run against RevenueCat's virtual store without App Store Connect —
+/// the SDK only accepts a `test_` key in a development build and kills the
+/// app at launch if it sees one in a release build. Release builds therefore
+/// must use the production App Store key (`appl_`).
+#if DEBUG
 private let revenueCatAPIKey = "test_ZYpdwVJIKcNhwMICqAkYNPRCGur"
+#else
+// TODO: Replace with the production Apple App Store public API key from the
+// RevenueCat dashboard (Project Settings → API keys → Apple). Until this is
+// filled in, release builds can't load offerings or validate purchases.
+private let revenueCatAPIKey = "appl_REPLACE_WITH_PRODUCTION_KEY"
+#endif
 
 /// Fixed sidebar width on iOS — mirrors the macOS NavigationSplitView
 /// ideal width so the layout looks identical across platforms.

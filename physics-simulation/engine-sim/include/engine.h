@@ -105,6 +105,17 @@ class Engine : public Part {
         void setFuelTrim(double trim) { m_fuelTrim = trim; }
         double getFuelTrim() const { return m_fuelTrim; }
         double getTimingAdvanceForRpm(double rpm) { return m_ignitionModule.getTimingAdvanceForRpm(rpm); }
+        double getTunedAdvanceForRpm(double rpm) { return m_ignitionModule.getTunedAdvanceForRpm(rpm); }
+        // Push the user's 2D ignition tune (rad/s × kPa → rad) into the engine
+        // so spark timing follows the map's shape, and feed the live load each
+        // tick so the lookup tracks the operating point.
+        void setIgnitionTimingMap(const double *wBins, int nW,
+                                  const double *loadBins, int nLoad,
+                                  const double *advRad) {
+            m_ignitionModule.setTimingMap(wBins, nW, loadBins, nLoad, advRad);
+        }
+        void clearIgnitionTimingMap() { m_ignitionModule.clearTimingMap(); }
+        void setIgnitionLoad(double loadKpa) { m_ignitionModule.setCurrentLoad(loadKpa); }
         ExhaustSystem *getExhaustSystem(int i) const { return &m_exhaustSystems[i]; }
         Intake *getIntake(int i) const { return &m_intakes[i]; }
         CombustionChamber *getChamber(int i) const { return &m_combustionChambers[i]; }

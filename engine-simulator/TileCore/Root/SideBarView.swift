@@ -23,6 +23,11 @@ private let rowCorner: CGFloat = Theme.Radius.control
 private let rowGutter: CGFloat = 10
 private let dotSize: CGFloat = 7
 
+// Gap above/below the hairline that separates the "Build New Engine" CTA from
+// the engine list. Without it the solid-blue CTA and the blue-tinted selected
+// row sit close enough to read as one block.
+private let ctaDividerGap: CGFloat = 10
+
 private let selectedFill = Color.accentLive.opacity(0.14)
 private let hoverFill = Color.white.opacity(0.05)
 private let dividerColor = Color.white.opacity(0.07)
@@ -54,7 +59,7 @@ struct SideBarView: View {
 
             Spacer(minLength: 0)
 
-            SidebarFooter()
+            SidebarFooter(onOpenSettings: { rootViewModel.isPresentingSettings = true })
         }
         .background(Color.appBackground)
         .overlay(alignment: .trailing) {
@@ -66,7 +71,12 @@ struct SideBarView: View {
         SidebarSection(title: "ENGINES") {
             BuildEngineButton(action: { rootViewModel.startEngineBuild() })
                 .padding(.horizontal, rowGutter)
-                .padding(.bottom, 6)
+
+            Rectangle()
+                .fill(dividerColor)
+                .frame(height: 1)
+                .padding(.horizontal, rowGutter)
+                .padding(.vertical, ctaDividerGap)
 
             ForEach(engineLibrary.entries) { entry in
                 EngineRow(
@@ -437,29 +447,25 @@ struct UnsavedLayoutRow: View {
 // MARK: - Footer
 
 struct SidebarFooter: View {
+    let onOpenSettings: () -> Void
+
     @ObservedObject private var identity = PlayerIdentity.shared
     @State private var showingControls = false
-    @State private var showingProfile = false
 
     var body: some View {
         VStack(spacing: 0) {
             Rectangle().fill(dividerColor).frame(height: 1)
             HStack(spacing: 16) {
-                Button(action: { showingProfile = true }) {
-                    HStack(spacing: 6) {
-                        Image(systemName: "person.crop.circle")
-                        Text(identity.username.isEmpty ? "SETTINGS" : identity.username.uppercased())
-                            .font(.system(size: 10, weight: .bold, design: .monospaced))
-                            .tracking(1.0)
-                            .lineLimit(1)
-                    }
-                    .foregroundColor(.white.opacity(0.75))
+                // The player nameplate — a quiet label now, not a button. Name
+                // editing moved into Settings (the gear, trailing).
+                HStack(spacing: 6) {
+                    Image(systemName: "person.crop.circle")
+                    Text(identity.username.isEmpty ? "PLAYER" : identity.username.uppercased())
+                        .font(.system(size: 10, weight: .bold, design: .monospaced))
+                        .tracking(1.0)
+                        .lineLimit(1)
                 }
-                .buttonStyle(.plain)
-                .help("Edit your leaderboard name")
-                .popover(isPresented: $showingProfile, arrowEdge: .bottom) {
-                    UsernameEditorSheet(identity: identity)
-                }
+                .foregroundColor(.white.opacity(0.75))
 
                 // The keyboard-shortcuts popover only makes sense on macOS
                 // where the keyboard drives the dashboard; on iOS the
@@ -479,13 +485,13 @@ struct SidebarFooter: View {
 
                 Spacer()
 
-                Button(action: {}) {
-                    Image(systemName: "questionmark.circle")
-                        .font(.system(size: 13))
-                        .foregroundColor(mutedText)
+                Button(action: onOpenSettings) {
+                    Image(systemName: "gearshape")
+                        .font(.system(size: 14))
+                        .foregroundColor(.white.opacity(0.75))
                 }
                 .buttonStyle(.plain)
-                .help("Help")
+                .help("Settings")
             }
             .padding(14)
         }

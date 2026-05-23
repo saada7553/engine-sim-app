@@ -48,6 +48,18 @@ private let cameraDirZ: Float = 1.0   // front
 /// camera node itself doesn't override its fieldOfView.
 private let cameraFOV: Float = 60 * .pi / 180
 private let maxDtSeconds: Double = 1.0 / 30.0
+// Coalesce assembly rebuilds when the library republishes in a burst (rapid
+// engine selection, or per-frame stat writes during a dyno run) so the
+// (main-thread) geometry build runs once the dust settles, not per event.
+private let engine3DRebuildDebounceMs: Int = 200
+
+/// Whether the live SceneKit view currently has a finished engine assembly
+/// installed. Flipped to false the moment a rebuild is staged and back to true
+/// the moment the new assembly is swapped into the scene — the exact readiness
+/// signal `Engine3DTile` uses to show/hide its loader (no timers, no holds).
+final class Engine3DLoadState: ObservableObject {
+    @Published var geometryReady: Bool = false
+}
 
 struct Engine3DProceduralView: _SCNViewRepresentable {
     @ObservedObject var vm: EngineViewModel
@@ -56,6 +68,9 @@ struct Engine3DProceduralView: _SCNViewRepresentable {
     /// Camera framing matches the normal view and the user can orbit / zoom.
     /// Defaults off so the normal "Engine 3D" tile is unaffected.
     var wireframe: Bool = false
+    /// Geometry-readiness sink, owned by the `Engine3DTile` wrapper so the
+    /// loader can observe it. The coordinator writes it (always on main).
+    var loadState: Engine3DLoadState
 
     private func makeSCNView(context: Context) -> SCNView {
         let scnView = SCNView()
@@ -68,6 +83,7 @@ struct Engine3DProceduralView: _SCNViewRepresentable {
         scnView.isPlaying = true
         scnView.loops = true
         context.coordinator.wireframe = wireframe
+        context.coordinator.loadState = loadState
 
         configureLights(in: scnView.scene!)
         configureCamera(in: scnView.scene!, params: nil)
@@ -110,6 +126,8 @@ struct Engine3DProceduralView: _SCNViewRepresentable {
 #endif
 
     func makeCoordinator() -> Coordinator { Coordinator() }
+
+    // (Tile wrapper that adds the loading overlay lives at the bottom of the file.)
 
     // MARK: - Helpers
 
@@ -216,6 +234,18 @@ struct Engine3DProceduralView: _SCNViewRepresentable {
 
     final class Coordinator: NSObject, SCNSceneRendererDelegate {
         var wireframe: Bool = false
+        /// Geometry-readiness sink (see `Engine3DLoadState`). Updated only on
+        /// the main thread via `setGeometryReady` — `applyPendingSwapLocked`
+        /// runs on the render queue, so it hops to main.
+        weak var loadState: Engine3DLoadState?
+
+        private func setGeometryReady(_ ready: Bool) {
+            if Thread.isMainThread {
+                loadState?.geometryReady = ready
+            } else {
+                DispatchQueue.main.async { [weak self] in self?.loadState?.geometryReady = ready }
+            }
+        }
 
         // ---- Live state shared with the SceneKit rendering queue ----
         //
@@ -322,13 +352,15 @@ struct Engine3DProceduralView: _SCNViewRepresentable {
         }
 
         func subscribe(to library: EngineLibrary) {
+            // debounce delivers on the given scheduler, so the sink already runs
+            // on main — and a burst of republishes collapses to one rebuild.
             library.$selectedEngineId
-                .receive(on: RunLoop.main)
+                .debounce(for: .milliseconds(engine3DRebuildDebounceMs), scheduler: RunLoop.main)
                 .sink { [weak self] _ in self?.refreshFromLibrary() }
                 .store(in: &libraryCancellables)
 
             library.$entries
-                .receive(on: RunLoop.main)
+                .debounce(for: .milliseconds(engine3DRebuildDebounceMs), scheduler: RunLoop.main)
                 .sink { [weak self] _ in self?.refreshFromLibrary() }
                 .store(in: &libraryCancellables)
         }
@@ -343,6 +375,10 @@ struct Engine3DProceduralView: _SCNViewRepresentable {
         }
 
         private func rebuild(with spec: EngineSpec?) {
+            // A new assembly is on its way in — the current geometry is about to
+            // be torn out, so report "not ready" until the swap actually lands.
+            setGeometryReady(false)
+
             // Build entirely off-screen on the main thread (these nodes aren't in
             // the live scene yet, so mutating them here can't race the renderer),
             // then hand the finished tree to the render queue to swap in. Nothing
@@ -402,10 +438,13 @@ struct Engine3DProceduralView: _SCNViewRepresentable {
             switch swap {
             case .clear:
                 parts = nil
+                setGeometryReady(false)
             case let .install(root, built):
                 scene.rootNode.addChildNode(root)
                 parts = built
                 adjustCamera(for: built.params)
+                // The engine is now on screen — release the loader.
+                setGeometryReady(true)
             }
         }
 
@@ -508,5 +547,34 @@ struct Engine3DProceduralView: _SCNViewRepresentable {
                 )
             }
         }
+    }
+}
+
+// MARK: - Tile wrapper
+
+/// What the tile layout actually shows for the 3D view types. Hosts the live
+/// SceneKit view and overlays the unified loader while the engine is swapping,
+/// so picking a new engine reads as "loading" instead of a dead or stale
+/// viewport. The SCNView already fills the tile at its final size from the very
+/// first frame (it paints the dash background immediately and swaps the geometry
+/// in on the render thread), so the overlay never changes the tile's layout —
+/// the view doesn't resize when the model finishes loading.
+struct Engine3DTile: View {
+    @ObservedObject var vm: EngineViewModel
+    var wireframe: Bool = false
+    @StateObject private var loadState = Engine3DLoadState()
+
+    /// Loading until BOTH are true completion signals are satisfied: the C++
+    /// engine has finished swapping in (`isSwappingEngine`) and the SceneKit
+    /// assembly for it has actually been installed (`geometryReady`). This one
+    /// condition covers engine swaps, layout switches, and the first build, and
+    /// clears the instant real geometry is on screen — never a frame later.
+    private var isLoading: Bool {
+        vm.isSwappingEngine || !loadState.geometryReady
+    }
+
+    var body: some View {
+        Engine3DProceduralView(vm: vm, wireframe: wireframe, loadState: loadState)
+            .loadingOverlay(isLoading, label: "Loading engine")
     }
 }

@@ -188,7 +188,7 @@ struct LeaderboardTileView: View {
 
     @ViewBuilder private var rankings: some View {
         if model.isLoading && model.entries.isEmpty {
-            centered { ProgressView().controlSize(.small).tint(.accentLive) }
+            centered { DashLoader(diameter: 30, label: "Loading leaderboard") }
         } else if let error = model.errorText {
             centered { LeaderboardNotice(symbol: "wifi.slash", text: error) }
         } else if model.entries.isEmpty {
@@ -323,9 +323,11 @@ private struct SubmitStrip: View {
             }
         }
         .padding(10)
-        .background(RoundedRectangle(cornerRadius: Theme.Radius.panel).fill(Color.surfaceFaint))
+        .background(RoundedRectangle(cornerRadius: Theme.Radius.panel).fill(bg))
         .overlay(RoundedRectangle(cornerRadius: Theme.Radius.panel)
-            .stroke(Color.strokeFaint, lineWidth: Theme.Stroke.thin))
+            .stroke(borderColor, lineWidth: Theme.Stroke.thin))
+        .animation(.easeInOut(duration: 0.2), value: results.posted)
+        .animation(.easeInOut(duration: 0.2), value: model.submitError)
         // A fresh dyno sweep clears the posted flag in RunResultsStore; clear
         // any stale error here at the same moment so the strip resets cleanly.
         .onChange(of: results.dynoRecording) { _, recording in
@@ -336,14 +338,15 @@ private struct SubmitStrip: View {
     private var postButton: some View {
         Button(action: submit) {
             HStack(spacing: 5) {
-                if submitting { ProgressView().controlSize(.small) }
-                Text(submitting ? "POSTING" : "POST RUN")
+                if submitting { DashLoader(diameter: 13, tint: .black) }
+                Text(buttonLabel)
                     .font(.system(size: lbButtonFont, weight: .bold, design: .monospaced))
                     .tracking(1)
             }
             .foregroundColor(.black)
             .padding(.horizontal, 12).padding(.vertical, 7)
-            .background(Capsule().fill(Color.accentLive))
+            .background(Capsule().fill(model.submitError != nil ? Color.accentDanger : Color.accentLive))
+            .contentShape(Capsule())
         }
         .buttonStyle(.plain)
         .disabled(submitting)
@@ -361,7 +364,29 @@ private struct SubmitStrip: View {
 
     private var canSubmit: Bool { userSpec != nil && results.hasPostableResult }
 
-    private var titleColor: Color { model.submitError != nil ? .accentDanger : .white }
+    private var buttonLabel: String {
+        if submitting { return "POSTING" }
+        if model.submitError != nil { return "RETRY" }
+        return "POST RUN"
+    }
+
+    private var titleColor: Color {
+        if model.submitError != nil { return .accentDanger }
+        if results.posted { return .accentOk }
+        return .white
+    }
+
+    private var bg: Color {
+        if model.submitError != nil { return Color.accentDanger.opacity(0.10) }
+        if results.posted { return Color.accentOk.opacity(0.10) }
+        return Color.surfaceFaint
+    }
+
+    private var borderColor: Color {
+        if model.submitError != nil { return Color.accentDanger.opacity(0.5) }
+        if results.posted { return Color.accentOk.opacity(0.5) }
+        return Color.strokeFaint
+    }
 
     /// "480 hp · 320 lb-ft", "5.20s 0-60", or both joined — whatever's captured.
     private var resultSummary: String {
@@ -385,6 +410,7 @@ private struct SubmitStrip: View {
 
     private var statusDetail: String {
         if results.posted { return "Run the dyno or a 0-60 again to post a new result" }
+        if model.submitError != nil { return "Couldn’t post — tap retry" }
         guard userSpec != nil else { return "Make your own engine to compete" }
         guard results.hasPostableResult else { return "Run the dyno or a 0-60 to capture a result" }
         let cost = EnginePricing.formatted(EnginePricing.buildCost(for: userSpec!))

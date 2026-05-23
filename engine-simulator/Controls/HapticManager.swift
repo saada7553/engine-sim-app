@@ -107,6 +107,7 @@ final class HapticManager {
     // MARK: - UI feedback
 
     func tap(_ kind: HapticTap) {
+        guard AppSettings.shared.hapticsEnabled else { return }
 #if os(iOS)
         switch kind {
         case .light:     lightImpact.impactOccurred()
@@ -139,6 +140,7 @@ final class HapticManager {
     /// Fire the initial CRASH bang. `severity` is the over-rev excess reported
     /// by the simulator; bigger over-revs hit harder and ring out longer.
     func beginMoneyshift(severity: Double) {
+        guard AppSettings.shared.hapticsEnabled else { return }
 #if os(iOS)
         guard supportsHaptics else { return }
         let strength = Float(min(1.0, max(0.0, severity / kSeverityFullScale)))
@@ -161,6 +163,7 @@ final class HapticManager {
     /// Call every poll. Stays alive while the sound is audible or the minimum
     /// hold hasn't elapsed, then stops. No-op where unsupported.
     func updateMoneyshift(level: Double, peak: Double) {
+        guard AppSettings.shared.hapticsEnabled else { return }
 #if os(iOS)
         guard supportsHaptics else { return }
         let now = ProcessInfo.processInfo.systemUptime

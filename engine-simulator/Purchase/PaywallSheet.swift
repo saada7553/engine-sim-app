@@ -436,9 +436,7 @@ struct PaywallSheet: View {
         Button(action: triggerPurchase) {
             HStack(spacing: 8) {
                 if manager.purchaseState == .loading {
-                    ProgressView()
-                        .progressViewStyle(CircularProgressViewStyle(tint: ctaIdleText))
-                        .scaleEffect(0.7)
+                    DashLoader(diameter: 15, tint: ctaIdleText)
                     Text("Contacting App Store…")
                         .font(.system(size: 13, weight: .semibold))
                         .foregroundColor(ctaIdleText)
