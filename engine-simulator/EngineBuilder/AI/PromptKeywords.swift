@@ -96,8 +96,10 @@ enum PromptKeywords {
         // Single + twin (check first; "twin turbo" is forced induction, NOT a 2-cyl).
         if t.containsAny(["single cylinder", "single-cylinder", "one cylinder", "one-cylinder",
                           "1 cylinder", "1-cylinder", "thumper"]) { return .inline1 }
+        // V-twin is its own layout; a "parallel/inline twin" stays an inline-2.
+        if t.containsAny(["v-twin", "v twin", "vtwin", "v2", "v-2", "v 2"]) { return .v2_90 }
         let twinTurbo = t.containsAny(["twin turbo", "twin-turbo", "twinturbo", "twin scroll", "twin-scroll"])
-        if !twinTurbo && t.containsAny(["parallel twin", "v-twin", "v twin", "vtwin",
+        if !twinTurbo && t.containsAny(["parallel twin", "inline twin",
                                         "two cylinder", "two-cylinder", "2 cylinder", "2-cylinder",
                                         "twin cylinder"]) { return .inline2 }
         // V-engines (check before bare cylinder counts).
@@ -105,6 +107,7 @@ enum PromptKeywords {
         if t.containsAny(["v10", "v-10", "v 10"]) { return .v10_72 }
         if t.containsAny(["v8", "v-8", "v 8"])     { return .v8_90 }
         if t.containsAny(["v6", "v-6", "v 6"])     { return .v6_60 }
+        if t.containsAny(["v4", "v-4", "v 4"])     { return .v4_90 }
         // Flat / boxer.
         if t.containsAny(["flat six", "flat-six", "flat 6", "flat6", "boxer 6", "boxer six"]) { return .flat6 }
         if t.containsAny(["boxer", "flat four", "flat-four", "flat 4", "flat4"]) { return .flat4 }

@@ -53,8 +53,14 @@ struct CommunityTileView: View {
     @ObservedObject var engineVm: EngineViewModel
     @StateObject private var model = CommunityBrowserModel()
     @ObservedObject private var library = EngineLibrary.shared
+    @ObservedObject private var blockStore = BlockStore.shared
 
     @State private var detailEngine: CommunityEngine?
+
+    /// Published engines minus anyone the user has blocked.
+    private var visibleEngines: [CommunityEngine] {
+        model.engines.filter { !blockStore.isBlocked($0.ownerId) }
+    }
 
     /// The active engine's spec, only if it's user-built (built-ins return nil).
     /// The live ECU tune is read straight from the engine VM and stamped on,
@@ -118,7 +124,7 @@ struct CommunityTileView: View {
             stateBox { DashLoader(diameter: 30, label: "Loading engines") }
         } else if let error = model.errorText {
             stateBox { CommunityNotice(symbol: "wifi.slash", text: error) }
-        } else if model.engines.isEmpty {
+        } else if visibleEngines.isEmpty {
             stateBox {
                 CommunityNotice(symbol: "person.2",
                                 text: "No engines shared yet\(model.engineClass.map { " for \($0.displayName)" } ?? ""). Publish one of yours.")
@@ -132,8 +138,9 @@ struct CommunityTileView: View {
         VStack(spacing: cCardSpacing) {
             LazyVGrid(columns: [GridItem(.adaptive(minimum: cCardMinWidth), spacing: cCardSpacing)],
                       spacing: cCardSpacing) {
-                ForEach(model.engines) { engine in
-                    CommunityCard(engine: engine, sort: model.sort) {
+                ForEach(visibleEngines) { engine in
+                    CommunityCard(engine: engine, sort: model.sort,
+                                  canReport: !model.isMine(engine)) {
                         withAnimation(.easeInOut(duration: 0.2)) { detailEngine = engine }
                     }
                 }
@@ -189,19 +196,26 @@ private struct PublishStrip: View {
     private var canPublish: Bool { ineligibleReason == nil && userSpec != nil }
 
     var body: some View {
-        HStack(spacing: 10) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title)
-                    .font(.system(size: 14, weight: .semibold, design: .monospaced))
-                    .foregroundColor(titleColor)
-                    .lineLimit(2)
-                Text(detail)
-                    .font(.system(size: 12, design: .monospaced))
-                    .foregroundColor(.textSecondary)
-                    .lineLimit(1)
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 10) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title)
+                        .font(.system(size: 14, weight: .semibold, design: .monospaced))
+                        .foregroundColor(titleColor)
+                        .lineLimit(2)
+                    Text(detail)
+                        .font(.system(size: 12, design: .monospaced))
+                        .foregroundColor(.textSecondary)
+                        .lineLimit(1)
+                }
+                Spacer()
+                trailingControl
             }
-            Spacer()
-            trailingControl
+            // Surfaced only when the engine can actually be published, so the
+            // guidelines agreement sits right at the posting point.
+            if canPublish && !didPublish {
+                CommunityAgreementNote()
+            }
         }
         .padding(10)
         .background(RoundedRectangle(cornerRadius: Theme.Radius.panel).fill(bg))
@@ -362,9 +376,27 @@ private struct CommunityChip: View {
 private struct CommunityCard: View {
     let engine: CommunityEngine
     let sort: CommunitySort
+    let canReport: Bool
     let onTap: () -> Void
 
     var body: some View {
+        // The flag is a sibling overlaid on the card, NOT nested inside the
+        // card's Button — a button inside a button doesn't get its own taps.
+        ZStack(alignment: .topLeading) {
+            cardButton
+            if canReport {
+                ReportBlockButton(ownerId: engine.ownerId,
+                                  username: engine.ownerUsername,
+                                  recordName: engine.id,
+                                  contentName: engine.engineName,
+                                  contentType: .communityEngine,
+                                  tint: .textFaint)
+                    .padding(6)
+            }
+        }
+    }
+
+    private var cardButton: some View {
         Button(action: onTap) {
             VStack(alignment: .leading, spacing: 8) {
                 thumbnail

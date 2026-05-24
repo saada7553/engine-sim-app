@@ -70,7 +70,7 @@ enum AIEngineGeneration {
 enum GenLayoutChoice: String {
     case unspecified
     case single, inline2, inline3, inline4, inline5, inline6, inline7
-    case v6_60, v6_90, v8_90, v10_72, v12_60, v12_75
+    case v2_90, v4_90, v6_60, v6_90, v8_90, v10_72, v12_60, v12_75
     case flat4, flat6
 
     var engineLayout: EngineLayout? {
@@ -80,6 +80,7 @@ enum GenLayoutChoice: String {
         case .inline3: return .inline3;  case .inline4: return .inline4
         case .inline5: return .inline5;  case .inline6: return .inline6
         case .inline7: return .inline7
+        case .v2_90: return .v2_90;      case .v4_90: return .v4_90
         case .v6_60: return .v6_60;      case .v6_90: return .v6_90
         case .v8_90: return .v8_90;      case .v10_72: return .v10_72
         case .v12_60: return .v12_60;    case .v12_75: return .v12_75

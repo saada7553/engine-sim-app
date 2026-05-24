@@ -282,8 +282,13 @@ struct EngineGeometryParams {
                 bankIndex = 0
                 slotIndex = cylNumber - 1
             } else {
-                bankIndex = position % 2
-                slotIndex = position / 2
+                // Place by cylinder number (odd → bank0, even → bank1), matching
+                // MRWriter's bank split and the builder's firing-order graphic. The
+                // firing *phase* stays keyed to firing position via phaseOffsetRad /
+                // camPhaseOffsetRad, so cylinders still fire in the right order — they
+                // just now fire in their correct physical location.
+                bankIndex = (cylNumber - 1) % 2
+                slotIndex = (cylNumber - 1) / 2
             }
             let bankSign: Double = (bankIndex == 0) ? 1.0 : -1.0
             let bankAxialOffset: Double = (bankIndex == 0) ? -bankAxialShift : +bankAxialShift

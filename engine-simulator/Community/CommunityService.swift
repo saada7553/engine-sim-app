@@ -41,12 +41,14 @@ enum CommunityError: LocalizedError {
     case noUsername
     case notEligible(String)
     case decodeFailed
+    case contentRejected(String)
 
     var errorDescription: String? {
         switch self {
-        case .noUsername:            return "Set a community name before publishing."
-        case .notEligible(let why):  return why
-        case .decodeFailed:          return "This engine couldn't be read."
+        case .noUsername:               return "Set a community name before publishing."
+        case .notEligible(let why):     return why
+        case .decodeFailed:             return "This engine couldn't be read."
+        case .contentRejected(let why): return why
         }
     }
 }
@@ -87,6 +89,13 @@ final class CommunityService {
         guard !trimmed.isEmpty else { throw CommunityError.noUsername }
         if let reason = Self.ineligibilityReason(for: spec, currentUserId: ownerId) {
             throw CommunityError.notEligible(reason)
+        }
+        // Safety net for the public name + description. The builder already
+        // screens these on save, so this only catches engines saved before that
+        // gate shipped — but it's the last checkpoint before text goes public.
+        if let rejection = await EngineContentValidator.validate(
+            name: spec.name, description: spec.engineDescription) {
+            throw CommunityError.contentRejected(rejection.reason)
         }
 
         let record = makeRecord(from: spec, ownerUsername: trimmed, ownerId: ownerId)

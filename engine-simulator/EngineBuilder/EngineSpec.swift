@@ -18,6 +18,8 @@ enum EngineLayout: String, Codable, CaseIterable, Identifiable {
     case inline5
     case inline6
     case inline7
+    case v2_90
+    case v4_90
     case v6_60
     case v6_90
     case v8_90
@@ -38,6 +40,8 @@ enum EngineLayout: String, Codable, CaseIterable, Identifiable {
         case .inline4: return "Inline 4"
         case .inline5: return "Inline 5"
         case .inline6: return "Inline 6"
+        case .v2_90:   return "V2 (90°)"
+        case .v4_90:   return "V4 (90°)"
         case .v6_60:   return "V6 (60°)"
         case .v6_90:   return "V6 (90°)"
         case .v8_90:   return "V8 (90°)"
@@ -58,6 +62,8 @@ enum EngineLayout: String, Codable, CaseIterable, Identifiable {
         case .inline4: return "I4"
         case .inline5: return "I5"
         case .inline6: return "I6"
+        case .v2_90:           return "V2"
+        case .v4_90:           return "V4"
         case .v6_60, .v6_90:   return "V6"
         case .v8_90:           return "V8"
         case .v10_72:          return "V10"
@@ -70,9 +76,9 @@ enum EngineLayout: String, Codable, CaseIterable, Identifiable {
     var cylinderCount: Int {
         switch self {
         case .inline1:                  return 1
-        case .inline2:                  return 2
+        case .inline2, .v2_90:          return 2
         case .inline3:                  return 3
-        case .inline4, .flat4:          return 4
+        case .inline4, .flat4, .v4_90:  return 4
         case .inline5:                  return 5
         case .inline6, .v6_60, .v6_90, .flat6: return 6
         case .inline7:                  return 7
@@ -85,7 +91,7 @@ enum EngineLayout: String, Codable, CaseIterable, Identifiable {
     var bankCount: Int {
         switch self {
         case .inline1, .inline2, .inline3, .inline4, .inline5, .inline6, .inline7: return 1
-        case .v6_60, .v6_90, .v8_90, .v10_72, .v12_60, .v12_75: return 2
+        case .v2_90, .v4_90, .v6_60, .v6_90, .v8_90, .v10_72, .v12_60, .v12_75: return 2
         case .flat4, .flat6: return 2
         }
     }
@@ -95,10 +101,19 @@ enum EngineLayout: String, Codable, CaseIterable, Identifiable {
         switch self {
         case .inline1, .inline2, .inline3, .inline4, .inline5, .inline6, .inline7: return 0
         case .v6_60, .v12_60: return 30
-        case .v8_90, .v6_90:  return 45
+        case .v8_90, .v6_90, .v2_90, .v4_90: return 45
         case .v10_72:         return 36
         case .v12_75:         return 37.5
         case .flat4, .flat6:  return 90
+        }
+    }
+
+    /// Horizontally-opposed (boxer) layouts. Their crank/journal scheme differs
+    /// from inline/V engines — see MRWriter.crankAndJournals.
+    var isFlat: Bool {
+        switch self {
+        case .flat4, .flat6: return true
+        default: return false
         }
     }
 
@@ -108,6 +123,10 @@ enum EngineLayout: String, Codable, CaseIterable, Identifiable {
         case .inline1:  return [1]
         case .inline2:  return [1, 2]
         case .inline3:  return [1, 2, 3]
+        case .v2_90:    return [1, 2]
+        // 90° V4 (cyl 1,3 on bank0; 2,4 on bank1). Cross-bank order keeps the
+        // power strokes from doubling up on one bank.
+        case .v4_90:    return [1, 3, 2, 4]
         case .inline7:  return [1, 3, 5, 7, 2, 4, 6]
         case .inline4:  return [1, 3, 4, 2]
         case .inline5:  return [1, 2, 4, 5, 3]

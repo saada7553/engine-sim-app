@@ -3829,6 +3829,7 @@
 		939585A02F0C452200F19030 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				ARCHS = arm64;
 				CODE_SIGN_STYLE = Automatic;
 				DEVELOPMENT_TEAM = 72T59L235C;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
@@ -3852,6 +3853,7 @@
 		939585A12F0C452200F19030 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				ARCHS = arm64;
 				CODE_SIGN_STYLE = Automatic;
 				DEVELOPMENT_TEAM = 72T59L235C;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;

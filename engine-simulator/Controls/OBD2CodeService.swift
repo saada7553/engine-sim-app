@@ -60,9 +60,8 @@ private let crankBoggingFraction: Double = 0.55
 private let assumedCrankTargetRpm: Double = 220.0
 // A starter geared this slow can't build enough speed to fire most engines.
 private let starterSpeedFloorRpm: Double = 180.0
-// Throttle while cranking: wide-open floods it; near-closed may be starving a
-// big-cam engine that needs a little air to catch.
-private let floodingThrottle: Double = 0.95
+// Throttle while cranking: near-closed may be starving a big-cam engine that
+// needs a little air to catch.
 private let starvedThrottle: Double = 0.04
 
 // MARK: - Models
@@ -398,20 +397,13 @@ enum OBD2CodeService {
             let (desc, action) = starterDiagnosis(spec: spec)
             out.append(.init(id: "P0616-START", code: "P0616",
                              description: desc, severity: .warning, action: action))
-        } else {
-            // The starter is doing its job, so if it still won't catch the
-            // throttle is the likely culprit — too much (flooding) or too little.
-            if vm.throttlePosition >= floodingThrottle {
-                out.append(.init(id: "P0172-START", code: "P0172",
-                                 description: "Flooded — Too Much Throttle While Cranking",
-                                 severity: .warning,
-                                 action: "Ease off the throttle, then crank"))
-            } else if vm.throttlePosition <= starvedThrottle {
-                out.append(.init(id: "P050A-START", code: "P050A",
-                                 description: "Engine Cranks But Won't Catch",
-                                 severity: .warning,
-                                 action: "Feed it some throttle while cranking"))
-            }
+        } else if vm.throttlePosition <= starvedThrottle {
+            // The starter is doing its job, so if it still won't catch and the
+            // throttle is nearly closed it's likely starving.
+            out.append(.init(id: "P050A-START", code: "P050A",
+                             description: "Engine Cranks But Won't Catch",
+                             severity: .warning,
+                             action: "Feed it some throttle while cranking"))
         }
 
         return out

@@ -7,7 +7,6 @@
 
 import Foundation
 import SwiftUI
-import WebKit
 
 struct TileContainerView: View {
     @ObservedObject var tile: TileViewModel

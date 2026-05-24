@@ -81,16 +81,28 @@ struct IdentityStep: View {
                         .focused($focused)
                 }
                 Rectangle()
-                    .fill(BuilderTheme.accent)
+                    .fill(state.nameContentError == nil ? BuilderTheme.accent : Color.accentDanger)
                     .frame(height: 1)
 
+                if let nameError = state.nameContentError {
+                    BuilderContentError(text: nameError)
+                }
+
                 DescriptionField(text: descriptionBinding)
+
+                if let descError = state.descriptionContentError {
+                    BuilderContentError(text: descError)
+                }
             }
             Spacer()
 
             IdentityBlueprintArt()
                 .frame(width: 280, height: 280)
         }
+        // A rejected name/description is cleared the moment the user edits the
+        // offending field, so the error doesn't linger while they fix it.
+        .onChange(of: state.spec.name) { _, _ in state.clearContentRejection() }
+        .onChange(of: state.spec.engineDescription) { _, _ in state.clearContentRejection() }
         .onAppear {
             // Only autofocus on macOS — iOS would summon the on-screen
             // keyboard the moment the builder opens, which the user
@@ -99,6 +111,23 @@ struct IdentityStep: View {
             focused = true
             #endif
         }
+    }
+}
+
+/// Inline rejection line shown under the name or description when its content
+/// fails screening on save. Matches the danger styling used elsewhere.
+private struct BuilderContentError: View {
+    let text: String
+    var body: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.system(size: 11, weight: .semibold))
+            Text(text)
+                .font(.system(size: Theme.FontSize.callout, design: .monospaced))
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .foregroundColor(.accentDanger)
+        .padding(.top, 2)
     }
 }
 

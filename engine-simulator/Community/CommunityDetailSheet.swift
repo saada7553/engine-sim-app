@@ -117,6 +117,15 @@ struct CommunityDetailOverlay: View {
                 .foregroundColor(.accentLive)
                 .tracking(2)
             Spacer()
+            if !model.isMine(engine) {
+                ReportBlockButton(ownerId: engine.ownerId,
+                                  username: engine.ownerUsername,
+                                  recordName: engine.id,
+                                  contentName: engine.engineName,
+                                  contentType: .communityEngine,
+                                  iconSize: 16,
+                                  tint: .textMuted)
+            }
             Button(action: dismiss) {
                 Image(systemName: "xmark.circle.fill")
                     .font(.system(size: 22))

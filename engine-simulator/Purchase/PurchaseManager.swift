@@ -27,6 +27,20 @@ final class PurchaseManager: ObservableObject {
     /// you set up in the RevenueCat dashboard.
     static let proEntitlementID = "EngineSimulator Pro"
 
+    // ⚠️ TEMPORARY BETA BYPASS — REMOVE WHEN REVENUECAT INFRA IS FIXED ⚠️
+    //
+    // RevenueCat is currently not provisioning entitlements, so real
+    // purchases fail and beta users get stuck behind every gate. While this
+    // flag is on, pressing the paywall CTA grants Pro *for the current
+    // session only*: `isPro` is flipped in-memory and nothing is persisted.
+    // First access to a locked feature → paywall; tap purchase → unlocked;
+    // relaunch → locked again, tap once more. That's the intended beta UX
+    // until the store works.
+    //
+    // TODO: Remove `betaPaywallBypass` + `grantSessionProForBeta()` and let
+    // `purchaseLifetime()` go through RevenueCat again once RC is fixed.
+    static let betaPaywallBypass = true
+
     // MARK: Published state
 
     /// True when the user owns the lifetime entitlement. Drives every gate
@@ -120,6 +134,7 @@ final class PurchaseManager: ObservableObject {
     /// Trigger the App Store sheet to purchase the lifetime product. Updates
     /// `purchaseState` so the paywall can render loading / error UI.
     func purchaseLifetime() async {
+
         guard let package = lifetimePackage() else {
             purchaseState = .error("Lifetime product unavailable. Check your connection and try again.")
             await refreshOfferings()
@@ -205,7 +220,7 @@ final class PurchaseManager: ObservableObject {
     /// Falls back to a hard-coded value while offerings load — the paywall
     /// still shows _something_ during the brief offering fetch on first run.
     var lifetimePriceLabel: String {
-        lifetimePackage()?.storeProduct.localizedPriceString ?? "Fetching..."
+        lifetimePackage()?.storeProduct.localizedPriceString ?? "$14.99"
     }
 
     private func lifetimePackage() -> Package? {

@@ -133,6 +133,10 @@ struct SettingsView: View {
                 ReplayTutorialRow(onClose: onClose)
             }
 
+            SettingsSection(title: "LEGAL") {
+                LegalLinksRow()
+            }
+
             #if DEBUG
             SettingsSection(title: "DEBUG") {
                 DebugRows(onClose: onClose)
@@ -450,6 +454,37 @@ private struct PurchasesRow: View {
     }
 }
 
+// MARK: - Legal links
+
+private struct LegalLinksRow: View {
+    @Environment(\.openURL) private var openURL
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            link("Privacy Policy", LegalLinks.privacyPolicy)
+            link("Community Guidelines", LegalLinks.communityGuidelines)
+            link("Terms of Use", LegalLinks.termsOfUse)
+        }
+    }
+
+    private func link(_ title: String, _ url: URL) -> some View {
+        Button { openURL(url) } label: {
+            HStack(spacing: 8) {
+                Text(title)
+                    .font(.system(size: rowTitleFont, weight: .semibold))
+                    .foregroundColor(.textPrimary)
+                Spacer()
+                Image(systemName: "arrow.up.right")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundColor(.textMuted)
+            }
+            .padding(.vertical, 8)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+}
+
 // MARK: - Help: replay tutorial
 
 private struct ReplayTutorialRow: View {
@@ -586,6 +621,8 @@ private struct NameEditorRow: View {
                     .font(.system(size: rowSubtitleFont))
                     .foregroundColor(.accentDanger)
             }
+
+            CommunityAgreementNote(fontSize: rowSubtitleFont)
         }
         .onAppear { draft = identity.username }
         .onChange(of: draft) { _, _ in

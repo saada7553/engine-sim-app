@@ -11,6 +11,10 @@ private let mrIndent = "    "
 private let twoStrokeCycleDeg = 720.0
 private let fallbackGearRatios: [Double] = [3.0, 2.0, 1.4, 1.0]
 
+// Flat (boxer) crank: the crank TDC reference sits at 180° (vs the inline/V
+// `pi/2 - halfV`). Journal angles are derived per-cylinder in crankAndJournals.
+private let boxerCrankTdcDeg = 180.0
+
 enum MRWriter {
 
     /// Returns the .mr file body for the given spec.
@@ -417,6 +421,11 @@ enum MRWriter {
                                           n: Int,
                                           rotPerFiring: Double,
                                           halfV: Double) -> String {
+        let isFlat = spec.layout.isFlat
+        let tdcExpr = isFlat
+            ? "\(boxerCrankTdcDeg) * units.deg"
+            : "(constants.pi / 2) - (\(halfV) * units.deg)"
+
         var s = """
         \(mrIndent)label crank_moment(disk_moment_of_inertia(mass: crank_mass, radius: stroke / 2))
         \(mrIndent)label flywheel_moment(disk_moment_of_inertia(mass: flywheel_mass, radius: flywheel_radius))
@@ -430,16 +439,32 @@ enum MRWriter {
         \(mrIndent)\(mrIndent)moment_of_inertia: crank_moment + flywheel_moment + other_moment,
         \(mrIndent)\(mrIndent)position_x: 0.0,
         \(mrIndent)\(mrIndent)position_y: 0.0,
-        \(mrIndent)\(mrIndent)tdc: (constants.pi / 2) - (\(halfV) * units.deg)
+        \(mrIndent)\(mrIndent)tdc: \(tdcExpr)
         \(mrIndent))
 
 
         """
 
-        // One rod journal per cylinder; angle = firing_position(cyl) * rotPerFiring degrees.
+        // Rod-journal angle per cylinder. Inline/V engines bake the full firing
+        // phase into the journal (firing_position * rotPerFiring). Flat (boxer)
+        // engines place the n/2 opposed pairs on evenly-spaced crank throws
+        // (720°/n apart). CRITICAL: the two cylinders WITHIN a bank must each sit
+        // on a DISTINCT throw — two same-bank cylinders sharing a pin is a
+        // rank-deficient layout the rigid-body solver can't resolve, so the crank
+        // spins up on its own and RPM diverges to inf/garbage. bank0 = odd
+        // cylinders, bank1 = even (see bank0Cylinders/bank1Cylinders), so cylinder
+        // `cyl` occupies slot (cyl-1)/2 within its bank → throw (cyl-1)/2. The two
+        // members of a pair share a throw but land on opposite banks, which is fine.
+        let throwSpacingDeg = twoStrokeCycleDeg / Double(n)
         for cyl in 1...n {
-            guard let pos = firingOrder.firstIndex(of: cyl) else { continue }
-            let angle = Double(pos) * rotPerFiring
+            let angle: Double
+            if isFlat {
+                let bankSlot = (cyl - 1) / 2
+                angle = Double(bankSlot) * throwSpacingDeg
+            } else {
+                guard let pos = firingOrder.firstIndex(of: cyl) else { continue }
+                angle = Double(pos) * rotPerFiring
+            }
             s += "\(mrIndent)rod_journal rj\(cyl - 1)(angle: \(angle) * units.deg) // cyl \(cyl)\n"
         }
         s += "\n\(mrIndent)c0\n"

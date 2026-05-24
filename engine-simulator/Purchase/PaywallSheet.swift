@@ -494,23 +494,32 @@ struct PaywallSheet: View {
     // MARK: Footer
 
     private var footerLinks: some View {
-        HStack(spacing: 14) {
-            Button(action: triggerRestore) {
-                Text("Restore purchases")
-                    .font(.system(size: 11))
-                    .foregroundColor(mutedText)
-                    .underline()
+        VStack(spacing: 8) {
+            HStack(spacing: 14) {
+                Button(action: triggerRestore) {
+                    Text("Restore purchases")
+                        .font(.system(size: 11))
+                        .foregroundColor(mutedText)
+                        .underline()
+                }
+                .buttonStyle(.plain)
+                .disabled(manager.purchaseState == .loading)
+
+                Spacer()
+
+                Text("Billed through Apple. Cancel anytime in your App Store account.")
+                    .font(.system(size: 10))
+                    .foregroundColor(mutedText.opacity(0.85))
+                    .multilineTextAlignment(.trailing)
+                    .fixedSize(horizontal: false, vertical: true)
             }
-            .buttonStyle(.plain)
-            .disabled(manager.purchaseState == .loading)
 
-            Spacer()
-
-            Text("Billed through Apple. Cancel anytime in your App Store account.")
-                .font(.system(size: 10))
-                .foregroundColor(mutedText.opacity(0.85))
-                .multilineTextAlignment(.trailing)
-                .fixedSize(horizontal: false, vertical: true)
+            HStack(spacing: 10) {
+                LegalLinkLabel(title: "Terms of Use", url: LegalLinks.termsOfUse, color: mutedText)
+                Text("·").font(.system(size: 11)).foregroundColor(mutedText.opacity(0.5))
+                LegalLinkLabel(title: "Privacy Policy", url: LegalLinks.privacyPolicy, color: mutedText)
+                Spacer()
+            }
         }
     }
 

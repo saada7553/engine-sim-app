@@ -7,7 +7,6 @@
 
 import Foundation
 import SwiftUI
-import WebKit
 import Combine
 
 class TileViewModel: Identifiable, ObservableObject, Equatable {

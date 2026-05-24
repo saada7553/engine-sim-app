@@ -198,7 +198,18 @@ private struct GaugeNeedleLayer: View {
     // Spring-damper state persists across the per-tick re-renders.
     @StateObject private var needleState = NeedleAnimationState()
 
-    private var targetValue: Double { engineVm[keyPath: valueKeyPath] }
+    // A diverged engine can briefly report a non-finite or absurdly large value.
+    // Int(inf/NaN) — and Int() of anything past Int.max — is a hard Swift trap,
+    // and a non-finite value also poisons the needle spring. Clamp the live
+    // reading to a finite, displayable magnitude so the gauge degrades to a
+    // pegged needle instead of taking the whole app down.
+    private static let maxGaugeMagnitude: Double = 1e9
+
+    private var targetValue: Double {
+        let raw = engineVm[keyPath: valueKeyPath]
+        guard raw.isFinite else { return 0 }
+        return min(Self.maxGaugeMagnitude, max(-Self.maxGaugeMagnitude, raw))
+    }
 
     var body: some View {
         // Advance the needle toward the live value, using the shared UI clock

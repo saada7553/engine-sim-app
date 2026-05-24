@@ -445,6 +445,10 @@ struct OnboardingUsernameField: View {
                 .font(.system(size: Theme.FontSize.callout))
                 .foregroundColor(errorText == nil ? .textMuted : .accentDanger)
                 .fixedSize(horizontal: false, vertical: true)
+
+            // Your username is public on the leaderboard, so the guidelines
+            // agreement is surfaced here at the first point content is created.
+            CommunityAgreementNote(fontSize: Theme.FontSize.callout)
         }
     }
 

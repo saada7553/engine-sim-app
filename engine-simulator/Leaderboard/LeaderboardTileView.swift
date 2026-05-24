@@ -164,6 +164,7 @@ struct LeaderboardTileView: View {
     @ObservedObject var engineVm: EngineViewModel
     @StateObject private var model = LeaderboardViewModel()
     @ObservedObject private var library = EngineLibrary.shared
+    @ObservedObject private var blockStore = BlockStore.shared
 
     /// The active engine's spec, only if it's user-built (built-ins return nil
     /// and therefore can't compete).
@@ -186,12 +187,18 @@ struct LeaderboardTileView: View {
         .task(id: model.filterKey) { await model.load() }
     }
 
+    /// Entries minus anyone the user has blocked. Re-ranked after filtering so
+    /// the visible board numbers stay contiguous (a blocked player leaves no gap).
+    private var visibleEntries: [LeaderboardEntry] {
+        model.entries.filter { !blockStore.isBlocked($0.ownerId) }
+    }
+
     @ViewBuilder private var rankings: some View {
         if model.isLoading && model.entries.isEmpty {
             centered { DashLoader(diameter: 30, label: "Loading leaderboard") }
         } else if let error = model.errorText {
             centered { LeaderboardNotice(symbol: "wifi.slash", text: error) }
-        } else if model.entries.isEmpty {
+        } else if visibleEntries.isEmpty {
             centered {
                 LeaderboardNotice(symbol: "trophy",
                                   text: "No entries yet for \(model.metric.title)\(model.engineClass.map { " · \($0.displayName)" } ?? ""). Be the first.")
@@ -199,7 +206,7 @@ struct LeaderboardTileView: View {
         } else {
             ScrollView {
                 LazyVStack(spacing: lbRowSpacing) {
-                    ForEach(Array(model.entries.enumerated()), id: \.element.id) { index, entry in
+                    ForEach(Array(visibleEntries.enumerated()), id: \.element.id) { index, entry in
                         LeaderboardRow(rank: index + 1, entry: entry, metric: model.metric,
                                        isMe: !entry.ownerId.isEmpty && entry.ownerId == PlayerIdentity.shared.playerId)
                     }
@@ -304,22 +311,29 @@ private struct SubmitStrip: View {
     @State private var submitting = false
 
     var body: some View {
-        HStack(spacing: 10) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(statusTitle)
-                    .font(.system(size: lbStatusTitleFont, weight: .semibold, design: .monospaced))
-                    .foregroundColor(titleColor)
-                    .lineLimit(1)
-                Text(statusDetail)
-                    .font(.system(size: lbStatusDetailFont, design: .monospaced))
-                    .foregroundColor(.textSecondary)
-                    .lineLimit(1)
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 10) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(statusTitle)
+                        .font(.system(size: lbStatusTitleFont, weight: .semibold, design: .monospaced))
+                        .foregroundColor(titleColor)
+                        .lineLimit(1)
+                    Text(statusDetail)
+                        .font(.system(size: lbStatusDetailFont, design: .monospaced))
+                        .foregroundColor(.textSecondary)
+                        .lineLimit(1)
+                }
+                Spacer()
+                if results.posted {
+                    postedBadge
+                } else if canSubmit {
+                    postButton
+                }
             }
-            Spacer()
-            if results.posted {
-                postedBadge
-            } else if canSubmit {
-                postButton
+            // Surfaced only when there's a postable result, so the guidelines
+            // agreement sits right at the posting point.
+            if canSubmit && !results.posted {
+                CommunityAgreementNote()
             }
         }
         .padding(10)
@@ -463,6 +477,18 @@ private struct LeaderboardRow: View {
                     .font(.system(size: lbMetricUnitFont, weight: .medium, design: .monospaced))
                     .foregroundColor(.textMuted)
             }
+
+            // Report / block. Always rendered so the metric column stays aligned
+            // across every row; on the user's own row it's invisible and not
+            // tappable (you can't report yourself) but still reserves the space.
+            ReportBlockButton(ownerId: entry.ownerId,
+                              username: entry.username,
+                              recordName: entry.id,
+                              contentName: entry.engineName,
+                              contentType: .leaderboardEntry,
+                              tint: .textFaint)
+                .opacity(isMe ? 0 : 1)
+                .allowsHitTesting(!isMe)
         }
         .padding(.horizontal, 9).padding(.vertical, 7)
         .background(RoundedRectangle(cornerRadius: Theme.Radius.control)

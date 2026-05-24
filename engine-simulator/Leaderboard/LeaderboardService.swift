@@ -49,12 +49,14 @@ enum LeaderboardError: LocalizedError {
     case notConfigured
     case noUsername
     case noPowerResult
+    case contentRejected(String)
 
     var errorDescription: String? {
         switch self {
         case .notConfigured: return "The leaderboard isn't set up in this build yet."
         case .noUsername:    return "Set a leaderboard name before posting."
         case .noPowerResult: return "Capture a dyno run or a 0-60 first — there's nothing to post yet."
+        case .contentRejected(let why): return why
         }
     }
 }
@@ -92,6 +94,13 @@ final class LeaderboardService {
         // sweep can be shared without ever launching.
         guard submission.peakPowerHp > 0 || submission.zeroToSixtySec > 0 else {
             throw LeaderboardError.noPowerResult
+        }
+        // Safety net for the public engine name (and its description, which rides
+        // along in the downloadable spec). The builder screens these on save;
+        // this catches engines saved before that gate shipped.
+        if let rejection = await EngineContentValidator.validate(
+            name: submission.spec.name, description: submission.spec.engineDescription) {
+            throw LeaderboardError.contentRejected(rejection.reason)
         }
 
         let record = makeRecord(from: submission, username: username, ownerId: ownerId)

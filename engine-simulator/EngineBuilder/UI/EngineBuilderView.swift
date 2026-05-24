@@ -115,6 +115,14 @@ final class EngineBuilderState: ObservableObject {
     @Published var step: BuilderStep = .identity
     @Published var phase: BuilderPhase
 
+    /// Set when a save is rejected because the name or description failed the
+    /// content check. Drives the inline error on the Identity step and pins
+    /// `nameContentError` / `descriptionContentError` to the right field.
+    @Published var contentRejection: EngineContentValidator.Rejection?
+    /// True while the async content check runs, so the Save button can show a
+    /// pending state and not be tapped twice.
+    @Published var isValidatingContent = false
+
     /// True when the builder was opened on an existing saved engine. Editing
     /// reuses the spec's id, so saving overwrites the original entry rather
     /// than creating a duplicate. Also drives the "Save Changes" header label.
@@ -158,6 +166,24 @@ final class EngineBuilderState: ObservableObject {
 
     var nameIsValid: Bool {
         !spec.name.trimmingCharacters(in: CharacterSet.whitespaces).isEmpty
+    }
+
+    /// The rejection reason to show under the name field, if the name is what
+    /// failed the content check.
+    var nameContentError: String? {
+        contentRejection?.field == .name ? contentRejection?.reason : nil
+    }
+
+    /// The rejection reason to show under the description field, if that's what
+    /// failed the content check.
+    var descriptionContentError: String? {
+        contentRejection?.field == .description ? contentRejection?.reason : nil
+    }
+
+    /// Clear a stale content rejection once the user edits the offending field,
+    /// so the error doesn't linger while they fix it.
+    func clearContentRejection() {
+        if contentRejection != nil { contentRejection = nil }
     }
 }
 
@@ -234,9 +260,33 @@ struct EngineBuilderView: View {
     }
 
     private func save() {
-        // Gated: lets the user design freely, but committing the engine to
-        // the library is a Pro feature. PurchaseManager raises the paywall
-        // when the user isn't entitled; the save + close run on a Pro user.
+        guard !state.isValidatingContent else { return }
+        // Screen the name + description before anything else. A shared engine's
+        // text is public (community board / leaderboard), so an objectionable
+        // name or description must never be committed to the library — the only
+        // place a publishable engine can come from. This runs ahead of the Pro
+        // gate so bad text can't even reach the paywall.
+        state.isValidatingContent = true
+        Task {
+            let rejection = await EngineContentValidator.validate(
+                name: state.spec.name,
+                description: state.spec.engineDescription)
+            await MainActor.run {
+                state.isValidatingContent = false
+                if let rejection {
+                    state.contentRejection = rejection
+                    state.step = .identity   // surface the offending field
+                    return
+                }
+                commitSave()
+            }
+        }
+    }
+
+    /// Commit the validated engine. Gated: designing is free, but committing to
+    /// the library is a Pro feature — PurchaseManager raises the paywall when the
+    /// user isn't entitled; the save + close run on a Pro user.
+    private func commitSave() {
         PurchaseManager.shared.gatePro {
             EngineLibrary.shared.saveUserEngine(state.spec)
             onClose()
@@ -250,6 +300,11 @@ private struct BuilderHeader: View {
     @ObservedObject var state: EngineBuilderState
     let onClose: () -> Void
     let onSave: () -> Void
+
+    private var saveButtonLabel: String {
+        if state.isValidatingContent { return "Checking…" }
+        return state.isEditingExisting ? "Save Changes" : "Save Engine"
+    }
 
     var body: some View {
         HStack(spacing: 24) {
@@ -279,9 +334,10 @@ private struct BuilderHeader: View {
 
             BuilderNavButton(label: "Cancel", style: .secondary,
                              action: onClose)
-            BuilderNavButton(label: state.isEditingExisting ? "Save Changes" : "Save Engine",
+            BuilderNavButton(label: saveButtonLabel,
                              style: .primary,
-                             enabled: state.nameIsValid, action: onSave)
+                             enabled: state.nameIsValid && !state.isValidatingContent,
+                             action: onSave)
         }
         .padding(.horizontal, BuilderLayout.headerHorizontalPadding)
         .padding(.vertical, BuilderLayout.headerVerticalPadding)

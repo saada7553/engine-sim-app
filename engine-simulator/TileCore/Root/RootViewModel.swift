@@ -8,7 +8,6 @@
 import Foundation
 import SwiftUI
 import Combine
-import WebKit
 
 class RootViewModel: ObservableObject, Observable {
     @ObservedObject var engineVm: EngineViewModel
@@ -175,16 +174,6 @@ class RootViewModel: ObservableObject, Observable {
                 }
             }
                 
-            // TODO: delete the view 
-//            if let webView = tileToDelete.view {
-//                webView.stopLoading()
-//                webView.navigationDelegate = nil
-//                webView.uiDelegate = nil
-//                webView.removeFromSuperview()
-//                // TODO: fix this nonsense 
-//                webView.setAllMediaPlaybackSuspended(true)
-//            }
-            
             return true
         }
         

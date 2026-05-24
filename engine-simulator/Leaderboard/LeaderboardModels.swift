@@ -16,7 +16,7 @@ import Foundation
 /// V6 and two V12 bank angles collapse into one class so "best V6" means one
 /// board, not two.
 enum EngineClass: String, CaseIterable, Identifiable, Codable {
-    case i1, i2, i3, i4, i5, i6, i7, v6, v8, v10, v12, flat4, flat6
+    case i1, i2, i3, i4, i5, i6, i7, v2, v4, v6, v8, v10, v12, flat4, flat6
 
     var id: String { rawValue }
 
@@ -29,6 +29,8 @@ enum EngineClass: String, CaseIterable, Identifiable, Codable {
         case .inline5:          return .i5
         case .inline6:          return .i6
         case .inline7:          return .i7
+        case .v2_90:            return .v2
+        case .v4_90:            return .v4
         case .v6_60, .v6_90:    return .v6
         case .v8_90:            return .v8
         case .v10_72:           return .v10
@@ -47,6 +49,8 @@ enum EngineClass: String, CaseIterable, Identifiable, Codable {
         case .i5:    return "Inline 5"
         case .i6:    return "Inline 6"
         case .i7:    return "Inline 7"
+        case .v2:    return "V2"
+        case .v4:    return "V4"
         case .v6:    return "V6"
         case .v8:    return "V8"
         case .v10:   return "V10"
@@ -65,6 +69,8 @@ enum EngineClass: String, CaseIterable, Identifiable, Codable {
         case .i5: return "I5"
         case .i6: return "I6"
         case .i7: return "I7"
+        case .v2: return "V2"
+        case .v4: return "V4"
         case .v6: return "V6"
         case .v8: return "V8"
         case .v10: return "V10"
