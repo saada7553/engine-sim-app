@@ -285,7 +285,7 @@ struct LayoutStep: View {
                 .lineSpacing(4)
 
             ScrollView {
-                CardGrid(items: EngineLayout.allCases,
+                CardGrid(items: EngineLayout.selectableCases,
                          columns: 4,
                          isSelected: { state.spec.layout == $0 },
                          onSelect: { selectLayout($0) }) { layout, selected in

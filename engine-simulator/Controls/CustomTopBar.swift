@@ -26,6 +26,14 @@ struct CustomTopBar: View {
     let onSaveLayout: () -> Void
 
     var body: some View {
+        barContent
+            .frame(height: Theme.Bar.height)
+            .background(topBarBackground)
+            .border(Color.white.opacity(0.12), width: 1, edges: [.bottom])
+    }
+
+    #if os(macOS)
+    private var barContent: some View {
         HStack(spacing: 0) {
             leftCluster
                 .padding(.leading, 18)
@@ -34,19 +42,36 @@ struct CustomTopBar: View {
 
             rightCluster
                 .padding(.trailing, 18)
+        }
+    }
+    #else
+    // iOS: prefer the full-width row (Spacer alive, so the throttle slider +
+    // shift buttons hug the far right for right-thumb reach). Only when the
+    // controls can't fit — a narrow iPhone — fall back to a horizontally
+    // scrollable row so a packed bar scrolls instead of clipping. ViewThatFits
+    // picks the first child whose ideal width fits; inside the ScrollView the
+    // Spacer collapses to its minLength and the row overflows to scroll.
+    private var barContent: some View {
+        ViewThatFits(in: .horizontal) {
+            iosRow
+            ScrollView(.horizontal, showsIndicators: false) {
+                iosRow
+            }
+        }
+    }
 
-            #if !os(macOS)
-            // iOS: the throttle slider + up/down shift buttons sit at the
-            // far right so the user can reach them with their right thumb
-            // while holding the iPad in landscape.
+    private var iosRow: some View {
+        HStack(spacing: 0) {
+            leftCluster
+                .padding(.leading, 18)
+
+            Spacer(minLength: Theme.Bar.clusterSpacing)
+
             iosQuickControls
                 .padding(.trailing, 18)
-            #endif
         }
-        .frame(height: Theme.Bar.height)
-        .background(topBarBackground)
-        .border(Color.white.opacity(0.12), width: 1, edges: [.bottom])
     }
+    #endif
 
     #if !os(macOS)
     // MARK: iOS quick controls — gear readout + throttle slider + shift buttons.

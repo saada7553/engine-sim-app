@@ -100,9 +100,9 @@ struct AdvancedStep: View {
 
             AdvancedSection(title: "Starter & condition") {
                 BuilderSlider(label: "Starter torque", value: $state.spec.starterTorqueLbFt,
-                              range: 50...600, step: 5, unit: "lb-ft", format: "%.0f")
+                              range: 50...1050, step: 5, unit: "lb-ft", format: "%.0f")
                 BuilderSlider(label: "Starter speed", value: $state.spec.starterSpeedRpm,
-                              range: 80...400, step: 5, unit: "rpm", format: "%.0f")
+                              range: 80...525, step: 5, unit: "rpm", format: "%.0f")
                 BuilderSlider(label: "Blowby (ring wear)", value: $state.spec.blowby,
                               range: 0...2, step: 0.05, unit: "", format: "%.2f")
             }

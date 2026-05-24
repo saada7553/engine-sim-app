@@ -70,7 +70,7 @@ enum EngineDesignExpander {
     // MARK: - Entry point
 
     static func expand(_ intent: EngineIntent) -> EngineSpec {
-        let layout = intent.layout ?? defaultLayout(intent)
+        let layout = (intent.layout ?? defaultLayout(intent)).productionSafe
         let n = Double(layout.cylinderCount)
         var displacementL = (intent.displacementL ?? defaultDisplacement(layout: layout, intent: intent))
             .clamped(to: Limit.displacementL)

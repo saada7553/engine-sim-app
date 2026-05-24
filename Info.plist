@@ -15,6 +15,13 @@
 <dict>
 	<key>LSApplicationCategoryType</key>
 	<string>public.app-category.simulation-games</string>
+	<!--
+	  Export compliance: the app uses only standard, exempt encryption (HTTPS/TLS
+	  via CloudKit and opening web links) — no proprietary or non-exempt crypto.
+	  Declaring this skips the export-compliance questionnaire on every upload.
+	-->
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 	<key>UILaunchScreen</key>
 	<dict>
 		<key>UIColorName</key>

@@ -53,6 +53,10 @@ struct TileSurfApp: App {
     @State private var showLaunchSplash = true
 
     init() {
+        // Start crash/error reporting first, before any other startup work,
+        // so failures during bootstrap are captured.
+        configureSentry()
+
         // Boot the StoreKit purchase layer before any view binds to
         // PurchaseManager — it loads the product + entitlement state and
         // starts listening for transaction updates during bootstrap.
@@ -224,13 +228,7 @@ struct TileSurfApp: App {
     
     var detailView: some View {
         ZStack {
-//            if selection == "history" {
-//                
-//            } else if selection == "cookies" {
-//                
-//            } else {
-                RootView(vm: rootViewModel)
-//            }
+            RootView(vm: rootViewModel)
         }
         .navigationTitle("")
     }
@@ -268,34 +266,3 @@ func tileSurfCommands(rootViewModel: RootViewModel) -> some Commands {
     }
 #endif
 }
-
-/*
- SentrySDK.start { options in
-     options.dsn = "https://dcd05699e199354cd229fe74e8eaa55c@o4510452902526976.ingest.us.sentry.io/4510452906721280"
-
-     // Adds IP for users.
-     // For more information, visit: https://docs.sentry.io/platforms/apple/data-management/data-collected/
-     options.sendDefaultPii = true
-
-     // Set tracesSampleRate to 1.0 to capture 100% of transactions for performance monitoring.
-     // We recommend adjusting this value in production.
-     options.tracesSampleRate = 1.0
-
-     // Configure profiling. Visit https://docs.sentry.io/platforms/apple/profiling/ to learn more.
-     options.configureProfiling = {
-         $0.sessionSampleRate = 1.0 // We recommend adjusting this value in production.
-         $0.lifecycle = .trace
-     }
-
-     // Uncomment the following lines to add more data to your events
-     // options.attachScreenshot = true // This adds a screenshot to the error events
-     // options.attachViewHierarchy = true // This adds the view hierarchy to the error events
-
-     // Enable experimental logging features
-     options.experimental.enableLogs = true
-
-     // Saad:
-     options.enableCrashHandler = true
- }
- // Remove the next line after confirming that your Sentry integration is working.
- */

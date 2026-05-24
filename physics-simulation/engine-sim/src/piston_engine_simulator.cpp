@@ -410,6 +410,9 @@ void PistonEngineSimulator::simulateStep_() {
     if (thermal != nullptr) {
         const double rpmNow  = m_engine->getRpm();
         const double redline = units::toRpm(m_engine->getRedline());
+        // Rev-limiter ceiling — reference for over-rev / valve-float damage.
+        const double revLimitRpm = units::toRpm(
+            m_engine->getIgnitionModule()->getRevLimit());
         // Load proxy for the thermal model. The UI pedal can arrive via EITHER
         // setThrottle (-> getThrottle) OR the governor setSpeedControl (-> get
         // SpeedControl) — the macOS app uses the latter, so getThrottle alone is
@@ -422,7 +425,7 @@ void PistonEngineSimulator::simulateStep_() {
             ? m_transmission->getClutchPressure() : 1.0;
         const double speedMps = (m_vehicle != nullptr)
             ? m_vehicle->getSpeed() : 0.0;
-        thermal->update(timestep, rpmNow, redline,
+        thermal->update(timestep, rpmNow, redline, revLimitRpm,
                         throttle, clutch, speedMps);
     }
 

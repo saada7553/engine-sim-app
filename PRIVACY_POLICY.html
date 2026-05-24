@@ -38,7 +38,7 @@ In short:</p>
   board), data needed to <strong>process your purchase</strong>, and information you submit
   when you <strong>report</strong> another user's content.</li>
   <li>All of that public data is stored in <strong>Apple iCloud (CloudKit)</strong>. Purchases
-  are handled by <strong>Apple</strong> and <strong>RevenueCat</strong>.</li>
+  are handled entirely by <strong>Apple</strong> through the App Store.</li>
   <li>The App's AI features (engine generation and content screening) run
   <strong>entirely on your device</strong> using Apple's on-device models. The text you type
   for those features is <strong>not sent to us or any server</strong>.</li>
@@ -96,11 +96,11 @@ collect any category of information not listed in this Policy.</p>
 <h3>2.3 Purchase information</h3>
 
 <p>Engine Simulator offers a one-time "Pro" in-app purchase. Purchases are processed
-by <strong>Apple</strong> through the App Store and managed on our behalf by <strong>RevenueCat</strong>.
-We do <strong>not</strong> receive or store your credit card number, billing address, or
-Apple ID. RevenueCat assigns an anonymous app-user identifier and processes
-purchase and receipt data so we can confirm whether you own the Pro unlock and
-support purchase restoration. See Section 5 for more about these providers.</p>
+entirely by <strong>Apple</strong> through the App Store using Apple's StoreKit. We do
+<strong>not</strong> receive or store your credit card number, billing address, or
+Apple ID. The App checks your purchase entitlement directly with Apple so we can
+confirm whether you own the Pro unlock and support purchase restoration. See
+Section 5 for more about these providers.</p>
 
 <h3>2.4 On-device AI processing</h3>
 
@@ -178,11 +178,10 @@ operate the App:</p>
   Your anonymous player identifier and blocked-user list sync through Apple's
   iCloud key-value storage. Apple's handling of this data is governed by
   <a href="https://www.apple.com/legal/privacy/">Apple's Privacy Policy</a>.</li>
-  <li><strong>Apple App Store / StoreKit.</strong> Processes your in-app purchase. We never see
-  your payment details.</li>
-  <li><strong>RevenueCat, Inc.</strong> Manages purchase entitlements and receipt validation on
-  our behalf, using an anonymous app-user identifier. See
-  <a href="https://www.revenuecat.com/privacy/">RevenueCat's Privacy Policy</a>.</li>
+  <li><strong>Apple App Store / StoreKit.</strong> Processes your in-app purchase and manages
+  your purchase entitlement and receipt validation. We never see your payment
+  details. Apple's handling of this data is governed by
+  <a href="https://www.apple.com/legal/privacy/">Apple's Privacy Policy</a>.</li>
 </ul>
 
 <p>We may also disclose information if required to do so by law, regulation, legal
@@ -206,8 +205,8 @@ rights, property, or safety of our users or the public.</p>
   abuse and to keep records of enforcement.</li>
 </ul>
 
-<p>Because data is stored using Apple iCloud and processed by RevenueCat, it may be
-stored and processed on servers located in the United States and other
+<p>Because data is stored using Apple iCloud and purchases are processed by Apple,
+it may be stored and processed on servers located in the United States and other
 countries. By using the App you understand that your public content may be
 processed in those locations.</p>
 
@@ -309,7 +308,7 @@ contact us at <strong>saad.ata05@gmail.com</strong>.</p>
 
 <h2>12. Security</h2>
 
-<p>We rely on Apple's iCloud/CloudKit infrastructure and RevenueCat's services,
+<p>We rely on Apple's iCloud/CloudKit and App Store infrastructure,
 which use industry-standard security measures, and we limit collection to the
 minimum described here. No method of transmission or storage is completely
 secure, and we cannot guarantee absolute security. Please avoid posting
@@ -320,7 +319,7 @@ sensitive or identifying information in public content.</p>
 <h2>13. Third-party links</h2>
 
 <p>The App and this Policy may reference third-party websites or services (such as
-Apple's and RevenueCat's policies). We are not responsible for the privacy
+Apple's policies). We are not responsible for the privacy
 practices of those third parties; review their policies directly.</p>
 
 <hr>

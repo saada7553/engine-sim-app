@@ -147,6 +147,43 @@ enum EngineLayout: String, Codable, CaseIterable, Identifiable {
     }
 }
 
+// MARK: - Production layout gating
+//
+// Flat (boxer) layouts diverge in the C++ sim because of their crank/journal
+// scheme and crash on load (see boxer-crank-divergence). They're hidden from
+// user-created engines in RELEASE builds — both the builder's layout picker and
+// the AI generator route through the two members below — but kept available in
+// DEBUG so the underlying crash can still be reproduced and fixed. Pre-built
+// Subaru boxers construct their specs directly and bypass these gates.
+//
+// TODO: re-enable flat4/flat6 in release (drop the #if DEBUG branches below)
+// once the boxer crank divergence is fixed.
+extension EngineLayout {
+    /// Layouts a user may pick when building a new engine.
+    static var selectableCases: [EngineLayout] {
+        #if DEBUG
+        return allCases
+        #else
+        return allCases.filter { !$0.isFlat }
+        #endif
+    }
+
+    /// Substitutes a gated (flat) layout with the nearest allowed one in release
+    /// builds, keeping the cylinder count; a no-op in DEBUG. Catches flat
+    /// layouts the AI may infer from a free-text description.
+    var productionSafe: EngineLayout {
+        #if DEBUG
+        return self
+        #else
+        switch self {
+        case .flat4: return .inline4
+        case .flat6: return .inline6
+        default:     return self
+        }
+        #endif
+    }
+}
+
 // MARK: - Fuel + Exhaust
 
 enum FuelPreset: String, Codable, CaseIterable, Identifiable {
@@ -497,13 +534,16 @@ struct EngineSpec: Codable, Identifiable, Equatable {
     /// Cranking effort matched to engine size + cylinder count: bigger engines
     /// need more starter torque and spin over more slowly. Clamped to sane
     /// ranges so it never produces a runaway/absurd starter.
+    // Starter sizing was running underpowered (default + AI engines struggling to
+    // crank), so both torque and speed are scaled up 75% from the old formula,
+    // clamp ceilings included. Builder slider ranges were widened to match.
     var recommendedStarterTorqueLbFt: Double {
-        min(600, max(120, 60 + displacementLitres * 55 + Double(layout.cylinderCount) * 8))
+        min(1050, max(210, 105 + displacementLitres * 96.25 + Double(layout.cylinderCount) * 14))
     }
     var recommendedStarterSpeedRpm: Double {
         // Be generous on big engines: a gentle displacement/cylinder penalty and
         // a healthy floor so a large V8/V12 still cranks at a decent speed.
-        min(300, max(180, 260 - displacementLitres * 5 - Double(layout.cylinderCount)))
+        min(525, max(315, 455 - displacementLitres * 8.75 - Double(layout.cylinderCount) * 1.75))
     }
     /// Reset the starter to the size-appropriate recommendation. Call on layout change.
     mutating func resyncStarterForLayout() {

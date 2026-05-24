@@ -148,6 +148,21 @@ final class LeaderboardViewModel: ObservableObject {
         return true
     }
 
+    /// Remove one of the player's own runs from the board. Returns true on
+    /// success; on failure the row surfaces an alert and the entry stays put.
+    @discardableResult
+    func delete(_ entry: LeaderboardEntry) async -> Bool {
+        do {
+            try await LeaderboardService.shared.delete(recordName: entry.id)
+            entries.removeAll { $0.id == entry.id }
+            cache[filterKey] = (entries, Date())
+            return true
+        } catch {
+            print("Leaderboard delete error: \(error)")
+            return false
+        }
+    }
+
     /// Copy a board engine into the local library as a fresh user engine so it
     /// can be inspected, tuned and re-raced. Retained for future use — the
     /// download button was removed from the row UI but the backend path stays.
@@ -208,7 +223,8 @@ struct LeaderboardTileView: View {
                 LazyVStack(spacing: lbRowSpacing) {
                     ForEach(Array(visibleEntries.enumerated()), id: \.element.id) { index, entry in
                         LeaderboardRow(rank: index + 1, entry: entry, metric: model.metric,
-                                       isMe: !entry.ownerId.isEmpty && entry.ownerId == PlayerIdentity.shared.playerId)
+                                       isMe: !entry.ownerId.isEmpty && entry.ownerId == PlayerIdentity.shared.playerId,
+                                       onDelete: { await model.delete(entry) })
                     }
                 }
             }
@@ -448,6 +464,12 @@ private struct LeaderboardRow: View {
     let entry: LeaderboardEntry
     let metric: LeaderboardMetric
     let isMe: Bool
+    /// Removes this run from the board. Only invoked from the owner's own row.
+    let onDelete: () async -> Bool
+
+    @State private var showDeleteConfirm = false
+    @State private var deleting = false
+    @State private var deleteFailed = false
 
     var body: some View {
         HStack(spacing: 8) {
@@ -478,17 +500,19 @@ private struct LeaderboardRow: View {
                     .foregroundColor(.textMuted)
             }
 
-            // Report / block. Always rendered so the metric column stays aligned
-            // across every row; on the user's own row it's invisible and not
-            // tappable (you can't report yourself) but still reserves the space.
-            ReportBlockButton(ownerId: entry.ownerId,
-                              username: entry.username,
-                              recordName: entry.id,
-                              contentName: entry.engineName,
-                              contentType: .leaderboardEntry,
-                              tint: .textFaint)
-                .opacity(isMe ? 0 : 1)
-                .allowsHitTesting(!isMe)
+            // Trailing affordance: your own row gets a delete control, everyone
+            // else's gets report/block. Both are icon buttons of the same
+            // footprint, so the metric column stays aligned across every row.
+            if isMe {
+                ownEntryDeleteButton
+            } else {
+                ReportBlockButton(ownerId: entry.ownerId,
+                                  username: entry.username,
+                                  recordName: entry.id,
+                                  contentName: entry.engineName,
+                                  contentType: .leaderboardEntry,
+                                  tint: .textFaint)
+            }
         }
         .padding(.horizontal, 9).padding(.vertical, 7)
         .background(RoundedRectangle(cornerRadius: Theme.Radius.control)
@@ -500,6 +524,49 @@ private struct LeaderboardRow: View {
         case 1: return .accentWarn
         case 2, 3: return .textSecondary
         default: return .textMuted
+        }
+    }
+
+    // Mirrors the community Unpublish: a quiet trash control with a confirm step,
+    // a busy spinner, and a failure alert. On success the model drops the entry,
+    // so the row simply disappears.
+    private var ownEntryDeleteButton: some View {
+        Button { showDeleteConfirm = true } label: {
+            Group {
+                if deleting {
+                    DashLoader(diameter: 13, tint: .textFaint)
+                } else {
+                    Image(systemName: "trash").font(.system(size: 13, weight: .semibold))
+                }
+            }
+            .foregroundColor(.textFaint)
+            .padding(6)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(deleting)
+        .confirmationDialog("Remove your entry?",
+                            isPresented: $showDeleteConfirm, titleVisibility: .visible) {
+            Button("Remove from board", role: .destructive) { performDelete() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Takes “\(entry.engineName)” off the leaderboard. You can post the run again later.")
+        }
+        .alert("Couldn't remove entry", isPresented: $deleteFailed) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text("Something went wrong reaching iCloud. Check your connection and try again.")
+        }
+    }
+
+    private func performDelete() {
+        deleting = true
+        Task {
+            let ok = await onDelete()
+            await MainActor.run {
+                deleting = false
+                if !ok { deleteFailed = true }
+            }
         }
     }
 }

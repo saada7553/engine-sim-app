@@ -23,7 +23,7 @@ private enum PromptLayout {
 
 private let promptExamples: [String] = [
     "Angry American muscle V8 with a deep rumble",
-    "Turbocharged inline-6 like a 2JZ, built for drift",
+    "High-compression inline-6 built for drift",
     "High-revving naturally aspirated F1 V12",
 ]
 
@@ -98,7 +98,7 @@ struct AIEnginePromptView: View {
     private var promptEditor: some View {
         ZStack(alignment: .topLeading) {
             if prompt.isEmpty {
-                Text("e.g. Twin-turbo flat-six, track-focused, screaming to 9000rpm")
+                Text("e.g. Naturally aspirated V10, track-focused, screaming to 9000rpm")
                     .font(.system(size: Theme.FontSize.title, weight: .regular, design: .monospaced))
                     .foregroundColor(BuilderTheme.dim.opacity(0.3))
                     .padding(.top, 8)

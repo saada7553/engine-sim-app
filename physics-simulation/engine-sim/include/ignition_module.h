@@ -59,6 +59,12 @@ class IgnitionModule : public Part {
         double getTimingAdvance();
         double getTimingAdvanceForRpm(double rpm);
 
+        /// Rev limiter ceiling in rad/s (same units as Engine::getRedline).
+        /// The engine can't exceed this under its own power, so it's the
+        /// reference point for over-rev / valve-float damage rather than the
+        /// redline (which sits below normal limiter operation).
+        double getRevLimit() const { return m_revLimit; }
+
         // ECU timing map (2D: angular-velocity × load). When set, it replaces
         // the engine's built-in base timing curve so an edited tune genuinely
         // reshapes the spark advance per rpm AND load, instead of the old

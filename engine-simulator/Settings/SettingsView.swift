@@ -129,6 +129,10 @@ struct SettingsView: View {
                 PurchasesRow()
             }
 
+            SettingsSection(title: "YOUR DATA") {
+                DeleteDataRow(onClose: onClose)
+            }
+
             SettingsSection(title: "HELP") {
                 ReplayTutorialRow(onClose: onClose)
             }
@@ -449,6 +453,125 @@ private struct PurchasesRow: View {
                     restoring = true
                     Task { await purchaseManager.restorePurchases(); restoring = false }
                 }
+            }
+        }
+    }
+}
+
+// MARK: - Delete my data
+
+/// One destructive control that erases the player's public footprint (every
+/// engine and leaderboard run they published) and resets their local profile.
+/// There's no login here, so this is the app's equivalent of "delete account".
+/// Confirm → busy → inline success/failure, matching the moderation dialogs.
+private struct DeleteDataRow: View {
+    /// Dismisses the settings screen. Called after a successful wipe so the
+    /// freshly-reset onboarding overlay (now showing) isn't left sitting on top
+    /// of an open settings sheet.
+    let onClose: () -> Void
+
+    /// How long the success line stays up before settings dismisses to the
+    /// tutorial — long enough to read, short enough to feel like one action.
+    private let successDwell: TimeInterval = 1.4
+
+    @State private var showConfirm = false
+    @State private var phase: Phase = .idle
+
+    private enum Phase: Equatable {
+        case idle
+        case working
+        case done(String)
+        case failed(String)
+    }
+
+    private var isWorking: Bool { phase == .working }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Permanently delete everything you've shared publicly and reset this device to a fresh start — your profile, preferences, and the engines you've built. This can't be undone. Your purchase isn't affected.")
+                .font(.system(size: rowSubtitleFont))
+                .foregroundColor(.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            deleteButton
+
+            statusLine
+        }
+        .animation(.easeInOut(duration: 0.15), value: phase)
+        .confirmationDialog("Delete your data?",
+                            isPresented: $showConfirm, titleVisibility: .visible) {
+            Button("Delete everything", role: .destructive) { runDeletion() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This removes everything you've shared publicly and resets your name. It can't be undone.")
+        }
+    }
+
+    private var deleteButton: some View {
+        Button { showConfirm = true } label: {
+            HStack(spacing: 8) {
+                if isWorking {
+                    DashLoader(diameter: 13, tint: .accentDanger)
+                } else {
+                    Image(systemName: "trash").font(.system(size: 13, weight: .semibold))
+                }
+                Text(isWorking ? "DELETING…" : "Delete my data")
+                    .font(.system(size: buttonFont, weight: .bold, design: .monospaced))
+                    .tracking(1)
+            }
+            .foregroundColor(.accentDanger)
+            .padding(.horizontal, 16).padding(.vertical, 10)
+            .frame(maxWidth: .infinity)
+            .background(Capsule().fill(Color.accentDanger.opacity(0.12)))
+            .overlay(Capsule().stroke(Color.accentDanger.opacity(0.45), lineWidth: Theme.Stroke.thin))
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .disabled(isWorking)
+    }
+
+    @ViewBuilder private var statusLine: some View {
+        switch phase {
+        case .idle, .working:
+            EmptyView()
+        case .done(let message):
+            resultRow(icon: "checkmark.seal.fill", color: .accentOk, text: message)
+        case .failed(let message):
+            resultRow(icon: "exclamationmark.triangle.fill", color: .accentDanger, text: message)
+        }
+    }
+
+    private func resultRow(icon: String, color: Color, text: String) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 7) {
+            Image(systemName: icon).font(.system(size: 12, weight: .semibold))
+            Text(text)
+                .font(.system(size: rowSubtitleFont))
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
+        }
+        .foregroundColor(color)
+    }
+
+    private func runDeletion() {
+        phase = .working
+        Task {
+            let outcome = await AccountDataDeletion.deleteEverything()
+            await MainActor.run {
+                switch outcome {
+                case .success(let deleted):
+                    let cloud = deleted > 0
+                        ? "Deleted \(deleted) published item\(deleted == 1 ? "" : "s"). "
+                        : ""
+                    phase = .done("\(cloud)Everything's been reset — starting over…")
+                case .failure(let message):
+                    phase = .failed(message)
+                }
+            }
+            // On success, let the message land, then dismiss so the reset
+            // onboarding overlay (already showing) owns the screen.
+            if case .success = outcome {
+                try? await Task.sleep(nanoseconds: UInt64(successDwell * 1_000_000_000))
+                await MainActor.run { onClose() }
             }
         }
     }

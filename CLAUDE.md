@@ -68,4 +68,5 @@ You should also play this noise if you need my permission to do something / are 
 5) Do not redefine exsiting colors, read the color file and you should reuse the existing ones, if you need a new color that does not exist and is radically different from the exisitng ones, then you can add it.
 
 # Current TODOs: 
+- [ ] **Re-enable the Rolls-Royce Merlin V12 in production.** It's currently `#if DEBUG`-only because it kept surfacing simulation problems (damage/instability under normal use). Gated in two places — `builtInCatalog` in `engine-simulator/EngineBuilder/EngineLibrary.swift` and `orderedSpecs` in `engine-simulator/EngineBuilder/BuiltInEngineSpecs.swift`. Re-enable both together once the sim issues are fixed.
 - [ ] **Remove temporary beta paywall bypass.** RevenueCat infra is down, so `PurchaseManager.betaPaywallBypass` (in `engine-simulator/Purchase/PurchaseManager.swift`) is currently `true`: pressing the paywall CTA grants Pro in-memory for the session only (not persisted, so it re-locks on relaunch). Once RC works, set the flag back / delete it and `grantSessionProForBeta()` so `purchaseLifetime()` goes through the real RevenueCat purchase again.

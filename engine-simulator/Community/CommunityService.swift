@@ -16,8 +16,9 @@
 //
 //  ── Manual CloudKit Dashboard setup (one-time) ───────────────────────────
 //  Record type `CommunityEngine` with these fields. Mark the sort columns
-//  SORTABLE and the filter columns QUERYABLE:
-//    ownerId (String)                    ownerUsername (String, queryable)
+//  SORTABLE and the filter columns QUERYABLE (ownerId queryable powers the
+//  per-owner "delete my data" wipe):
+//    ownerId (String, queryable)         ownerUsername (String, queryable)
 //    engineName (String)
 //    engineClassRaw (String, queryable)  layoutRaw (String)
 //    specJSON (String)                   appVersion (String)
@@ -60,7 +61,7 @@ final class CommunityService {
 
     /// Shared with the leaderboard — one iCloud container for the whole app.
     static let containerIdentifier = LeaderboardService.containerIdentifier
-    private static let recordType = "CommunityEngine"
+    static let recordType = "CommunityEngine"
     /// Page size. CloudKit pulls at most this many per request, so it doubles
     /// as the rate-limit on how much one fetch can pull down; "load more"
     /// continues from the returned cursor.

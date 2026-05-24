@@ -43,7 +43,9 @@ final class PlayerIdentity: ObservableObject {
     /// rows and let a same-named player target someone else's engine. This id
     /// is generated once and mirrored into iCloud key-value storage, so it's
     /// the same across the player's own devices but distinct between people.
-    let playerId: String
+    /// Settable only by ``resetIdentity()`` (the "delete my data" path), which
+    /// rolls a fresh id so a wiped player can't be re-linked to deleted content.
+    private(set) var playerId: String
 
     private let defaults: UserDefaults
 
@@ -86,6 +88,24 @@ final class PlayerIdentity: ObservableObject {
     func completeOnboarding() {
         hasCompletedOnboarding = true
         defaults.set(true, forKey: Keys.onboarded)
+    }
+
+    /// Clear the username and roll a brand-new stable id, locally and in iCloud.
+    /// The "delete my data" path calls this after the player's cloud content is
+    /// gone, so future posts start as a fresh, unlinked player. (Onboarding is
+    /// reset separately by that same path so the app returns to the tutorial.)
+    @MainActor
+    func resetIdentity() {
+        let cloud = NSUbiquitousKeyValueStore.default
+
+        username = ""
+        defaults.removeObject(forKey: Keys.username)
+
+        let fresh = UUID().uuidString
+        playerId = fresh
+        defaults.set(fresh, forKey: Keys.playerId)
+        cloud.set(fresh, forKey: Keys.playerId)
+        cloud.synchronize()
     }
 
     /// Re-show the first-launch flow. Wired to a DEBUG-only button in the

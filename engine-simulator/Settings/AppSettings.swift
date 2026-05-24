@@ -119,6 +119,16 @@ final class AppSettings: ObservableObject {
         uiFrameRate = Self.recommendedFrameRate()
     }
 
+    /// Restore every preference to its first-launch value. Part of the "delete
+    /// my data" wipe — setting each @Published property re-persists the default
+    /// through its `didSet`, so both memory and UserDefaults reset together.
+    @MainActor
+    func resetToDefaults() {
+        engineDamageEnabled = true
+        hapticsEnabled = true
+        enableAutoFrameRate()
+    }
+
     /// A sensible default rate for this device. Low Power Mode → floor; weak
     /// CPU/RAM → reduced; otherwise the platform target. Kept crude on purpose —
     /// it only sets the *starting* point; the user can always override.

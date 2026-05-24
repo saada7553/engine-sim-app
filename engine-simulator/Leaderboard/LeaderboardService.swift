@@ -11,8 +11,9 @@
 //
 //  ── Manual CloudKit Dashboard setup (one-time) ───────────────────────────
 //  Record type `EngineLeaderboardEntry` with these fields. Mark the sort
-//  fields SORTABLE and `engineClassRaw` + `username` QUERYABLE:
-//    ownerId (String)                    username (String, queryable)
+//  fields SORTABLE and `engineClassRaw` + `username` + `ownerId` QUERYABLE
+//  (ownerId queryable powers the per-owner "delete my data" wipe):
+//    ownerId (String, queryable)         username (String, queryable)
 //    engineName (String)
 //    engineClassRaw (String, queryable)  layoutRaw (String)
 //    specJSON (String)                   appVersion (String)
@@ -68,7 +69,7 @@ final class LeaderboardService {
 
     /// Rename to match the container you create in Xcode's iCloud capability.
     static let containerIdentifier = "iCloud.com.simulation.engine-simulator"
-    private static let recordType = "EngineLeaderboardEntry"
+    static let recordType = "EngineLeaderboardEntry"
     // Top N per category. CloudKit pulls every matching record up to this cap,
     // so it doubles as the rate-limit on how much each fetch can pull down.
     private static let defaultFetchLimit = 50
@@ -113,6 +114,16 @@ final class LeaderboardService {
         let saved = try saveResults[record.recordID]?.get() ?? record
         return Self.entry(from: saved) ?? Self.fallbackEntry(from: record, username: username,
                                                               submission: submission)
+    }
+
+    // MARK: Delete
+
+    /// Remove one of the player's own runs from the board. The caller is
+    /// responsible for confirming ownership (the row only offers this on the
+    /// player's own entry). Throws on a CloudKit failure so the UI can report it.
+    func delete(recordName: String) async throws {
+        _ = try await database.modifyRecords(
+            saving: [], deleting: [CKRecord.ID(recordName: recordName)], atomically: true)
     }
 
     // MARK: Fetch

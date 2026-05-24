@@ -39,7 +39,10 @@ private struct BuiltInEntry {
     let stableUUID: UUID
 }
 
-private let builtInCatalog: [BuiltInEntry] = [
+private let builtInCatalog: [BuiltInEntry] = makeBuiltInCatalog()
+
+private func makeBuiltInCatalog() -> [BuiltInEntry] {
+    var catalog: [BuiltInEntry] = [
     // Metro lives at index 0 so it shows up first in the sidebar and acts
     // as the free / default selection. The other engines below are
     // Pro-gated; selecting any of them runs through the paywall.
@@ -82,10 +85,20 @@ private let builtInCatalog: [BuiltInEntry] = [
     BuiltInEntry(name: "Chevy 454 Big Block", displacement: "7.4L", cylinders: 8,
                  relativePath: "engines/chevrolet/chev_truck_454.mr",
                  stableUUID: BuiltInEngineIds.chevy454),
-    BuiltInEntry(name: "Rolls-Royce Merlin V12", displacement: "27.0L", cylinders: 12,
-                 relativePath: "engines/atg-video-2/11_merlin_v12.mr",
-                 stableUUID: BuiltInEngineIds.merlinV12),
-]
+    ]
+
+    // TODO: Re-enable the Merlin V12 in production once its simulation issues
+    // are sorted (kept surfacing damage/instability problems under normal use).
+    // Debug-only for now so it can still be tested. Also gated in
+    // BuiltInEngineSpecs.orderedSpecs — re-enable both together.
+    #if DEBUG
+    catalog.append(BuiltInEntry(name: "Rolls-Royce Merlin V12", displacement: "27.0L", cylinders: 12,
+                                relativePath: "engines/atg-video-2/11_merlin_v12.mr",
+                                stableUUID: BuiltInEngineIds.merlinV12))
+    #endif
+
+    return catalog
+}
 
 // MARK: - Persistence layout
 
@@ -123,9 +136,14 @@ final class EngineLibrary: ObservableObject {
     @Published var selectedEngineId: UUID?
 
     /// IDs that don't require a Pro entitlement to load. Anything not in
-    /// this set runs through the paywall on selection.
+    /// this set runs through the paywall on selection. The free set is picked
+    /// for sonic variety (econobox triple, high-revving bike four, VTEC scream)
+    /// while the exotic/muscle engines stay Pro draws. Keep these first in
+    /// `makeBuiltInCatalog()` so they head the sidebar.
     static let freeEngineIds: Set<UUID> = [
-        BuiltInEngineIds.geoMetroG10
+        BuiltInEngineIds.geoMetroG10,
+        BuiltInEngineIds.suzukiHayabusa,
+        BuiltInEngineIds.hondaVtecF20C
     ]
 
     private init() {
@@ -231,6 +249,16 @@ final class EngineLibrary: ObservableObject {
         let wasSelected = selectedEngineId == id
         reloadEntries()
         if wasSelected { selectedEngineId = entries.first?.id }
+    }
+
+    /// Remove every user-built engine from disk (the whole UserEngines folder),
+    /// then reload so only the built-ins remain and the selection falls back to
+    /// the first built-in. Part of the "delete my data" wipe.
+    func deleteAllUserEngines() {
+        try? FileManager.default.removeItem(at: LibraryPaths.userEnginesDirectory)
+        ensureUserEnginesDirectory()
+        reloadEntries()
+        selectedEngineId = entries.first?.id
     }
 
     func entry(for id: UUID) -> EngineEntry? {

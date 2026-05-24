@@ -4,9 +4,8 @@
   Privacy manifest for the engine-simulator app target.
 
   Declares: no tracking; the data types the app transmits to its own backend
-  (Apple CloudKit) and to RevenueCat for purchases; and the two required-reason
-  APIs the app calls. RevenueCat ships its own signed manifest, so its APIs are
-  not redeclared here.
+  (Apple CloudKit) and the purchase data handled by Apple StoreKit; and the two
+  required-reason APIs the app calls.
 
   Required-reason APIs in use:
     • UserDefaults / NSUbiquitousKeyValueStore — CA92.1 (read/write data
@@ -55,8 +54,7 @@
 				<string>NSPrivacyCollectedDataTypePurposeAppFunctionality</string>
 			</array>
 		</dict>
-		<!-- The one-time Pro in-app purchase, processed via Apple and
-		     RevenueCat. -->
+		<!-- The one-time Pro in-app purchase, processed via Apple StoreKit. -->
 		<dict>
 			<key>NSPrivacyCollectedDataType</key>
 			<string>NSPrivacyCollectedDataTypePurchaseHistory</string>

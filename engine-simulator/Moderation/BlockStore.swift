@@ -67,6 +67,14 @@ final class BlockStore: ObservableObject {
         persist()
     }
 
+    /// Drop every block. Part of the "delete my data" reset — a wiped player
+    /// starts with a clean slate locally and across their devices.
+    func clearAll() {
+        guard !blockedIds.isEmpty else { return }
+        blockedIds.removeAll()
+        persist()
+    }
+
     private func persist() {
         let list = Array(blockedIds)
         defaults.set(list, forKey: Keys.blocked)

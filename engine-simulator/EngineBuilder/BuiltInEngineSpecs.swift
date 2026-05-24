@@ -22,22 +22,31 @@ enum BuiltInEngineSpecs {
 
     /// All built-in specs in display order. Used by the paywall hero to cycle
     /// through every shipped engine.
-    static let orderedSpecs: [EngineSpec] = [
-        geoMetroG10,
-        bmwM52B28,
-        audiI5,
-        hondaVtecF20C,
-        suzukiHayabusa,
-        subaruEJ25EH,
-        subaruEJ25UH,
-        toyota2jz,
-        gmLsV8,
-        chevy454,
-        ferrariF136V8,
-        lexusLFAV10,
-        merlinV12,
-        ferrari412T2,
-    ]
+    static let orderedSpecs: [EngineSpec] = makeOrderedSpecs()
+
+    private static func makeOrderedSpecs() -> [EngineSpec] {
+        var specs: [EngineSpec] = [
+            geoMetroG10,
+            bmwM52B28,
+            audiI5,
+            hondaVtecF20C,
+            suzukiHayabusa,
+            subaruEJ25EH,
+            subaruEJ25UH,
+            toyota2jz,
+            gmLsV8,
+            chevy454,
+            ferrariF136V8,
+            lexusLFAV10,
+        ]
+        // TODO: Re-enable the Merlin V12 in production alongside its
+        // EngineLibrary catalog entry once its simulation issues are sorted.
+        #if DEBUG
+        specs.append(merlinV12)
+        #endif
+        specs.append(ferrari412T2)
+        return specs
+    }
 
     private static let specsByStableId: [UUID: EngineSpec] = [
         BuiltInEngineIds.geoMetroG10:    geoMetroG10,

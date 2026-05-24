@@ -488,7 +488,7 @@ struct PaywallSheet: View {
 
                 Spacer()
 
-                Text("Billed through Apple. Cancel anytime in your App Store account.")
+                Text("Billed through Apple.")
                     .font(.system(size: 10))
                     .foregroundColor(mutedText.opacity(0.85))
                     .multilineTextAlignment(.trailing)
