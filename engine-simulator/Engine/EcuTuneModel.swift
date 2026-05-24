@@ -21,9 +21,10 @@ import Combine
 
 private let ignitionStep: Double = 0.5         // degrees per bump
 private let fuelStep: Double = 0.1             // target-AFR per bump
-// Ignition cells store absolute spark advance (degrees BTDC). Range covers
-// retard territory and aggressive race timing without clamping reasonable
-// engines.
+// Ignition cells store absolute spark advance (degrees BTDC). This range is
+// ONLY the heatmap colour-ramp domain and the factory-reset envelope — it is
+// not an edit clamp. The user can dial a cell past either end (the colour just
+// saturates), the way desktop tuner software lets you enter any value.
 private let ignitionMin: Double = -10.0
 private let ignitionMax: Double = 60.0
 // Fuel cells store a TARGET air-fuel ratio on the same ~10-18 scale the AFR
@@ -350,13 +351,15 @@ final class EcuTuneModel: ObservableObject {
         }
     }
 
+    /// Cell values are intentionally NOT clamped to the colour range — the user
+    /// can tune to any value. (`coord` is still bounds-checked so a stale grid
+    /// index can't crash the array.) Physics safety lives downstream: `fuelTrim`
+    /// clamps the derived trim to a sim-safe band regardless of the AFR entered.
     func setCell(in kind: EcuMapKind, at coord: EcuCellCoord, to value: Double) {
         let safe = clampToBounds(coord)
         switch kind {
-        case .ignition:
-            ignitionMap[safe.loadIndex][safe.rpmIndex] = value.clamped(to: EcuTuneModel.ignitionRange)
-        case .fuel:
-            fuelMap[safe.loadIndex][safe.rpmIndex] = value.clamped(to: EcuTuneModel.fuelRange)
+        case .ignition: ignitionMap[safe.loadIndex][safe.rpmIndex] = value
+        case .fuel:     fuelMap[safe.loadIndex][safe.rpmIndex] = value
         }
     }
 
@@ -378,13 +381,13 @@ final class EcuTuneModel: ObservableObject {
         case .ignition:
             for i in 0..<ignitionMap.count {
                 for j in 0..<ignitionMap[i].count {
-                    ignitionMap[i][j] = (ignitionMap[i][j] + delta).clamped(to: EcuTuneModel.ignitionRange)
+                    ignitionMap[i][j] += delta
                 }
             }
         case .fuel:
             for i in 0..<fuelMap.count {
                 for j in 0..<fuelMap[i].count {
-                    fuelMap[i][j] = (fuelMap[i][j] + delta).clamped(to: EcuTuneModel.fuelRange)
+                    fuelMap[i][j] += delta
                 }
             }
         }

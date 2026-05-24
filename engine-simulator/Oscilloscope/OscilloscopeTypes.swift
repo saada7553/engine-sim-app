@@ -124,9 +124,9 @@ struct OscilloscopeConfig {
                 type: type,
                 bufferSize: 1024,
                 xMin: 0, xMax: 10000,  // RPM
-                yMin: -30, yMax: 60,    // Degrees
+                yMin: -30, yMax: 60,    // Degrees — fallback before first sample
                 dynamicallyResizeX: false,
-                dynamicallyResizeY: false,
+                dynamicallyResizeY: true,  // Tunes (e.g. VTEC) run past the static range
                 drawReverse: false,
                 color: .scopeWarm,
                 lineWidth: 1.5,

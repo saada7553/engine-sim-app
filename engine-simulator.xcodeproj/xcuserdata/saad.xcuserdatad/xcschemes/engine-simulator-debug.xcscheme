@@ -30,7 +30,7 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "93685E572F04D7E300D070C3"
-               BuildableName = "engine-simulator.app"
+               BuildableName = "Engine Simulator.app"
                BlueprintName = "engine-simulator"
                ReferencedContainer = "container:engine-simulator.xcodeproj">
             </BuildableReference>
@@ -59,7 +59,7 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "93685E572F04D7E300D070C3"
-            BuildableName = "engine-simulator.app"
+            BuildableName = "Engine Simulator.app"
             BlueprintName = "engine-simulator"
             ReferencedContainer = "container:engine-simulator.xcodeproj">
          </BuildableReference>
@@ -76,7 +76,7 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "93685E572F04D7E300D070C3"
-            BuildableName = "engine-simulator.app"
+            BuildableName = "Engine Simulator.app"
             BlueprintName = "engine-simulator"
             ReferencedContainer = "container:engine-simulator.xcodeproj">
          </BuildableReference>

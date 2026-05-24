@@ -189,8 +189,19 @@ void OscilloscopeCluster::sample() {
         getTotalExhaustFlowOscilloscope()->addDataPoint(
             cycleAngle,
             m_simulator->getTotalExhaustFlow() / m_simulator->getTimestep());
+        // Apply the same spin-direction correction the other time-series
+        // scopes use on `cycleAngle`. Without it, the raw cycle angle runs
+        // backwards for engines spinning the non-CW way, so every segment is a
+        // backward x-step that the trace renderer (drawReverse=false) skips —
+        // leaving the chart blank. The pi offset keeps the combustion peak
+        // centred in the window.
+        double cylinderPressureAngle =
+            engine->getCrankshaft(0)->getCycleAngle(constants::pi);
+        if (!engine->isSpinningCw()) {
+            cylinderPressureAngle = 4 * constants::pi - cylinderPressureAngle;
+        }
         getCylinderPressureScope()->addDataPoint(
-            engine->getCrankshaft(0)->getCycleAngle(constants::pi),
+            cylinderPressureAngle,
             std::sqrt(cylinderPressure));
         getExhaustFlowOscilloscope()->addDataPoint(
             cycleAngle,
@@ -216,9 +227,15 @@ void OscilloscopeCluster::sample() {
         // Spark advance curve. The other scopes are time-series traces; this
         // one is a static function (advance vs. rpm) so we re-sample the
         // whole curve each tick — that way it always reflects the live ECU
-        // tune + ignition offset. Values are stored in RPM / degrees because
-        // the Swift display config is static-bound in those units.
+        // tune + ignition offset. Values are stored in RPM / degrees.
+        //
+        // Because the whole buffer is rewritten each tick, the Y bounds are
+        // also reset each tick: addDataPoint's dynamic resize then recomputes
+        // them tight to the current curve. Without the reset the bounds only
+        // ever grow, so a high-advance tune permanently inflates the axis (and
+        // the seeded radian bounds never match the degree-valued samples).
         m_sparkAdvanceScope->reset();
+        m_sparkAdvanceScope->m_yMin = m_sparkAdvanceScope->m_yMax = 0.0f;
         constexpr int sparkSampleCount = 40;
         constexpr double sparkMaxRpm = 10000.0;
         constexpr double radToDeg = 180.0 / constants::pi;

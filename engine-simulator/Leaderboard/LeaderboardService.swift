@@ -109,11 +109,16 @@ final class LeaderboardService {
         // deterministic ID derived from the run. Re-posting the identical run
         // overwrites that one record (.allKeys ignores the change tag) rather
         // than creating a duplicate — at most one board entry per unique run.
-        let (saveResults, _) = try await database.modifyRecords(
-            saving: [record], deleting: [], savePolicy: .allKeys, atomically: true)
-        let saved = try saveResults[record.recordID]?.get() ?? record
-        return Self.entry(from: saved) ?? Self.fallbackEntry(from: record, username: username,
-                                                              submission: submission)
+        do {
+            let (saveResults, _) = try await database.modifyRecords(
+                saving: [record], deleting: [], savePolicy: .allKeys, atomically: true)
+            let saved = try saveResults[record.recordID]?.get() ?? record
+            return Self.entry(from: saved) ?? Self.fallbackEntry(from: record, username: username,
+                                                                  submission: submission)
+        } catch {
+            reportFailure(error, op: "leaderboard_submit")
+            throw error
+        }
     }
 
     // MARK: Delete
@@ -122,8 +127,13 @@ final class LeaderboardService {
     /// responsible for confirming ownership (the row only offers this on the
     /// player's own entry). Throws on a CloudKit failure so the UI can report it.
     func delete(recordName: String) async throws {
-        _ = try await database.modifyRecords(
-            saving: [], deleting: [CKRecord.ID(recordName: recordName)], atomically: true)
+        do {
+            _ = try await database.modifyRecords(
+                saving: [], deleting: [CKRecord.ID(recordName: recordName)], atomically: true)
+        } catch {
+            reportFailure(error, op: "leaderboard_delete")
+            throw error
+        }
     }
 
     // MARK: Fetch

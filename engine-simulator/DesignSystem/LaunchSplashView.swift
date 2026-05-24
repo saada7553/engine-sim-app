@@ -25,6 +25,7 @@ private let readoutStep: Double = 50         // digits snap to this, like a real
 private let wordmarkSize: CGFloat = 16
 private let wordmarkTracking: CGFloat = 5
 private let wordmarkToGauge: CGFloat = 24
+private let wordmarkLineSpacing: CGFloat = 4   // gap between the two stacked words (iOS)
 private let entranceDuration: Double = 0.35
 
 // Scripted key-on sweep as (elapsed, fractionOfFullScale) anchor points. The
@@ -54,23 +55,54 @@ struct LaunchSplashView: View {
     var body: some View {
         ZStack {
             Color.appBackground.ignoresSafeArea()
-
-            VStack(spacing: wordmarkToGauge) {
-                Text("ENGINE SIMULATOR")
-                    .font(.system(size: wordmarkSize, weight: .bold, design: .monospaced))
-                    .tracking(wordmarkTracking)
-                    .foregroundColor(.white.opacity(0.92))
-
-                TimelineView(.animation) { timeline in
-                    SplashTach(start: start, now: timeline.date)
-                        .frame(width: gaugeDiameter, height: gaugeDiameter)
-                }
-            }
-            .opacity(appeared ? 1 : 0)
+            content
+                .opacity(appeared ? 1 : 0)
         }
+        // The splash is hosted as an overlay on scaledRoot, which on iPhone
+        // respects the bottom (home-indicator) and right (notch) safe areas.
+        // Centring content inside that inset region pushes it up and left, so
+        // ignore the safe area here to centre on the true full screen. macOS is
+        // already centred correctly and stays untouched.
+        #if !os(macOS)
+        .ignoresSafeArea()
+        #endif
         .onAppear {
             start = Date()
             withAnimation(.easeOut(duration: entranceDuration)) { appeared = true }
+        }
+    }
+
+    // macOS stacks the wordmark above the gauge. iOS lays them out side by side
+    // — wordmark left, gauge right, vertically centred — so neither sits under
+    // the Game Center sign-in banner that drops in from the top of the screen.
+    @ViewBuilder
+    private var content: some View {
+        #if os(macOS)
+        VStack(spacing: wordmarkToGauge) {
+            Text("ENGINE SIMULATOR")
+                .font(.system(size: wordmarkSize, weight: .bold, design: .monospaced))
+                .tracking(wordmarkTracking)
+                .foregroundColor(.white.opacity(0.92))
+            gauge
+        }
+        #else
+        HStack(spacing: wordmarkToGauge) {
+            VStack(alignment: .center, spacing: wordmarkLineSpacing) {
+                Text("ENGINE")
+                Text("SIMULATOR")
+            }
+            .font(.system(size: wordmarkSize, weight: .bold, design: .monospaced))
+            .tracking(wordmarkTracking)
+            .foregroundColor(.white.opacity(0.92))
+            gauge
+        }
+        #endif
+    }
+
+    private var gauge: some View {
+        TimelineView(.animation) { timeline in
+            SplashTach(start: start, now: timeline.date)
+                .frame(width: gaugeDiameter, height: gaugeDiameter)
         }
     }
 }

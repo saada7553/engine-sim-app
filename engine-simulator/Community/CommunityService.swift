@@ -100,11 +100,16 @@ final class CommunityService {
         }
 
         let record = makeRecord(from: spec, ownerUsername: trimmed, ownerId: ownerId)
-        let (saveResults, _) = try await database.modifyRecords(
-            saving: [record], deleting: [], savePolicy: .allKeys, atomically: true)
-        let saved = try saveResults[record.recordID]?.get() ?? record
-        guard let engine = Self.engine(from: saved) else { throw CommunityError.decodeFailed }
-        return engine
+        do {
+            let (saveResults, _) = try await database.modifyRecords(
+                saving: [record], deleting: [], savePolicy: .allKeys, atomically: true)
+            let saved = try saveResults[record.recordID]?.get() ?? record
+            guard let engine = Self.engine(from: saved) else { throw CommunityError.decodeFailed }
+            return engine
+        } catch {
+            reportFailure(error, op: "community_publish")
+            throw error
+        }
     }
 
     /// Remove a previously-published engine (only meaningful for one the player
@@ -115,6 +120,7 @@ final class CommunityService {
                 saving: [], deleting: [CKRecord.ID(recordName: recordName)], atomically: true)
         } catch {
             print("CommunityService: unpublish failed for \(recordName): \(error)")
+            reportFailure(error, op: "community_unpublish")
             throw error
         }
     }

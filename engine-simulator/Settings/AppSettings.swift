@@ -31,6 +31,12 @@ final class AppSettings: ObservableObject {
     /// for battery — the UI surfaces a gentle warning.
     static let highBatteryFrameRate: Double = 25
 
+    /// Default UI poll rates for mobile. The physics sim is CPU-bound (RAM use
+    /// is low), so the auto default tiers on SoC generation: A15-and-older
+    /// iPhones get the lower rate, A16+ the higher one. See recommendedFrameRate().
+    static let lowPerfMobileFrameRate:  Double = 15
+    static let highPerfMobileFrameRate: Double = 20
+
     private enum Keys {
         static let engineDamage = "settings.engineDamageEnabled"
         static let haptics      = "settings.hapticsEnabled"
@@ -129,27 +135,66 @@ final class AppSettings: ObservableObject {
         enableAutoFrameRate()
     }
 
-    /// A sensible default rate for this device. Low Power Mode → floor; weak
-    /// CPU/RAM → reduced; otherwise the platform target. Kept crude on purpose —
-    /// it only sets the *starting* point; the user can always override.
+    /// Newest iPhone hardware generation (the N in "iPhoneN,x") that ships an
+    /// A15 or older SoC: iPhone14,x = A15, iPhone13,x = A14, … iPhone11,x = A12.
+    /// Apple's iPhone generation number climbs with chip performance, so A16+
+    /// starts at iPhone15,x. The CPU-bound physics struggles to feed a 20 fps
+    /// UI poll at/below this, so these get the lower default.
+    static let newestSlowiPhoneGeneration = 14
+
+    /// A sensible default rate for this device. Low Power Mode → floor;
+    /// otherwise tier by performance. Kept crude on purpose — it only sets the
+    /// *starting* point; the user can always override.
     ///
-    /// Mobile biases lower than desktop: a phone is battery- and thermally
-    /// constrained and held close to the face, so a strong phone targets 20 fps
-    /// while a Mac (mains/large battery, Apple Silicon headroom) targets the
-    /// full 30.
+    /// Mobile is CPU-bound (RAM use is low), so it tiers on SoC generation
+    /// rather than RAM, and biases below desktop because a phone is battery-
+    /// and thermally constrained. A Mac (native build, or an iOS build running
+    /// on Apple Silicon) has the headroom for the full 30 / high tier.
     static func recommendedFrameRate() -> Double {
         let info = ProcessInfo.processInfo
         if info.isLowPowerModeEnabled { return minUIFrameRate }
+        #if os(iOS)
+        // An iOS build on an Apple Silicon Mac reports a Mac/arch identifier,
+        // not an iPhone, but has plenty of CPU — don't throttle it.
+        if info.isiOSAppOnMac { return highPerfMobileFrameRate }
+        return canSustainHighFrameRate() ? highPerfMobileFrameRate : lowPerfMobileFrameRate
+        #else
         let cores = info.activeProcessorCount
         let memGB = Double(info.physicalMemory) / 1_073_741_824.0
-        #if os(iOS)
-        if cores <= 2 || memGB < 3 { return minUIFrameRate }   // 10
-        if cores <= 4 || memGB < 4 { return 15 }
-        return 20
-        #else
         if cores <= 2 || memGB < 3 { return 15 }
         if cores <= 4 || memGB < 6 { return 20 }
         return maxUIFrameRate                                  // 30
         #endif
     }
+
+#if os(iOS)
+    /// True only for a positively-identified A16-or-newer iPhone — the tier
+    /// we're confident sustains the higher poll rate. Anything we can't confirm
+    /// (older iPhone, iPad, simulator host arch, unparseable identifier)
+    /// conservatively returns false so the caller falls back to the lower rate.
+    private static func canSustainHighFrameRate() -> Bool {
+        let prefix = "iPhone"
+        let model = deviceModelIdentifier()
+        guard model.hasPrefix(prefix) else { return false }
+        let generationDigits = model.dropFirst(prefix.count).prefix { $0.isNumber }
+        guard let generation = Int(generationDigits) else { return false }
+        return generation > newestSlowiPhoneGeneration
+    }
+
+    /// Hardware model identifier, e.g. "iPhone14,5". On the simulator `uname`
+    /// reports the host arch ("arm64"/"x86_64"), so prefer the simulated
+    /// device's identifier from the environment there.
+    private static func deviceModelIdentifier() -> String {
+        #if targetEnvironment(simulator)
+        if let simID = ProcessInfo.processInfo.environment["SIMULATOR_MODEL_IDENTIFIER"] {
+            return simID
+        }
+        #endif
+        var systemInfo = utsname()
+        uname(&systemInfo)
+        return withUnsafeBytes(of: &systemInfo.machine) { raw in
+            String(cString: raw.bindMemory(to: CChar.self).baseAddress!)
+        }
+    }
+#endif
 }

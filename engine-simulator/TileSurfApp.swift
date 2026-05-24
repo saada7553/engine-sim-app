@@ -1,4 +1,6 @@
 import SwiftUI
+import Sentry
+
 #if os(macOS)
 import AppKit
 #endif

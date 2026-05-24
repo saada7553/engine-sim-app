@@ -31,12 +31,14 @@ In short:</p>
 <ul>
   <li><strong>We do not ask for your email, real name, phone number, or address.</strong> There
   is no account sign-up and no login.</li>
-  <li><strong>We do not track you</strong> across other apps or websites, and we do not use any
-  advertising or analytics services.</li>
-  <li>The only information that leaves your device is what you <strong>choose to make
+  <li><strong>We do not track you</strong> across other apps or websites, and we do not use
+  advertising or behavioral-analytics services.</li>
+  <li>The information that leaves your device is what you <strong>choose to make
   public</strong> (a username and the engines you share to the leaderboard or community
-  board), data needed to <strong>process your purchase</strong>, and information you submit
-  when you <strong>report</strong> another user's content.</li>
+  board), data needed to <strong>process your purchase</strong>, information you submit
+  when you <strong>report</strong> another user's content, and automatic <strong>crash and error
+  diagnostics</strong> sent to our crash-reporting provider, <strong>Sentry</strong>, so we can fix
+  problems &mdash; never used to advertise to you or track you.</li>
   <li>All of that public data is stored in <strong>Apple iCloud (CloudKit)</strong>. Purchases
   are handled entirely by <strong>Apple</strong> through the App Store.</li>
   <li>The App's AI features (engine generation and content screening) run
@@ -115,19 +117,38 @@ Section 5 for more about these providers.</p>
 these features is <strong>not transmitted to us or to any third party</strong>, and we do not
 receive or store it.</p>
 
-<h3>2.5 Information we do NOT collect</h3>
+<h3>2.5 Crash and error diagnostics</h3>
+
+<p>To detect, diagnose, and fix crashes and bugs, the App uses <strong>Sentry</strong>, a
+crash- and error-reporting service operated by Functional Software, Inc. (dba
+Sentry). When the App crashes or encounters an error, Sentry collects a
+diagnostic report containing technical information such as the type of crash or
+error, a <strong>stack trace</strong>, your <strong>device model</strong>, <strong>operating-system version</strong>,
+and the <strong>App version</strong>, and &mdash; on devices where supported &mdash; a
+<strong>screenshot</strong> and view layout of the App's own screen at the moment of the
+error. We have configured Sentry <strong>not</strong> to collect your IP address, and it does
+not receive your name, email, or location. This data is processed on Sentry's
+servers (which may be located in the United States) and is used <strong>only</strong> to keep
+the App stable and working &mdash; never for advertising, profiling, or tracking you
+across other apps or websites.
+Sentry's handling of this data is governed by
+<a href="https://sentry.io/privacy/">Sentry's Privacy Policy</a>. See also Section 5.</p>
+
+<h3>2.6 Information we do NOT collect</h3>
 
 <p>For clarity, the App does <strong>not</strong> collect, request, or access any of the
 following:</p>
 
 <ul>
   <li>Email address, real name, phone number, or postal address.</li>
-  <li>Precise or approximate location.</li>
+  <li>Precise or approximate location &mdash; the App does not use location services,
+  and our crash-reporting provider is configured not to collect your IP address.</li>
   <li>Camera, microphone, photos, contacts, calendars, or health/fitness data.</li>
   <li>Advertising identifiers (IDFA), and we do <strong>not</strong> use App Tracking
   Transparency because we do not track you.</li>
-  <li>Analytics, crash-reporting, advertising, or behavioral-tracking data of any
-  kind. We use no analytics or crash SDKs.</li>
+  <li>Advertising or behavioral-tracking analytics of any kind, and no advertising
+  SDKs. (We use one crash-diagnostics service, Sentry, solely to detect and fix
+  crashes and errors &mdash; see Section 2.5 &mdash; never for advertising or tracking.)</li>
 </ul>
 
 <hr>
@@ -144,6 +165,8 @@ following:</p>
   <li>Process and restore your <strong>in-app purchase</strong>.</li>
   <li><strong>Moderate content</strong> and keep the community safe &mdash; screening text for
   prohibited content, and reviewing and acting on user reports (see Section 7).</li>
+  <li><strong>Detect, diagnose, and fix crashes and errors</strong> using crash-diagnostic
+  reports (see Section 2.5).</li>
   <li>Maintain, debug, and improve the App's functionality.</li>
   <li>Comply with legal obligations and enforce our Community Guidelines.</li>
 </ul>
@@ -182,6 +205,13 @@ operate the App:</p>
   your purchase entitlement and receipt validation. We never see your payment
   details. Apple's handling of this data is governed by
   <a href="https://www.apple.com/legal/privacy/">Apple's Privacy Policy</a>.</li>
+  <li><strong>Sentry (crash &amp; error diagnostics).</strong> Operated by Functional Software, Inc.
+  (dba Sentry). When the App crashes or hits an error it receives a diagnostic
+  report &mdash; crash and stack-trace data, device model, operating-system and App
+  version, and (where supported) a screenshot of the App's own screen &mdash; used
+  only to keep the App stable. It is configured not to collect your IP address.
+  Sentry's handling of this data is governed by
+  <a href="https://sentry.io/privacy/">Sentry's Privacy Policy</a>.</li>
 </ul>
 
 <p>We may also disclose information if required to do so by law, regulation, legal

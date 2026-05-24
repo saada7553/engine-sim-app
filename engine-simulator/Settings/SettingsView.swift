@@ -488,7 +488,7 @@ private struct DeleteDataRow: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Permanently delete everything you've shared publicly and reset this device to a fresh start — your profile, preferences, and the engines you've built. This can't be undone. Your purchase isn't affected.")
+            Text("Permanently delete everything you've shared publicly and reset this device to a fresh start. Your profile, preferences, and the engines you've built. This can't be undone. Your purchase isn't affected.")
                 .font(.system(size: rowSubtitleFont))
                 .foregroundColor(.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -582,11 +582,51 @@ private struct DeleteDataRow: View {
 private struct LegalLinksRow: View {
     @Environment(\.openURL) private var openURL
 
+    private let attributionFont: CGFloat = 11
+
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             link("Privacy Policy", LegalLinks.privacyPolicy)
             link("Community Guidelines", LegalLinks.communityGuidelines)
             link("Terms of Use", LegalLinks.termsOfUse)
+
+            Divider().background(Color.strokeFaint).padding(.vertical, 8)
+
+            attribution
+        }
+    }
+
+    // The unofficial-port disclaimer and the open-source attributions, kept as
+    // quiet small print under the links. MIT requires the copyright + permission
+    // notice ship with the app; this is where they live.
+    private var attribution: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(PortDisclaimer.full)
+                .font(.system(size: attributionFont))
+                .foregroundColor(.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Open-source components")
+                    .font(.system(size: attributionFont, weight: .semibold))
+                    .foregroundColor(.textSecondary)
+                ForEach(OpenSourceComponent.all) { c in
+                    Text("\(c.name) — \(c.copyright)")
+                        .font(.system(size: attributionFont, design: .monospaced))
+                        .foregroundColor(.textMuted)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+
+            Text(OpenSourceComponent.mitBody)
+                .font(.system(size: attributionFont, design: .monospaced))
+                .foregroundColor(.textMuted)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Text(PortDisclaimer.appCopyright)
+                .font(.system(size: attributionFont))
+                .foregroundColor(.textMuted)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
@@ -633,6 +673,7 @@ private struct ReplayTutorialRow: View {
 #if DEBUG
 private struct DebugRows: View {
     let onClose: () -> Void
+    @State private var sentTestEvent = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -643,6 +684,11 @@ private struct DebugRows: View {
                            icon: "lock.open.trianglebadge.exclamationmark") {
                 Task { await PurchaseManager.shared.resetPurchasesForDebug() }
                 onClose()
+            }
+            SettingsButton(label: sentTestEvent ? "Sent — check Sentry" : "Send Sentry test event",
+                           icon: sentTestEvent ? "checkmark.circle" : "paperplane") {
+                sendSentryTestEvent()
+                sentTestEvent = true
             }
         }
     }

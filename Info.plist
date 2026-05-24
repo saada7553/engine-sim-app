@@ -13,6 +13,14 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<!--
+	  User-facing app name for Dock, Finder, window title, and the iOS home
+	  screen. CFBundleName (the bold macOS app menu) comes from PRODUCT_NAME,
+	  now "Engine Simulator", via GENERATE_INFOPLIST_FILE. The target / bundle id
+	  stay "engine-simulator"; only the displayed name changes.
+	-->
+	<key>CFBundleDisplayName</key>
+	<string>Engine Simulator</string>
 	<key>LSApplicationCategoryType</key>
 	<string>public.app-category.simulation-games</string>
 	<!--

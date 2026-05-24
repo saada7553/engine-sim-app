@@ -47,6 +47,7 @@ enum AccountDataDeletion {
             deleted = engines + runs
         } catch {
             print("AccountDataDeletion: cloud delete failed: \(error)")
+            reportFailure(error, op: "account_delete")
             return .failure("Couldn't reach iCloud to delete your published content. "
                           + "Check your connection and iCloud sign-in, then try again.")
         }

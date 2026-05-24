@@ -96,7 +96,7 @@ class OscilloscopeManager: ObservableObject {
             let p = point as ScopePoint
             return CGPoint(x: p.x, y: p.y)
         }
-        
+
         switch type {
         case .torque: torque = points
         case .power: power = points

@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		46AD3B87ADD040489579129B /* Sentry in Frameworks */ = {isa = PBXBuildFile; productRef = F0F5CAC053AB4E0187D20D5E /* Sentry */; };
 		936882602F04DBCD00D070C3 /* AudioToolbox.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 9368825F2F04DBCD00D070C3 /* AudioToolbox.framework */; };
 		936882622F04DBD400D070C3 /* CoreFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 936882612F04DBD400D070C3 /* CoreFoundation.framework */; };
 		936883B42F04F62A00D070C3 /* es in Resources */ = {isa = PBXBuildFile; fileRef = 936883B32F04F62A00D070C3 /* es */; };
@@ -15,7 +16,7 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
-		93685E582F04D7E300D070C3 /* engine-simulator.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "engine-simulator.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		93685E582F04D7E300D070C3 /* Engine Simulator.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Engine Simulator.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		9368825F2F04DBCD00D070C3 /* AudioToolbox.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AudioToolbox.framework; path = System/Library/Frameworks/AudioToolbox.framework; sourceTree = SDKROOT; };
 		936882612F04DBD400D070C3 /* CoreFoundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreFoundation.framework; path = System/Library/Frameworks/CoreFoundation.framework; sourceTree = SDKROOT; };
 		936883B32F04F62A00D070C3 /* es */ = {isa = PBXFileReference; lastKnownFileType = folder; name = es; path = "../../Local/scripts/engine-sim/es"; sourceTree = "<group>"; };
@@ -39,6 +40,7 @@
 				939C6A2C2F0B6460002402E9 /* Accelerate.framework in Frameworks */,
 				936882622F04DBD400D070C3 /* CoreFoundation.framework in Frameworks */,
 				936882602F04DBCD00D070C3 /* AudioToolbox.framework in Frameworks */,
+				46AD3B87ADD040489579129B /* Sentry in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -59,7 +61,7 @@
 		93685E592F04D7E300D070C3 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				93685E582F04D7E300D070C3 /* engine-simulator.app */,
+				93685E582F04D7E300D070C3 /* Engine Simulator.app */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -85,6 +87,7 @@
 				93685E542F04D7E300D070C3 /* Sources */,
 				93685E552F04D7E300D070C3 /* Frameworks */,
 				93685E562F04D7E300D070C3 /* Resources */,
+				72A380913CB24BA9815414A0 /* Upload Debug Symbols to Sentry */,
 			);
 			buildRules = (
 			);
@@ -94,8 +97,11 @@
 				93685E5A2F04D7E300D070C3 /* engine-simulator */,
 			);
 			name = "engine-simulator";
+			packageProductDependencies = (
+				F0F5CAC053AB4E0187D20D5E /* Sentry */,
+			);
 			productName = "engine-simulator";
-			productReference = 93685E582F04D7E300D070C3 /* engine-simulator.app */;
+			productReference = 93685E582F04D7E300D070C3 /* Engine Simulator.app */;
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
@@ -123,6 +129,9 @@
 			);
 			mainGroup = 93685E4F2F04D7E300D070C3;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				D54C9433F0124FA9B6A2393C /* XCRemoteSwiftPackageReference "sentry-cocoa" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 93685E592F04D7E300D070C3 /* Products */;
 			projectDirPath = "";
@@ -146,6 +155,21 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXShellScriptBuildPhase section */
+		72A380913CB24BA9815414A0 /* Upload Debug Symbols to Sentry */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+				"${DWARF_DSYM_FOLDER_PATH}/${DWARF_DSYM_FILE_NAME}/Contents/Resources/DWARF/${TARGET_NAME}",
+			);
+			name = "Upload Debug Symbols to Sentry";
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "# This script is responsible for uploading debug symbols and source context for Sentry.\nif which sentry-cli >/dev/null; then\n  export SENTRY_ORG=dfcda16b4ecd\n  export SENTRY_PROJECT=engine-simulator\n  ERROR=$(sentry-cli debug-files upload --include-sources \"$DWARF_DSYM_FOLDER_PATH\" 2>&1 >/dev/null)\n  if [ ! $? -eq 0 ]; then\n    echo \"warning: sentry-cli - $ERROR\"\n  fi\nelse\n  echo \"warning: sentry-cli not installed, download from https://github.com/getsentry/sentry-cli/releases\"\nfi\n";
+		};
 		93EB17012FFF010100D070C3 /* Build engine-sim C++ libs */ = {
 			isa = PBXShellScriptBuildPhase;
 			alwaysOutOfDate = 1;
@@ -306,10 +330,12 @@
 				CODE_SIGN_ENTITLEMENTS = "engine-simulator/engine-simulator.entitlements";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 3;
+				CURRENT_PROJECT_VERSION = 4;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				DEVELOPMENT_TEAM = 72T59L235C;
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_PREVIEWS = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GCC_INPUT_FILETYPE = sourcecode.cpp.objcpp;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -352,7 +378,8 @@
 					AVFoundation,
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = "com.simulation.engine-simulator";
-				PRODUCT_NAME = "$(TARGET_NAME)";
+				PRODUCT_MODULE_NAME = engine_simulator;
+				PRODUCT_NAME = "Engine Simulator";
 				REGISTER_APP_GROUPS = YES;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx";
@@ -378,10 +405,12 @@
 				CODE_SIGN_ENTITLEMENTS = "engine-simulator/engine-simulator.entitlements";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 3;
+				CURRENT_PROJECT_VERSION = 4;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				DEVELOPMENT_TEAM = 72T59L235C;
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_PREVIEWS = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GCC_INPUT_FILETYPE = sourcecode.cpp.objcpp;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -424,7 +453,8 @@
 					AVFoundation,
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = "com.simulation.engine-simulator";
-				PRODUCT_NAME = "$(TARGET_NAME)";
+				PRODUCT_MODULE_NAME = engine_simulator;
+				PRODUCT_NAME = "Engine Simulator";
 				REGISTER_APP_GROUPS = YES;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx";
@@ -461,6 +491,25 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		D54C9433F0124FA9B6A2393C /* XCRemoteSwiftPackageReference "sentry-cocoa" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/getsentry/sentry-cocoa/";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 8.0.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		F0F5CAC053AB4E0187D20D5E /* Sentry */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = D54C9433F0124FA9B6A2393C /* XCRemoteSwiftPackageReference "sentry-cocoa" */;
+			productName = Sentry;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 93685E502F04D7E300D070C3 /* Project object */;
 }
