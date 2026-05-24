@@ -63,7 +63,7 @@ private let heroCrankRPM: Double = 15.0
 private let heroTurntablePeriod: Double = 12.0
 /// Locked store price. The PurchaseManager's localized string will be used
 /// if a product is loaded; this is the fallback + the price we ship at.
-private let lockedPrice = "$9.99"
+private let lockedPrice = "$14.99"
 
 // MARK: - View
 
@@ -382,31 +382,14 @@ struct PaywallSheet: View {
 
     private var copyBlock: some View {
         VStack(alignment: .leading, spacing: 8) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Lifetime access to the full simulator.")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundColor(.white)
-                Text("Every preset engine, full ECU tuning, every future update.")
-                    .font(.system(size: 12))
-                    .foregroundColor(mutedText)
-            }
-            buildYourOwnCallout
-        }
-    }
-
-    /// Quiet reminder that the presets above aren't the limit — Pro unlocks
-    /// the full builder. Wrench glyph + a single short line.
-    private var buildYourOwnCallout: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 8) {
-            Image(systemName: "wrench.and.screwdriver.fill")
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundColor(.accentLive.opacity(0.85))
-            Text("Or design your own from scratch in the engine builder, with any layout, bore, stroke, cam, and tune.")
+            Text("Lifetime access to the full simulator.")
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundColor(.white)
+            Text("Every preset engine, full ECU tuning, and every future update. Design your own from scratch in the engine builder. Any layout, bore, stroke, cam, and tune.")
                 .font(.system(size: 12))
-                .foregroundColor(bodyText)
+                .foregroundColor(mutedText)
                 .fixedSize(horizontal: false, vertical: true)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     // MARK: Price row
@@ -425,8 +408,6 @@ struct PaywallSheet: View {
 
     private var displayPrice: String {
         let label = manager.lifetimePriceLabel
-        // The manager falls back to "$9.99" already, but if RevenueCat
-        // returns a localized variant (e.g. "US$9.99") we still show it.
         return label.isEmpty ? lockedPrice : label
     }
 

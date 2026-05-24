@@ -7,7 +7,6 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		933EB02A2FBE8FB400D435FE /* RevenueCat in Frameworks */ = {isa = PBXBuildFile; productRef = 933EB0292FBE8FB400D435FE /* RevenueCat */; };
 		936882602F04DBCD00D070C3 /* AudioToolbox.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 9368825F2F04DBCD00D070C3 /* AudioToolbox.framework */; };
 		936882622F04DBD400D070C3 /* CoreFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 936882612F04DBD400D070C3 /* CoreFoundation.framework */; };
 		936883B42F04F62A00D070C3 /* es in Resources */ = {isa = PBXBuildFile; fileRef = 936883B32F04F62A00D070C3 /* es */; };
@@ -39,7 +38,6 @@
 			files = (
 				939C6A2C2F0B6460002402E9 /* Accelerate.framework in Frameworks */,
 				936882622F04DBD400D070C3 /* CoreFoundation.framework in Frameworks */,
-				933EB02A2FBE8FB400D435FE /* RevenueCat in Frameworks */,
 				936882602F04DBCD00D070C3 /* AudioToolbox.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -96,9 +94,6 @@
 				93685E5A2F04D7E300D070C3 /* engine-simulator */,
 			);
 			name = "engine-simulator";
-			packageProductDependencies = (
-				933EB0292FBE8FB400D435FE /* RevenueCat */,
-			);
 			productName = "engine-simulator";
 			productReference = 93685E582F04D7E300D070C3 /* engine-simulator.app */;
 			productType = "com.apple.product-type.application";
@@ -128,9 +123,6 @@
 			);
 			mainGroup = 93685E4F2F04D7E300D070C3;
 			minimizedProjectReferenceProxies = 1;
-			packageReferences = (
-				933EB0282FBE8FB400D435FE /* XCRemoteSwiftPackageReference "purchases-ios-spm" */,
-			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 93685E592F04D7E300D070C3 /* Products */;
 			projectDirPath = "";
@@ -469,25 +461,6 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
-
-/* Begin XCRemoteSwiftPackageReference section */
-		933EB0282FBE8FB400D435FE /* XCRemoteSwiftPackageReference "purchases-ios-spm" */ = {
-			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/RevenueCat/purchases-ios-spm.git";
-			requirement = {
-				kind = upToNextMajorVersion;
-				minimumVersion = 5.73.0;
-			};
-		};
-/* End XCRemoteSwiftPackageReference section */
-
-/* Begin XCSwiftPackageProductDependency section */
-		933EB0292FBE8FB400D435FE /* RevenueCat */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = 933EB0282FBE8FB400D435FE /* XCRemoteSwiftPackageReference "purchases-ios-spm" */;
-			productName = RevenueCat;
-		};
-/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 93685E502F04D7E300D070C3 /* Project object */;
 }

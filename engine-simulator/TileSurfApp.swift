@@ -3,22 +3,6 @@ import SwiftUI
 import AppKit
 #endif
 
-/// RevenueCat public API key, selected by build configuration.
-///
-/// DEBUG builds use the Test Store key (`test_`), which lets the purchase
-/// flow run against RevenueCat's virtual store without App Store Connect —
-/// the SDK only accepts a `test_` key in a development build and kills the
-/// app at launch if it sees one in a release build. Release builds therefore
-/// must use the production App Store key (`appl_`).
-#if DEBUG
-private let revenueCatAPIKey = "test_ZYpdwVJIKcNhwMICqAkYNPRCGur"
-#else
-// TODO: Replace with the production Apple App Store public API key from the
-// RevenueCat dashboard (Project Settings → API keys → Apple). Until this is
-// filled in, release builds can't load offerings or validate purchases.
-private let revenueCatAPIKey = "appl_NjEXSfjpQZcGDAmoXiyLYKOKiGK"
-#endif
-
 /// Fixed sidebar width on iOS — mirrors the macOS NavigationSplitView
 /// ideal width so the layout looks identical across platforms.
 private let iosSidebarWidth: CGFloat = 260
@@ -69,9 +53,10 @@ struct TileSurfApp: App {
     @State private var showLaunchSplash = true
 
     init() {
-        // Boot RevenueCat before any view binds to PurchaseManager — the
-        // singleton subscribes to customerInfoStream during bootstrap.
-        PurchaseManager.configure(apiKey: revenueCatAPIKey)
+        // Boot the StoreKit purchase layer before any view binds to
+        // PurchaseManager — it loads the product + entitlement state and
+        // starts listening for transaction updates during bootstrap.
+        PurchaseManager.configure()
 
         let oscilloscopeManager = OscilloscopeManager()
         let engineViewModelInst = EngineViewModel(oscillioscopeManager: oscilloscopeManager)
@@ -285,8 +270,6 @@ func tileSurfCommands(rootViewModel: RootViewModel) -> some Commands {
 }
 
 /*
- Purchases.configure(withAPIKey: "test_EUzsEZEBTCqmFZJGCPNcKZoLWCg")
- 
  SentrySDK.start { options in
      options.dsn = "https://dcd05699e199354cd229fe74e8eaa55c@o4510452902526976.ingest.us.sentry.io/4510452906721280"
 
