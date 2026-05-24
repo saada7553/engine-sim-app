@@ -67,6 +67,12 @@ final class HapticManager {
     // The continuous event is created open-ended; safe upper bound so a missed
     // stop can't buzz forever.
     private let kRumbleMaxDuration: TimeInterval = 30.0
+    // Hard wall-clock ceiling on a single rumble session, enforced every poll
+    // (see updateMoneyshift). The audio-envelope keep-alive has no upper bound on
+    // its own, so if the crash sound ever plateaus above kRumbleStopThreshold the
+    // rumble would buzz until kRumbleMaxDuration — long enough to feel stuck. This
+    // guarantees it always releases. Comfortably above the max hold below.
+    private let kRumbleAbsoluteMaxSec: TimeInterval = 6.0
     // Randomised minimum hold so the crash always lasts a beat and varies in
     // length; bigger over-revs ring out toward the upper bound.
     private let kHoldMinSec: TimeInterval = 1.2
@@ -87,6 +93,10 @@ final class HapticManager {
     // Monotonic uptime until which the rumble is force-held even if the audio
     // envelope has briefly dipped. Guarantees a minimum (and variable) length.
     private var rumbleHoldUntil: TimeInterval = 0
+    // Monotonic uptime past which the active rumble is force-stopped no matter
+    // what the crash audio is doing. Set when a rumble session starts; a hard
+    // guarantee the crash haptic can't get stuck on.
+    private var rumbleDeadline: TimeInterval = 0
     private var lastPeak: Double = 0
     private let supportsHaptics =
         CHHapticEngine.capabilitiesForHardware().supportsHaptics
@@ -167,6 +177,14 @@ final class HapticManager {
 #if os(iOS)
         guard supportsHaptics else { return }
         let now = ProcessInfo.processInfo.systemUptime
+        // Hard ceiling: once a session's window elapses, force-stop regardless of
+        // the audio envelope or hold. Without this the `audible` keep-alive below
+        // can plateau and never release, leaving the haptic stuck on.
+        if rumbleActive && now >= rumbleDeadline {
+            stopRumble()
+            lastPeak = 0
+            return
+        }
         let audible = max(level, peak) > kRumbleStopThreshold
         guard audible || now < rumbleHoldUntil else {
             stopRumble()
@@ -284,6 +302,10 @@ final class HapticManager {
             try player.start(atTime: CHHapticTimeImmediate)
             rumblePlayer = player
             rumbleActive = true
+            // Arm the absolute ceiling for this session. Set on every fresh
+            // start (onset bang or envelope-driven), and not extended while the
+            // session runs, so one rumble can never outlast the cap.
+            rumbleDeadline = ProcessInfo.processInfo.systemUptime + kRumbleAbsoluteMaxSec
         } catch {
             rumbleActive = false
         }

@@ -59,6 +59,12 @@ class EngineViewModel: ObservableObject {
     @Published var isIgnitionOn: Bool = false
     @Published var isStarterOn: Bool = false
 
+    /// The shared UI clock. Stamped once per poll tick (at AppSettings
+    /// .uiFrameRate). Gauges and driver tools read this to advance their
+    /// animations, so the whole 2D UI beats on one timer instead of each view
+    /// running its own TimelineView at a different rate.
+    @Published var frameDate: Date = Date()
+
     /// Wall-clock time the engine last began running (ignition on + rpm above
     /// the running floor), or nil while it isn't running. Diagnostics read this
     /// to grace start-up transients — e.g. oil pressure that hasn't built yet —
@@ -265,11 +271,42 @@ class EngineViewModel: ObservableObject {
             .sink { [weak self] enabled in self?.engine?.setDamageEnabled(enabled) }
             .store(in: &selectionCancellables)
 
-        // Setup Polling Timer (30 Hz) that runs even during UI interactions
-        let timer = Timer(timeInterval: 1.0/30.0, repeats: true) { [weak self] _ in
-            guard let self = self, let engine = self.engine else { return }
-            
-            if let state = engine.pollState() {
+        // The poll timer is the single UI clock: its rate comes from
+        // AppSettings.uiFrameRate and each tick stamps `frameDate`, so the
+        // gauges and driver tools all animate off one shared beat instead of
+        // their own private TimelineViews. Rebuilt live when the rate changes.
+        startPollTimer()
+        AppSettings.shared.$uiFrameRate
+            .dropFirst()
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in self?.startPollTimer() }
+            .store(in: &selectionCancellables)
+    }
+
+    /// (Re)create the poll timer at the current UI frame rate, invalidating any
+    /// existing one first so a rate change never leaves two timers running.
+    private func startPollTimer() {
+        timer?.invalidate()
+        let rate = min(max(AppSettings.shared.uiFrameRate,
+                           AppSettings.minUIFrameRate), AppSettings.maxUIFrameRate)
+        let t = Timer(timeInterval: 1.0 / rate, repeats: true) { [weak self] _ in
+            self?.pollTick()
+        }
+        RunLoop.main.add(t, forMode: .common)
+        timer = t
+    }
+
+    /// One UI frame: stamp the shared clock, pull the latest simulator state
+    /// into the published properties, and advance the rev ramp. Runs on the
+    /// main run loop at AppSettings.uiFrameRate.
+    private func pollTick() {
+        guard let engine = self.engine else { return }
+
+        // Shared UI-clock tick — gauges/driver tools read frameDate to advance
+        // their animation, so visuals move on the same beat as the data.
+        self.frameDate = Date()
+
+        if let state = engine.pollState() {
                 self.emptyPollStreak = 0
                 self.rpm = state.rpm
                 self.applyPolledGear(Int(state.gear))
@@ -342,8 +379,10 @@ class EngineViewModel: ObservableObject {
                     self.autoKilledStarterOnSeizure = false
                 }
 
-                // Pass engine wrapper to oscilloscope manager for sampling
-                self.oscilloscopeManager.sample(from: engine)
+                // Pass engine wrapper to oscilloscope manager for sampling.
+                // Only the scopes actually on screen are fetched (plus
+                // torque/power while a dyno run is capturing peaks).
+                self.oscilloscopeManager.sample(from: engine, dynoActive: state.dynoEnabled)
 
                 // Track dyno-sweep peaks for the leaderboard. The power/torque
                 // scopes only carry data while sweeping, so this is a no-op
@@ -368,12 +407,9 @@ class EngineViewModel: ObservableObject {
                 }
             }
 
-            self.advanceRevRamp()
-        }
-        RunLoop.main.add(timer, forMode: .common)
-        self.timer = timer
+        self.advanceRevRamp()
     }
-    
+
     // Tuning Methods
     func setIgnitionOffset(_ offset: Double) {
         engine?.setIgnitionOffset(offset)

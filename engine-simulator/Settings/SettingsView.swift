@@ -22,6 +22,17 @@ private let rowTitleFont: CGFloat = 15
 private let rowSubtitleFont: CGFloat = 12
 private let buttonFont: CGFloat = 14
 
+// On iOS the slider's 0-distance drag gesture competes with the ScrollView for
+// vertical swipes that land on it. Confining the slider controls to the left
+// 2/3 of the row leaves the right 1/3 as a gesture-free strip the user can
+// reliably grab to scroll. macOS has a cursor + scrollbar, so it uses the full
+// width.
+private let iosSliderWidthFraction: CGFloat = 2.0 / 3.0
+// Fixed height for the slider controls row, needed because the GeometryReader
+// that measures the 2/3 width doesn't size to its content. Covers the AUTO
+// pill, which is the tallest element in the row.
+private let sliderRowHeight: CGFloat = 34
+
 struct SettingsView: View {
     let onClose: () -> Void
 
@@ -60,6 +71,7 @@ struct SettingsView: View {
                 headerBar
                 Divider().background(Color.strokeFaint)
                 ScrollView { sections.padding(16) }
+                    .scrollIndicators(.hidden)
             }
         }
     }
@@ -101,6 +113,10 @@ struct SettingsView: View {
 
             SettingsSection(title: "SIMULATION") {
                 DamageToggleRow()
+            }
+
+            SettingsSection(title: "PERFORMANCE") {
+                FrameRateRow()
             }
 
             #if os(iOS)
@@ -210,6 +226,170 @@ private struct DamageToggleRow: View {
             subtitle: "Money shifts, over revving and wear can break the engine. Turn this off to drive however you like and nothing breaks.",
             isOn: $settings.engineDamageEnabled
         )
+    }
+}
+
+// MARK: - Performance: UI frame rate
+
+/// The single UI-clock knob. The slider / Auto pill rewrite AppSettings, which
+/// EngineViewModel observes and applies live — the poll timer and every 2D
+/// gauge/tool immediately move to the new rate, so it's easy to compare. Capped
+/// at 30 (the physics frame rate); a battery caution shows at the high end.
+private struct FrameRateRow: View {
+    @ObservedObject private var settings = AppSettings.shared
+
+    private var rateBinding: Binding<Double> {
+        Binding(get: { settings.uiFrameRate },
+                set: { settings.selectFrameRate($0) })
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .top, spacing: 12) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("UI frame rate")
+                        .font(.system(size: rowTitleFont, weight: .semibold))
+                        .foregroundColor(.textPrimary)
+                    Text("How often the gauges and 2D readouts redraw. Lower saves battery; higher is smoother. The 3D engine view is unaffected.")
+                        .font(.system(size: rowSubtitleFont))
+                        .foregroundColor(.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 8)
+                Text("\(Int(settings.uiFrameRate.rounded())) Hz")
+                    .font(.system(size: 15, weight: .bold, design: .monospaced))
+                    .foregroundColor(.accentLive)
+                    .monospacedDigit()
+            }
+
+            sliderControlsRow
+
+            warningLine
+        }
+        .animation(.easeInOut(duration: 0.15), value: settings.uiFrameRate)
+        .animation(.easeInOut(duration: 0.15), value: settings.autoFrameRate)
+    }
+
+    // Slider + AUTO pill. On iOS the interactive controls are pinned to the
+    // left 2/3 so the right 1/3 stays free for scrolling (see
+    // iosSliderWidthFraction); macOS uses the full width.
+    private var sliderControlsRow: some View {
+        let controls = HStack(spacing: 12) {
+            DashSlider(value: rateBinding,
+                       range: AppSettings.minUIFrameRate...AppSettings.maxUIFrameRate)
+            autoPill
+        }
+        #if os(iOS)
+        return GeometryReader { geo in
+            controls.frame(width: geo.size.width * iosSliderWidthFraction,
+                           alignment: .leading)
+        }
+        .frame(height: sliderRowHeight)
+        #else
+        return controls
+        #endif
+    }
+
+    // Pill that hands rate selection back to the device heuristic.
+    private var autoPill: some View {
+        let on = settings.autoFrameRate
+        return Button(action: { settings.enableAutoFrameRate() }) {
+            Text("AUTO")
+                .font(.system(size: 12, weight: .bold, design: .monospaced))
+                .tracking(1)
+                .foregroundColor(on ? .black : .textSecondary)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(Capsule().fill(on ? Color.accentLive : Color.surfaceLow))
+                .overlay(Capsule().stroke(on ? Color.accentLive : Color.strokeFaint,
+                                          lineWidth: Theme.Stroke.thin))
+                .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+    }
+
+    // Battery caution. Low Power Mode takes priority (and notes the auto
+    // downgrade). The high-rate caution only fires when the user has manually
+    // pushed the rate up — in Auto, the device was judged able to handle the
+    // chosen rate, so warning there would just be noise.
+    @ViewBuilder private var warningLine: some View {
+        if settings.lowPowerModeEnabled {
+            cautionRow(icon: "battery.25",
+                       text: settings.autoFrameRate
+                           ? "Low Power Mode is on — rate lowered automatically."
+                           : "Low Power Mode is on — a lower rate will save battery.")
+        } else if settings.usesHighBatteryRate && !settings.autoFrameRate {
+            cautionRow(icon: "bolt.fill",
+                       text: "Higher rates use more battery. Lower it to extend runtime.")
+        }
+    }
+
+    private func cautionRow(icon: String, text: String) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 7) {
+            Image(systemName: icon)
+                .font(.system(size: 11, weight: .semibold))
+            Text(text)
+                .font(.system(size: rowSubtitleFont))
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .foregroundColor(.accentWarn)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 7)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: Theme.Radius.control)
+            .fill(Color.accentWarn.opacity(0.12)))
+        .overlay(RoundedRectangle(cornerRadius: Theme.Radius.control)
+            .stroke(Color.accentWarn.opacity(0.4), lineWidth: Theme.Stroke.thin))
+    }
+}
+
+// MARK: - Dash slider primitive
+
+/// A themed horizontal slider (capsule track + accent fill + knob) that snaps to
+/// whole steps. Built to match the dashboard rather than use the stock system
+/// Slider, which reads as foreign here.
+private struct DashSlider: View {
+    @Binding var value: Double
+    let range: ClosedRange<Double>
+    var step: Double = 1
+
+    private let trackHeight: CGFloat = 6
+    private let knob: CGFloat = 20
+
+    var body: some View {
+        GeometryReader { geo in
+            let span = max(range.upperBound - range.lowerBound, 0.0001)
+            let frac = min(max((value - range.lowerBound) / span, 0), 1)
+            let travel = max(geo.size.width - knob, 0)
+            let knobX = CGFloat(frac) * travel
+
+            ZStack(alignment: .leading) {
+                Capsule()
+                    .fill(Color.surfaceLow)
+                    .overlay(Capsule().stroke(Color.strokeFaint, lineWidth: Theme.Stroke.thin))
+                    .frame(height: trackHeight)
+                Capsule()
+                    .fill(Color.accentLive)
+                    .frame(width: knobX + knob / 2, height: trackHeight)
+                Circle()
+                    .fill(Color.accentLive)
+                    .overlay(Circle().stroke(Color.appBackground, lineWidth: 2))
+                    .frame(width: knob, height: knob)
+                    .offset(x: knobX)
+            }
+            .frame(height: knob)
+            .contentShape(Rectangle())
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { g in
+                        let f = travel > 0 ? min(max((g.location.x - knob / 2) / travel, 0), 1) : 0
+                        let raw = range.lowerBound + Double(f) * span
+                        let snapped = (raw / step).rounded() * step
+                        value = min(max(snapped, range.lowerBound), range.upperBound)
+                    }
+            )
+        }
+        .frame(height: knob)
     }
 }
 

@@ -8,6 +8,12 @@
 
 import SwiftUI
 
+// On iOS the BuilderSliders' drag gestures fight the ScrollView for vertical
+// swipes that land on them. Pinning the slider column to the left 2/3 leaves
+// the right 1/3 of the scroll area gesture-free, so the user always has a strip
+// to grab and scroll without nudging a slider. macOS uses the full width.
+private let sliderColumnFraction: CGFloat = 2.0 / 3.0
+
 // MARK: - Advanced
 
 struct AdvancedStep: View {
@@ -21,61 +27,87 @@ struct AdvancedStep: View {
                 .foregroundColor(BuilderTheme.label)
                 .lineSpacing(4)
 
-            ScrollView {
-                VStack(alignment: .leading, spacing: 24) {
-                    AdvancedSection(title: "Masses & friction") {
-                        BuilderSlider(label: "Piston mass", value: $state.spec.pistonMassG,
-                                      range: 100...600, step: 5, unit: "g", format: "%.0f")
-                        BuilderSlider(label: "Rod mass", value: $state.spec.rodMassG,
-                                      range: 200...900, step: 10, unit: "g", format: "%.0f")
-                        BuilderSlider(label: "Crank mass", value: $state.spec.crankMassKg,
-                                      range: 5...40, step: 0.5, unit: "kg")
-                        BuilderSlider(label: "Flywheel mass", value: $state.spec.flywheelMassKg,
-                                      range: 2...30, step: 0.5, unit: "kg")
-                        BuilderSlider(label: "Flywheel radius", value: $state.spec.flywheelRadiusIn,
-                                      range: 4...12, step: 0.25, unit: "in")
-                        BuilderSlider(label: "Crank friction torque", value: $state.spec.crankFrictionLbFt,
-                                      range: 1...30, step: 0.5, unit: "lb-ft")
-                    }
+            scrollingControls
+        }
+    }
 
-                    AdvancedSection(title: "Cylinder head") {
-                        BuilderSlider(label: "Chamber volume", value: $state.spec.chamberVolumeCc,
-                                      range: 30...120, step: 1, unit: "cc", format: "%.0f")
-                        BuilderSlider(label: "Intake runner volume",
-                                      value: $state.spec.intakeRunnerVolumeCc,
-                                      range: 50...500, step: 5, unit: "cc", format: "%.0f")
-                        BuilderSlider(label: "Intake runner CSA",
-                                      value: $state.spec.intakeRunnerAreaInSq,
-                                      range: 1.0...6.0, step: 0.05, unit: "in²", format: "%.2f")
-                        BuilderSlider(label: "Exhaust runner volume",
-                                      value: $state.spec.exhaustRunnerVolumeCc,
-                                      range: 20...300, step: 5, unit: "cc", format: "%.0f")
-                        BuilderSlider(label: "Exhaust runner CSA",
-                                      value: $state.spec.exhaustRunnerAreaInSq,
-                                      range: 0.5...4.0, step: 0.05, unit: "in²", format: "%.2f")
-                        BuilderSlider(label: "Port flow scale", value: $state.spec.portFlowScale,
-                                      range: 0.5...1.6, step: 0.02, unit: "×", format: "%.2f")
-                        BuilderSlider(label: "Cam base radius", value: $state.spec.camBaseRadiusIn,
-                                      range: 0.4...1.2, step: 0.01, unit: "in", format: "%.2f")
+    // The scrollable slider column. On iOS it's confined to the left 2/3 inside
+    // a full-width scroll area (right 1/3 left empty for scrolling); macOS keeps
+    // the full width.
+    @ViewBuilder
+    private var scrollingControls: some View {
+        #if os(iOS)
+        // ScrollView stays the direct child so the builder lays it out with a
+        // real height (a GeometryReader here collapses to zero and hides
+        // everything). containerRelativeFrame pins the column to 2/3 of the
+        // scroll width; the trailing Spacer fills the empty right third.
+        ScrollView {
+            HStack(spacing: 0) {
+                sliderColumn
+                    .containerRelativeFrame(.horizontal, alignment: .leading) { width, _ in
+                        width * sliderColumnFraction
                     }
-
-                    AdvancedSection(title: "Idle / Intake fine-tuning") {
-                        BuilderSlider(label: "Idle CFM", value: $state.spec.idleCfm,
-                                      range: 0...10, step: 0.1, unit: "", format: "%.1f")
-                    }
-
-                    AdvancedSection(title: "Starter & condition") {
-                        BuilderSlider(label: "Starter torque", value: $state.spec.starterTorqueLbFt,
-                                      range: 50...600, step: 5, unit: "lb-ft", format: "%.0f")
-                        BuilderSlider(label: "Starter speed", value: $state.spec.starterSpeedRpm,
-                                      range: 80...400, step: 5, unit: "rpm", format: "%.0f")
-                        BuilderSlider(label: "Blowby (ring wear)", value: $state.spec.blowby,
-                                      range: 0...2, step: 0.05, unit: "", format: "%.2f")
-                    }
-                }
-                .padding(.bottom, 12)
+                Spacer(minLength: 0)
             }
         }
+        #else
+        ScrollView { sliderColumn }
+        #endif
+    }
+
+    private var sliderColumn: some View {
+        VStack(alignment: .leading, spacing: 24) {
+            AdvancedSection(title: "Masses & friction") {
+                BuilderSlider(label: "Piston mass", value: $state.spec.pistonMassG,
+                              range: 100...600, step: 5, unit: "g", format: "%.0f")
+                BuilderSlider(label: "Rod mass", value: $state.spec.rodMassG,
+                              range: 200...900, step: 10, unit: "g", format: "%.0f")
+                BuilderSlider(label: "Crank mass", value: $state.spec.crankMassKg,
+                              range: 5...40, step: 0.5, unit: "kg")
+                BuilderSlider(label: "Flywheel mass", value: $state.spec.flywheelMassKg,
+                              range: 2...30, step: 0.5, unit: "kg")
+                BuilderSlider(label: "Flywheel radius", value: $state.spec.flywheelRadiusIn,
+                              range: 4...12, step: 0.25, unit: "in")
+                BuilderSlider(label: "Crank friction torque", value: $state.spec.crankFrictionLbFt,
+                              range: 1...30, step: 0.5, unit: "lb-ft")
+            }
+
+            AdvancedSection(title: "Cylinder head") {
+                BuilderSlider(label: "Chamber volume", value: $state.spec.chamberVolumeCc,
+                              range: 30...120, step: 1, unit: "cc", format: "%.0f")
+                BuilderSlider(label: "Intake runner volume",
+                              value: $state.spec.intakeRunnerVolumeCc,
+                              range: 50...500, step: 5, unit: "cc", format: "%.0f")
+                BuilderSlider(label: "Intake runner CSA",
+                              value: $state.spec.intakeRunnerAreaInSq,
+                              range: 1.0...6.0, step: 0.05, unit: "in²", format: "%.2f")
+                BuilderSlider(label: "Exhaust runner volume",
+                              value: $state.spec.exhaustRunnerVolumeCc,
+                              range: 20...300, step: 5, unit: "cc", format: "%.0f")
+                BuilderSlider(label: "Exhaust runner CSA",
+                              value: $state.spec.exhaustRunnerAreaInSq,
+                              range: 0.5...4.0, step: 0.05, unit: "in²", format: "%.2f")
+                BuilderSlider(label: "Port flow scale", value: $state.spec.portFlowScale,
+                              range: 0.5...1.6, step: 0.02, unit: "×", format: "%.2f")
+                BuilderSlider(label: "Cam base radius", value: $state.spec.camBaseRadiusIn,
+                              range: 0.4...1.2, step: 0.01, unit: "in", format: "%.2f")
+            }
+
+            AdvancedSection(title: "Idle / Intake fine-tuning") {
+                BuilderSlider(label: "Idle CFM", value: $state.spec.idleCfm,
+                              range: 0...10, step: 0.1, unit: "", format: "%.1f")
+            }
+
+            AdvancedSection(title: "Starter & condition") {
+                BuilderSlider(label: "Starter torque", value: $state.spec.starterTorqueLbFt,
+                              range: 50...600, step: 5, unit: "lb-ft", format: "%.0f")
+                BuilderSlider(label: "Starter speed", value: $state.spec.starterSpeedRpm,
+                              range: 80...400, step: 5, unit: "rpm", format: "%.0f")
+                BuilderSlider(label: "Blowby (ring wear)", value: $state.spec.blowby,
+                              range: 0...2, step: 0.05, unit: "", format: "%.2f")
+            }
+        }
+        .padding(.bottom, 12)
     }
 }
 

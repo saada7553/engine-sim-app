@@ -66,7 +66,8 @@ struct ThrottleView: View {
                 AspectFitContainer(aspectRatio: clutchAspectRatio) {
                     ClutchCrossSection(
                         clutchPressure: vm.clutchPressure,
-                        rpm: vm.rpm
+                        rpm: vm.rpm,
+                        now: vm.frameDate.timeIntervalSinceReferenceDate
                     )
                 }
                 // Clutch is binary-toggled from the top bar on iOS; the
@@ -144,7 +145,8 @@ struct ClutchPanelView: View {
 
     var body: some View {
         AspectFitContainer(aspectRatio: clutchAspectRatio) {
-            ClutchCrossSection(clutchPressure: vm.clutchPressure, rpm: vm.rpm)
+            ClutchCrossSection(clutchPressure: vm.clutchPressure, rpm: vm.rpm,
+                               now: vm.frameDate.timeIntervalSinceReferenceDate)
         }
         .padding(6)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -218,6 +220,9 @@ private struct AspectFitContainer<Content: View>: View {
 private struct ClutchCrossSection: View {
     let clutchPressure: Double
     let rpm: Double
+    /// Shared UI-clock timestamp (vm.frameDate) threaded down so the spinning
+    /// scribes advance on the same beat as everything else, no private timer.
+    let now: TimeInterval
 
     var body: some View {
         GeometryReader { geo in
@@ -258,7 +263,8 @@ private struct ClutchCrossSection: View {
                         height: h * clutchFlywheelHeightFraction
                     ),
                     rpm: rpm,
-                    spinsForward: true
+                    spinsForward: true,
+                    now: now
                 )
 
                 // Friction disc rotates with the transmission input shaft —
@@ -278,7 +284,8 @@ private struct ClutchCrossSection: View {
                         width: pressurePlateWidth,
                         height: h * clutchPressurePlateHeightFraction
                     ),
-                    rpm: rpm
+                    rpm: rpm,
+                    now: now
                 )
 
                 DiaphragmSpring(
@@ -328,6 +335,9 @@ private struct Flywheel: View {
     let rect: CGRect
     let rpm: Double
     let spinsForward: Bool
+    /// Shared UI-clock timestamp — the scribe scroll advances off this instead
+    /// of a private TimelineView, so it tracks the configured UI frame rate.
+    let now: TimeInterval
 
     var body: some View {
         ZStack(alignment: .topLeading) {
@@ -337,14 +347,12 @@ private struct Flywheel: View {
                 .frame(width: rect.width, height: rect.height)
                 .offset(x: rect.minX, y: rect.minY)
 
-            TimelineView(.animation(minimumInterval: 1.0 / 60.0)) { context in
-                SpinScribes(
-                    rect: rect,
-                    rpm: rpm,
-                    timestamp: context.date.timeIntervalSinceReferenceDate,
-                    direction: spinsForward ? 1 : -1
-                )
-            }
+            SpinScribes(
+                rect: rect,
+                rpm: rpm,
+                timestamp: now,
+                direction: spinsForward ? 1 : -1
+            )
             .frame(width: rect.width, height: rect.height)
             .offset(x: rect.minX, y: rect.minY)
             .clipShape(RoundedRectangle(cornerRadius: 1.5))
@@ -402,9 +410,10 @@ private struct FrictionDisc: View {
 private struct PressurePlate: View {
     let rect: CGRect
     let rpm: Double
+    let now: TimeInterval
 
     var body: some View {
-        Flywheel(rect: rect, rpm: rpm, spinsForward: true)
+        Flywheel(rect: rect, rpm: rpm, spinsForward: true, now: now)
     }
 }
 

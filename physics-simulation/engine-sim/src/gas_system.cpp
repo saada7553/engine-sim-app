@@ -64,7 +64,10 @@ void GasSystem::setN(double n) {
 
 void GasSystem::changeVolume(double dV) {
     const double V = this->volume();
-    const double L = std::pow(V + dV, 1 / 3.0);
+    // Cube root of the chamber volume. std::cbrt is a dedicated libm routine —
+    // exact and faster than the general std::pow(x, 1/3) this used to call, and
+    // this runs every substep via setVolume().
+    const double L = std::cbrt(V + dV);
     const double surfaceArea = (L * L);
     const double dL = -dV / surfaceArea;
     const double W = dL * pressure() * surfaceArea;

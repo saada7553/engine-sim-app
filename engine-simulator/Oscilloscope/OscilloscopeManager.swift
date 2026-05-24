@@ -33,6 +33,34 @@ class OscilloscopeManager: ObservableObject {
     /// Published update trigger for views
     @Published private(set) var lastUpdateTime: TimeInterval = 0
 
+    // MARK: - Active-type registry
+    //
+    // Fetching a scope buffer from C++ costs a call + an array allocation, and
+    // re-publishing it re-renders every observer. Doing that for all 11 scopes
+    // on every 30 Hz poll — even when no oscilloscope tile is on screen — is
+    // pure waste. Each visible OscilloscopeView registers the types it draws
+    // (ref-counted, since two tiles can show the same scope); `sample` then
+    // only fetches what's actually being displayed. All access is on the main
+    // thread (the poll timer runs on the main run loop, registration happens in
+    // onAppear/onDisappear), so no locking is needed.
+    private var activeTypeCounts: [EngineScopeType: Int] = [:]
+
+    func registerActive(_ types: [EngineScopeType]) {
+        for type in types { activeTypeCounts[type, default: 0] += 1 }
+    }
+
+    func unregisterActive(_ types: [EngineScopeType]) {
+        for type in types {
+            guard let count = activeTypeCounts[type] else { continue }
+            if count <= 1 { activeTypeCounts[type] = nil }
+            else { activeTypeCounts[type] = count - 1 }
+        }
+    }
+
+    private func isActive(_ type: EngineScopeType) -> Bool {
+        activeTypeCounts[type] != nil
+    }
+
     // MARK: - Initialization
 
     init() {
@@ -41,22 +69,21 @@ class OscilloscopeManager: ObservableObject {
 
     // MARK: - Sampling
 
-    func sample(from engine: EngineWrapper) {
-        // Update all buffers by fetching from C++ engine
-        // Using the aliased Enum directly
-        updateBuffer(for: .torque, from: engine)
-        updateBuffer(for: .power, from: engine)
-        updateBuffer(for: .sparkAdvance, from: engine)
-        updateBuffer(for: .totalExhaustFlow, from: engine)
-        updateBuffer(for: .exhaustFlow, from: engine)
-        updateBuffer(for: .intakeFlow, from: engine)
-        updateBuffer(for: .exhaustValveLift, from: engine)
-        updateBuffer(for: .intakeValveLift, from: engine)
-        updateBuffer(for: .cylinderPressure, from: engine)
-        updateBuffer(for: .cylinderMolecules, from: engine)
-        updateBuffer(for: .PV, from: engine)
-        
-        lastUpdateTime = ProcessInfo.processInfo.systemUptime
+    /// Refresh the buffers for every currently-displayed scope. `dynoActive`
+    /// forces torque + power even when no scope shows them, because the run
+    /// results / leaderboard reads those buffers to capture sweep peaks.
+    func sample(from engine: EngineWrapper, dynoActive: Bool) {
+        var sampledAny = false
+        for type in EngineScopeType.allCases {
+            let force = dynoActive && (type == .torque || type == .power)
+            guard force || isActive(type) else { continue }
+            updateBuffer(for: type, from: engine)
+            sampledAny = true
+        }
+
+        // Only bump the refresh trigger when we actually pulled new data, so a
+        // dashboard with no scopes open doesn't re-render scope observers.
+        if sampledAny { lastUpdateTime = ProcessInfo.processInfo.systemUptime }
     }
 
     private func updateBuffer(for type: EngineScopeType, from engine: EngineWrapper) {

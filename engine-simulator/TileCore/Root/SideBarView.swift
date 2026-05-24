@@ -23,6 +23,15 @@ private let rowCorner: CGFloat = Theme.Radius.control
 private let rowGutter: CGFloat = 10
 private let dotSize: CGFloat = 7
 
+// Extra hit-area padding around the small row action icons (edit / delete).
+// macOS has hover + a cursor so the bare 11pt glyph is fine; iOS is touch and
+// the two icons sit close together, so they get a padded, finger-sized target.
+#if os(macOS)
+private let iconHitPadding: CGFloat = 0
+#else
+private let iconHitPadding: CGFloat = 10
+#endif
+
 // Gap above/below the hairline that separates the "Build New Engine" CTA from
 // the engine list. Without it the solid-blue CTA and the blue-tinted selected
 // row sit close enough to read as one block.
@@ -302,6 +311,7 @@ struct EngineRow: View {
     let onDelete: () -> Void
 
     @State private var hovered = false
+    @State private var showingDeleteConfirm = false
 
     private var subtitle: String {
         var parts = [entry.displacementLabel, "\(entry.cylinderCount) cyl"]
@@ -336,12 +346,20 @@ struct EngineRow: View {
             #endif
         }
         .onHover { hovered = $0 }
+        .alert("Delete \(entry.name)?", isPresented: $showingDeleteConfirm) {
+            Button("Cancel", role: .cancel) {}
+            Button("Delete", role: .destructive, action: onDelete)
+        } message: {
+            Text("This permanently removes the engine. This can't be undone.")
+        }
     }
 
     private var rowActions: some View {
         HStack(spacing: rowGutter) {
             iconButton(systemName: "slider.horizontal.3", label: "Edit this engine", action: onEdit)
-            iconButton(systemName: "trash", label: "Delete this engine", action: onDelete)
+            iconButton(systemName: "trash", label: "Delete this engine") {
+                showingDeleteConfirm = true
+            }
         }
     }
 
@@ -362,6 +380,8 @@ struct EngineRow: View {
             Image(systemName: systemName)
                 .font(.system(size: 11))
                 .foregroundColor(mutedText)
+                .padding(iconHitPadding)
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .help(label)

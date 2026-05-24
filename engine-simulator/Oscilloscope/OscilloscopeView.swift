@@ -131,6 +131,11 @@ struct OscilloscopeView: View {
         }
         .cornerRadius(8)
         .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.gray.opacity(0.3), lineWidth: 1))
+        // Tell the manager which scopes are on screen so it only fetches these
+        // from C++ each poll instead of all 11. Ref-counted, so overlapping
+        // tiles showing the same scope are handled correctly.
+        .onAppear { manager.registerActive(configs.map(\.type)) }
+        .onDisappear { manager.unregisterActive(configs.map(\.type)) }
     }
 
     // MARK: - Chart Variants

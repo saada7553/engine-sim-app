@@ -62,7 +62,7 @@ private let assumedCrankTargetRpm: Double = 220.0
 private let starterSpeedFloorRpm: Double = 180.0
 // Throttle while cranking: wide-open floods it; near-closed may be starving a
 // big-cam engine that needs a little air to catch.
-private let floodingThrottle: Double = 0.85
+private let floodingThrottle: Double = 0.95
 private let starvedThrottle: Double = 0.04
 
 // MARK: - Models
@@ -154,7 +154,7 @@ enum OBD2CodeService {
                                  code: "P0524",
                                  description: "Engine Oil Pressure Too Low",
                                  severity: .critical))
-            } else if vm.oilPressurePsi < 18 {
+            } else if vm.oilPressurePsi < 12 {
                 out.append(.init(id: "P0521",
                                  code: "P0521",
                                  description: "Engine Oil Pressure Sensor Performance",

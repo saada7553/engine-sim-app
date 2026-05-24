@@ -30,7 +30,17 @@
 // --- Dynamometer tuning constants ---
 static const double kDynoTorqueThresholdFtLb = 1.0;  // ft-lb of torque required for the dyno to keep accelerating
 static const double kDynoRampRateRpm = 500.0;        // rpm/sec the dyno speed climbs while loaded
-static const double kFrameTimestep = 1.0 / 30.0;     // seconds per simulation frame
+
+// How often the physics thread produces a simulation frame (and feeds the
+// audio synthesizer), in Hz. This is the SINGLE source for the physics frame
+// rate — the thread-wake interval AND the startFrame() timestep both derive
+// from it, so they can never drift apart (a mismatch would run the sim in
+// slow-motion or fast-forward). Deliberately INDEPENDENT of the UI frame rate
+// (AppSettings.uiFrameRate): the sim/audio must run at a steady, fairly high
+// rate for glitch-free sound and responsive controls, regardless of how often
+// the UI redraws.
+static const double kPhysicsFrameRateHz = 30.0;
+static const double kFrameTimestep = 1.0 / kPhysicsFrameRateHz;  // seconds per simulation frame
 static const double kDynoMinThrottle = 0.05;         // throttle threshold that marks a run started / ends it
 
 // The C++ ignition module stores both the timing-curve output and m_ignitionOffset
@@ -211,7 +221,15 @@ static const double kCylinderPressurePeakDecay = 0.985;
     // 2. Setup Simulator
     _sim = _engine->createSimulator(_vehicle, _transmission);
     _engine->calculateDisplacement();
-    _sim->setSimulationFrequency(_engine->getSimulationFrequency());
+    // The sim thread runs flat-out feeding the synthesizer in real time, so CPU
+    // (and phone heat) scales ~linearly with the simulation frequency. Engine MR
+    // files bake in 10 kHz; clamp to a lower target here so the cap applies to
+    // every engine — existing and newly generated — without rewriting MR files.
+    // Tunable: lower = cooler but a less crisp engine note and a larger solver
+    // timestep (watch high-RPM stability). Keep in sync with MRWriter's default.
+    static const int kTargetSimulationFrequencyHz = 7000;
+    int simFrequency = MIN(_engine->getSimulationFrequency(), kTargetSimulationFrequencyHz);
+    _sim->setSimulationFrequency(simFrequency);
     _sim->setSimulationSpeed(1.0);
     
     // 3. Setup Audio (Shortened for brevity - copy your setup logic here)
@@ -282,16 +300,15 @@ static const double kCylinderPressurePeakDecay = 0.985;
     _running = true;
     _simThread = new std::thread([self](){
         while(_running) {
-            const double targetFrameRate = 30.0;
-            const auto targetFrameTime = std::chrono::microseconds(static_cast<int>(1000000.0 / targetFrameRate));
+            const auto targetFrameTime = std::chrono::microseconds(static_cast<int>(1000000.0 / kPhysicsFrameRateHz));
             auto frameStart = std::chrono::steady_clock::now();
-            
+
             if (_gear != _targetGear)
                 _sim->getTransmission()->changeGear(_targetGear);
 
             [self updateDynoForFrame:kFrameTimestep];
 
-            _sim->startFrame(1.0 / 30.0);
+            _sim->startFrame(kFrameTimestep);
             Engine *engine = _sim->getEngine();
             ThermalSystem *thermal = engine->getThermalSystem();
             while (_sim->simulateStep()) {

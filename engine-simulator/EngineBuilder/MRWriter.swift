@@ -374,7 +374,7 @@ enum MRWriter {
         \(mrIndent)\(mrIndent)hf_gain: 0.01,
         \(mrIndent)\(mrIndent)noise: 1.0,
         \(mrIndent)\(mrIndent)jitter: 0.4,
-        \(mrIndent)\(mrIndent)simulation_frequency: 10000
+        \(mrIndent)\(mrIndent)simulation_frequency: 7000
         \(mrIndent))
 
 

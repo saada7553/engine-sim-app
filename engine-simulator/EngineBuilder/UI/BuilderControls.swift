@@ -85,6 +85,11 @@ private struct ThemedTrackSlider: View {
     let range: ClosedRange<Double>
     let step: Double
 
+    // Touch must travel this far before the slider engages. A non-zero floor
+    // lets a vertical scroll that starts on the track reach the enclosing
+    // ScrollView instead of being captured as a value change.
+    private let engageDistance: CGFloat = 8
+
     var body: some View {
         GeometryReader { proxy in
             let width = proxy.size.width
@@ -112,8 +117,11 @@ private struct ThemedTrackSlider: View {
             }
             .contentShape(Rectangle())
             .gesture(
-                DragGesture(minimumDistance: 0)
+                DragGesture(minimumDistance: engageDistance)
                     .onChanged { drag in
+                        // Vertical-leaning drags are scrolls, not adjustments —
+                        // ignore them so the value doesn't jump while scrolling.
+                        guard abs(drag.translation.width) > abs(drag.translation.height) else { return }
                         let frac = clamp(drag.location.x / width, 0, 1)
                         let raw = range.lowerBound + frac * (range.upperBound - range.lowerBound)
                         value = snap(raw)

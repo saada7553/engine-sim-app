@@ -177,22 +177,22 @@ struct ShiftLightView: View {
     }
 
     private func ledBar(scale: CGFloat) -> some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 60.0)) { context in
-            HStack(spacing: baseLedSpacing * scale) {
-                ForEach(0..<ledCount, id: \.self) { idx in
-                    led(at: idx,
-                        now: context.date.timeIntervalSinceReferenceDate,
-                        scale: scale)
-                }
+        // Driven by the shared UI clock (vm.frameDate) — the view observes the
+        // VM, so it re-renders each poll tick and the LED blink advances with
+        // everything else at the configured frame rate.
+        let now = vm.frameDate.timeIntervalSinceReferenceDate
+        return HStack(spacing: baseLedSpacing * scale) {
+            ForEach(0..<ledCount, id: \.self) { idx in
+                led(at: idx, now: now, scale: scale)
             }
-            .padding(basePanelPadding * scale)
-            .background(
-                RoundedRectangle(cornerRadius: basePanelCornerRadius * scale)
-                    .fill(panelFill)
-                    .overlay(RoundedRectangle(cornerRadius: basePanelCornerRadius * scale)
-                                .stroke(panelStrokeColor, lineWidth: 1))
-            )
         }
+        .padding(basePanelPadding * scale)
+        .background(
+            RoundedRectangle(cornerRadius: basePanelCornerRadius * scale)
+                .fill(panelFill)
+                .overlay(RoundedRectangle(cornerRadius: basePanelCornerRadius * scale)
+                            .stroke(panelStrokeColor, lineWidth: 1))
+        )
         .frame(maxWidth: .infinity)
     }
 

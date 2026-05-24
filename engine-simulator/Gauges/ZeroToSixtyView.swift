@@ -185,24 +185,26 @@ struct ZeroToSixtyView: View {
     /// readout rather than a bordered widget. Font scales with tile size with a
     /// generous `minimumScaleFactor` so the digits never wrap or truncate.
     private func timeDisplay(scale: CGFloat) -> some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { context in
-            HStack(alignment: .lastTextBaseline, spacing: 4 * scale) {
-                Text(displayTimeString(at: context.date.timeIntervalSinceReferenceDate))
-                    .font(.system(size: baseDisplayFontSize * scale,
-                                  weight: .light,
-                                  design: .monospaced))
-                    .foregroundColor(phase == .idle ? .white.opacity(0.85) : .white)
-                    .lineLimit(1)
-                    .minimumScaleFactor(displayShrinkFloor)
-                Text("s")
-                    .font(.system(size: baseDisplayFontSize * scale * 0.32,
-                                  weight: .regular,
-                                  design: .monospaced))
-                    .foregroundColor(.textMuted)
-            }
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, baseDisplayVerticalPadding * scale * 0.5)
+        // Running clock driven by the shared UI clock (vm.frameDate). The view
+        // observes the VM so it re-renders each poll tick; the recorded launch
+        // result is still computed from real timestamps, not this display.
+        let now = vm.frameDate.timeIntervalSinceReferenceDate
+        return HStack(alignment: .lastTextBaseline, spacing: 4 * scale) {
+            Text(displayTimeString(at: now))
+                .font(.system(size: baseDisplayFontSize * scale,
+                              weight: .light,
+                              design: .monospaced))
+                .foregroundColor(phase == .idle ? .white.opacity(0.85) : .white)
+                .lineLimit(1)
+                .minimumScaleFactor(displayShrinkFloor)
+            Text("s")
+                .font(.system(size: baseDisplayFontSize * scale * 0.32,
+                              weight: .regular,
+                              design: .monospaced))
+                .foregroundColor(.textMuted)
         }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, baseDisplayVerticalPadding * scale * 0.5)
     }
 
     private func statusLine(scale: CGFloat) -> some View {

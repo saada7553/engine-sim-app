@@ -43,6 +43,14 @@ private let iosGlobalScale: CGFloat = 0.7
 /// padding keeps content out of the rounded-corner cut-off.
 private let iosLeadingInset: CGFloat = 14
 
+/// Launch splash timing. The hold covers the tach key-on sweep (stir → sweep →
+/// hold → settle to idle, reaching idle ~2.45s) plus a brief idle linger, then
+/// the splash crossfades out over `launchSplashFade`. It's a deliberate brand
+/// beat, not a wait on real work — the first engine is already built in
+/// TileSurfApp.init before any frame renders.
+private let launchSplashHold: Double = 2.9
+private let launchSplashFade: Double = 0.5
+
 @main
 struct TileSurfApp: App {
     @StateObject private var rootViewModel: RootViewModel
@@ -57,6 +65,9 @@ struct TileSurfApp: App {
     // Drives the iOS sidebar collapse/expand. The macOS sidebar is
     // controlled via the responder chain, so this is iOS-only.
     @ObservedObject private var sidebarManager = SidebarManager.shared
+    // Branded launch splash, shown over everything from frame one and crossfaded
+    // away after a short hold (see launchSplashHold).
+    @State private var showLaunchSplash = true
 
     init() {
         // Boot RevenueCat before any view binds to PurchaseManager — the
@@ -114,6 +125,25 @@ struct TileSurfApp: App {
                 }
                 .animation(.easeInOut(duration: 0.3),
                            value: playerIdentity.hasCompletedOnboarding)
+
+                // Launch splash sits above everything (including onboarding) at
+                // true window size, outside the iOS content scaleEffect, so the
+                // lockup stays crisp. Mounted from frame one; crossfades out
+                // after a brief brand hold.
+                .overlay {
+                    if showLaunchSplash {
+                        LaunchSplashView()
+                            .transition(.opacity)
+                            .task {
+                                try? await Task.sleep(
+                                    nanoseconds: UInt64(launchSplashHold * 1_000_000_000)
+                                )
+                                withAnimation(.easeInOut(duration: launchSplashFade)) {
+                                    showLaunchSplash = false
+                                }
+                            }
+                    }
+                }
         }
         #if os(macOS)
         .commands {

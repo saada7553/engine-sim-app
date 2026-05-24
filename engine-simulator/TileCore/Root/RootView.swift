@@ -15,6 +15,8 @@ struct RootView: View {
     /// Remembered to restore on builder dismiss, so a user who was running
     /// with the sidebar collapsed doesn't get it re-expanded after a build.
     @State private var iosSidebarHiddenBeforeBuild = false
+    /// Same restore-on-dismiss bookkeeping for the settings takeover.
+    @State private var iosSidebarHiddenBeforeSettings = false
     #endif
 
     var body: some View {
@@ -73,6 +75,12 @@ struct RootView: View {
             if vm.isPresentingSettings {
                 SettingsView(onClose: { vm.isPresentingSettings = false })
                     .transition(.opacity)
+                    // Settings takes over the content area, so fold the sidebar
+                    // on entry and restore its prior state on exit — mirrors the
+                    // engine builder behaviour above.
+                    .onAppear { iosSidebarHiddenBeforeSettings = SidebarManager.shared.isSidebarHidden
+                                SidebarManager.shared.isSidebarHidden = true }
+                    .onDisappear { SidebarManager.shared.isSidebarHidden = iosSidebarHiddenBeforeSettings }
             }
             #endif
         }

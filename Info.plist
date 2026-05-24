@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Base Info.plist for the engine-simulator target.
+
+  GENERATE_INFOPLIST_FILE stays YES, so Xcode merges the generated keys
+  (orientation, status bar, etc. from the INFOPLIST_KEY_* build settings) on top
+  of this file. The only thing this base file adds is the iOS launch screen
+  background colour, which has no build-setting equivalent: it paints the OS
+  launch screen in the app's dark appBackground (LaunchBackground colour asset =
+  white 0.08) so launch doesn't flash white before the first frame. Ignored on
+  macOS, which has no UILaunchScreen concept.
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>UILaunchScreen</key>
+	<dict>
+		<key>UIColorName</key>
+		<string>LaunchBackground</string>
+	</dict>
+</dict>
+</plist>
