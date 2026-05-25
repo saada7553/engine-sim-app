@@ -29,6 +29,18 @@ enum PortDisclaimer {
     with, endorsed by, or supported by AngeTheGreat (Ange Yaghi), the creator of \
     the original Engine Simulator.
     """
+
+    /// Trademark notice for the real-world engines the app simulates. Manufacturer
+    /// names and engine designations are referenced descriptively (nominative use)
+    /// to identify the engine being modelled; this states no affiliation. Shown in
+    /// Settings → Legal beside the port disclaimer.
+    static let trademarks = """
+    Manufacturer names, engine designations, and model references are trademarks \
+    of their respective owners and are used here for descriptive and \
+    identification purposes only, to indicate the real-world engines being \
+    simulated. Engine Simulator is not affiliated with, endorsed by, or sponsored \
+    by any vehicle or engine manufacturer.
+    """
 }
 
 // MARK: - License data

@@ -607,6 +607,11 @@ private struct LegalLinksRow: View {
                 .foregroundColor(.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
 
+            Text(PortDisclaimer.trademarks)
+                .font(.system(size: attributionFont))
+                .foregroundColor(.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+
             VStack(alignment: .leading, spacing: 2) {
                 Text("Open-source components")
                     .font(.system(size: attributionFont, weight: .semibold))

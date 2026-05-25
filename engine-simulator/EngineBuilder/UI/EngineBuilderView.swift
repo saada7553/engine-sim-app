@@ -420,6 +420,11 @@ private struct BuildCostChip: View {
 private struct BuilderSectionRail: View {
     @ObservedObject var state: EngineBuilderState
 
+    /// Mirrors the header's Save-button badge so a user scanning the rail sees
+    /// the Review row flagged, pointing them at where the warnings live.
+    private var warnings: [BuildWarning] { EngineSpecValidator.warnings(for: state.spec) }
+    private var hasCriticalWarning: Bool { warnings.contains { $0.severity == .critical } }
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: BuilderLayout.sectionGroupSpacing) {
@@ -460,6 +465,9 @@ private struct BuilderSectionRail: View {
                     .tracking(1.5)
                     .foregroundColor(selected ? .white : BuilderTheme.label)
                 Spacer()
+                if step == .review && !warnings.isEmpty {
+                    SaveWarningBadge(count: warnings.count, hasCritical: hasCriticalWarning)
+                }
             }
             .padding(.horizontal, 10)
             .frame(maxWidth: .infinity, alignment: .leading)
