@@ -126,6 +126,16 @@ private func failureDiagnostics(_ error: Error) -> [String: Any] {
     return info
 }
 
+/// Sends a user-submitted bug report to Sentry's User Feedback inbox. Anonymous
+/// by design — no name or email is attached, so the only personal data is
+/// whatever the user chose to type. Empty/whitespace messages are ignored.
+func sendBugReport(_ message: String) {
+    let trimmed = message.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmed.isEmpty else { return }
+    let feedback = SentryFeedback(message: trimmed, name: nil, email: nil, source: .custom)
+    SentrySDK.capture(feedback: feedback)
+}
+
 #if DEBUG
 /// Fires a one-off test event so you can confirm events reach the Sentry
 /// dashboard. DEBUG-only. The message is stamped with the local date/time so

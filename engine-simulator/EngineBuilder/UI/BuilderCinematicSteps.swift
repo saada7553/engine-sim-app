@@ -165,7 +165,9 @@ private struct DescriptionField: View {
                     .textEditorStyle(.plain)
                     .scrollContentBackground(.hidden)
                     .font(.system(size: bodySize, design: .monospaced))
-                    .foregroundStyle(.white)
+                    // .foregroundColor, not .foregroundStyle — the latter applies
+                    // unreliably to TextEditor's live text (intermittently invisible).
+                    .foregroundColor(.white)
                     .tint(BuilderTheme.accent)
                     .frame(height: bodySize * 4.5)
                     .onChange(of: text) { _, newValue in

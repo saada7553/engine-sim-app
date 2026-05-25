@@ -73,11 +73,6 @@ class ThermalSystem {
                     double clutchPressure,
                     double vehicleSpeedMps);
 
-        // Called by piston_engine_simulator each time crank wraps 4π (one full
-        // 4-stroke cycle). Applies per-cycle damage rules (detonation from
-        // peak pressure, knock decision) and resets per-cycle accumulators.
-        void onCycleBoundary();
-
         // Restore everything to pristine. Coolant 90°C, oil 80°C, full health.
         void repairAll();
 
@@ -174,9 +169,6 @@ class ThermalSystem {
         double getBearingDragFactor() const;
 
         // ----- Hooks from CombustionChamber (called inside physics step) -----
-        // Track per-cycle peaks; cleared in onCycleBoundary.
-        void recordPeakPressure(int cylinderIndex, double pa);
-        void recordPeakTemp(int cylinderIndex, double k);
         // Wall heat exchange: chamber subtracts Q from its gas; symmetric Q
         // is added to the cylinder wall here.
         void accumulateWallHeat(int cylinderIndex, double joules);
@@ -253,8 +245,6 @@ class ThermalSystem {
         double m_oilTempK     = units::celcius(80.0);
         double m_oilPressurePa = 0.0;
         std::vector<double> m_wallTempK;
-        std::vector<double> m_peakPressurePa;  // reset per cycle
-        std::vector<double> m_peakTempK;       // reset per cycle
 
         // Pump state.
         bool m_coolantPumpEnabled = true;
@@ -268,9 +258,6 @@ class ThermalSystem {
         bool m_moneyshiftPending = false;
         bool m_catastrophicPending = false;
         FailureCounts m_lastCatastropheCounts;
-        // Per-cylinder knock arming: set when ignite happens and conditions
-        // are right, consumed by chamber flow() the same step.
-        std::vector<bool> m_knockArmed;
         // Per-cylinder "dead" state: catastrophically failed, doesn't fire
         // and doesn't make mechanical noise. Engine still spins on remaining
         // cylinders unless the engine itself is seized.

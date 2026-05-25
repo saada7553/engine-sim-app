@@ -257,10 +257,6 @@ void CombustionChamber::flow(double dt) {
     if (gasTempK > m_peakTemperature) {
         m_peakTemperature = gasTempK;
     }
-    if (thermal != nullptr) {
-        thermal->recordPeakTemp(cylIdx, gasTempK);
-        thermal->recordPeakPressure(cylIdx, m_system.pressure());
-    }
 
     const double volume = getVolume();
     const double cylinderHeight = volume / m_cylinderCrossSectionSurfaceArea;

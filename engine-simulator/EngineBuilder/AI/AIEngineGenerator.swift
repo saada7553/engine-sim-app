@@ -105,19 +105,6 @@ enum GenAspirationChoice: String {
 
 @available(macOS 26.0, iOS 26.0, *)
 @Generable
-enum GenFuelChoice: String {
-    case unspecified, gasoline, e85, methanol, diesel
-    var preset: FuelPreset? {
-        switch self {
-        case .unspecified: return nil
-        case .gasoline: return .gasoline; case .e85: return .e85
-        case .methanol: return .methanol; case .diesel: return .diesel
-        }
-    }
-}
-
-@available(macOS 26.0, iOS 26.0, *)
-@Generable
 enum GenYesNoChoice: String {
     case unspecified, yes, no
     var bool: Bool? {
@@ -382,11 +369,6 @@ struct AIEngineGenerator {
         naturallyAspirated (all-motor / N/A).
         """
 
-        static let fuel = """
-        What fuel did the user call for? unspecified unless implied: gasoline, \
-        e85 (ethanol/flex), methanol, diesel.
-        """
-
         static let vtec = """
         Did the user ask for a Honda-style variable valvetrain (VTEC / variable \
         valve / VVT, or a Honda/Acura engine)? yes / no / unspecified.
@@ -461,7 +443,6 @@ struct AIEngineGenerator {
         async let vehicle     = resolveVehicleClass(d, kw)
         async let layout      = resolveLayout(d, kw)
         async let aspiration  = resolveAspiration(d, kw)
-        async let fuel        = resolveFuel(d, kw)
         async let vtec        = resolveVtec(d, kw)
         async let displacement = resolveDisplacement(d, kw)
         async let redline     = resolveRedlineNumber(d, kw)
@@ -477,7 +458,7 @@ struct AIEngineGenerator {
             redlineRpm: await redline,
             compressionRatio: await compression,
             aspiration: await aspiration,
-            fuel: await fuel,
+            fuel: resolveFuel(kw),
             vtec: await vtec,
             performance: flooredPerformance((await performance).design, floor: kw.performanceFloor),
             condition: kw.condition ?? .normal,
@@ -518,9 +499,12 @@ struct AIEngineGenerator {
         return await classify(d, Inst.aspiration, GenAspirationChoice.self, fallback: .unspecified).design
     }
 
-    private func resolveFuel(_ d: String, _ kw: KeywordHints) async -> FuelPreset? {
-        if let f = kw.fuel { return f }
-        return await classify(d, Inst.fuel, GenFuelChoice.self, fallback: .unspecified).preset
+    /// Fuel is honoured ONLY when the user explicitly names it (the deterministic
+    /// keyword pass). The model is never asked to infer fuel, so a "torquey truck"
+    /// or "flex-fuel-ish drift car" never silently becomes diesel/E85 — anything
+    /// other than gasoline is opt-in, and `nil` lets the expander default to gas.
+    private func resolveFuel(_ kw: KeywordHints) -> FuelPreset? {
+        kw.fuel
     }
 
     private func resolveVtec(_ d: String, _ kw: KeywordHints) async -> Bool? {

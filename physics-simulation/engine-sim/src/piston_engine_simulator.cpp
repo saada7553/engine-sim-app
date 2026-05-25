@@ -334,7 +334,6 @@ void PistonEngineSimulator::placeAndInitialize() {
     m_knockReson2Y2     = new double[cylCount]();
     m_knockBurstSamples = new int   [cylCount]();
     m_knockBurstAmp     = new double[cylCount]();
-    m_previousCycleAngle = 0.0;
 
     // Configure damped-resonator filters. Form:
     //   y[n] = a1·y[n-1] + a2·y[n-2] + x[n]
@@ -544,17 +543,6 @@ void PistonEngineSimulator::simulateStep_() {
     }
 
     im->resetIgnitionEvents();
-
-    // 4π cycle-boundary detection. A "wrap" is any large drop in cycle angle
-    // (the crankshaft normalizes back to 0 from near 4π). Triggers per-cycle
-    // damage rules in the thermal system.
-    if (thermal != nullptr && m_engine->getCrankshaftCount() > 0) {
-        const double currentAngle = m_engine->getOutputCrankshaft()->getCycleAngle();
-        if (currentAngle < m_previousCycleAngle - constants::pi) {
-            thermal->onCycleBoundary();
-        }
-        m_previousCycleAngle = currentAngle;
-    }
 }
 
 double PistonEngineSimulator::getTotalExhaustFlow() const {

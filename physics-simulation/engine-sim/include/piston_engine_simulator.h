@@ -91,8 +91,6 @@ class PistonEngineSimulator : public Simulator {
         int m_fluidSimulationSteps;
 
         // ---- Damage / thermal coupling ----
-        // Previous crankshaft cycle angle for 4π wrap detection.
-        double m_previousCycleAngle = 0.0;
         // Per-cylinder bent-valve clack envelope. The only fake-audio impulse
         // left for the top end; everything else rides on physics.
         double *m_bentValveEnvelope = nullptr;

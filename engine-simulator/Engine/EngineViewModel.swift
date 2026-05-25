@@ -23,6 +23,8 @@ private func manifoldPressureToAbsoluteKpa(_ gaugeInHg: Double) -> Double {
 private let revAveragingFactor: Double = 0.35
 // Throttle below this is treated as fully idle and snapped to zero.
 private let revIdleThreshold: Double = 0.001
+// A dyno pull holds the throttle wide open while the engine sweeps in neutral.
+private let dynoWideOpenThrottle: Double = 1.0
 // Native clutchPressure ≥ this means the clutch is engaged (power flows);
 // "pressed" in the UI is the inverse — the pedal is down so the clutch is disengaged.
 private let clutchEngagedThreshold: Double = 0.5
@@ -97,6 +99,11 @@ class EngineViewModel: ObservableObject {
 
     // Dynamometer sweep
     @Published var dynoEnabled: Bool = false
+
+    /// Timestamp of the most recent shift attempt rejected because the dyno is
+    /// engaged. OBD2CodeService surfaces a transient code while this is recent;
+    /// it ages out on its own (no explicit clear needed).
+    @Published var dynoShiftBlockedAt: Date?
 
     /// Captured best results (dyno peaks + launch times) for the active engine,
     /// used to post to the leaderboard. Reset whenever the engine changes.
@@ -701,9 +708,43 @@ class EngineViewModel: ObservableObject {
         engine?.setDynoEnabled(newValue)
         dynoEnabled = newValue
 
-        // Drop into neutral on enable so the dyno isn't fighting the drivetrain;
-        // the run reads only what the engine itself can produce.
-        if newValue { setGear(-1) }
+        // On enable, set the pull up for the user: drop into neutral so the dyno
+        // isn't fighting the drivetrain, and pin the throttle wide open so the
+        // sweep reads peak output without them having to hold it.
+        if newValue {
+            setGearUnchecked(-1)
+            pinThrottleForDyno()
+        }
+    }
+
+    /// Hold the throttle wide open for a dyno pull, cancelling any in-progress
+    /// rev ramp or throttle hold so nothing fights the pin.
+    private func pinThrottleForDyno() {
+        throttleHeld = false
+        revActive = false
+        revTarget = 0.0
+        throttlePosition = dynoWideOpenThrottle
+    }
+
+    /// Two-way binding for the throttle sliders. Writes route through
+    /// `applyUserThrottle` so any manual touch during a dyno pull ends the run.
+    var throttleInput: Binding<Double> {
+        Binding(get: { [weak self] in self?.throttlePosition ?? 0 },
+                set: { [weak self] in self?.applyUserThrottle($0) })
+    }
+
+    /// Apply a user-driven throttle change. While a dyno pull is active, touching
+    /// the throttle ends the run immediately and hands control back to the user.
+    func applyUserThrottle(_ value: Double) {
+        if dynoEnabled { endDynoRun() }
+        throttlePosition = value
+    }
+
+    /// Release the dyno (e.g. because the user touched the throttle). The engine
+    /// keeps whatever throttle the user just commanded.
+    private func endDynoRun() {
+        engine?.setDynoEnabled(false)
+        dynoEnabled = false
     }
 
     /// Latches the throttle at its current position so it no longer decays.
@@ -717,6 +758,9 @@ class EngineViewModel: ObservableObject {
     /// Begin revving: throttle eases toward full while the rev key is held.
     /// Manual revving overrides and cancels throttle hold.
     func beginRev() {
+        // Working the rev key is touching the throttle — end any dyno pull first
+        // so the user takes back manual control.
+        if dynoEnabled { endDynoRun() }
         throttleHeld = false
         revTarget = 1.0
         revActive = true
@@ -766,14 +810,36 @@ class EngineViewModel: ObservableObject {
 
     // New function to support H-Shifter
     func setGear(_ newGear: Int) {
+        guard !rejectShiftIfDynoActive() else { return }
+        setGearUnchecked(newGear)
+    }
+
+    /// Apply a gear change without the dyno gate. Used by internal callers (e.g.
+    /// dropping into neutral when the dyno engages) that must shift regardless.
+    private func setGearUnchecked(_ newGear: Int) {
         engine?.setGear(Int32(newGear))
         gear = newGear
         pendingGear = newGear
     }
-    
+
     // Keep these for legacy compatibility if needed
-    func shiftUp() { engine?.shiftUp() }
-    func shiftDown() { engine?.shiftDown() }
+    func shiftUp() {
+        guard !rejectShiftIfDynoActive() else { return }
+        engine?.shiftUp()
+    }
+    func shiftDown() {
+        guard !rejectShiftIfDynoActive() else { return }
+        engine?.shiftDown()
+    }
+
+    /// The transmission is locked in neutral while the dyno is engaged. Returns
+    /// true (and arms the transient OBD-II code) when a shift must be rejected.
+    private func rejectShiftIfDynoActive() -> Bool {
+        guard dynoEnabled else { return false }
+        dynoShiftBlockedAt = Date()
+        HapticManager.shared.tap(.warning)
+        return true
+    }
     func resetStats() {
         engine?.resetTravelledDistance()
         engine?.resetFuelConsumption()

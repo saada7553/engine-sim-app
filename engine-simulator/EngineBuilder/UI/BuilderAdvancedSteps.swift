@@ -160,6 +160,8 @@ struct ReviewStep: View {
                         .font(.system(size: Theme.FontSize.callout, weight: .bold, design: .monospaced))
                         .foregroundColor(.accentWarn)
                 }
+
+                BuildWarningsPanel(spec: state.spec)
             }
             .frame(maxWidth: 520, alignment: .leading)
 
@@ -168,6 +170,86 @@ struct ReviewStep: View {
             SpecSheet(spec: state.spec)
                 .frame(width: 320)
         }
+    }
+}
+
+// MARK: - Build warnings
+
+/// Surfaces everything EngineSpecValidator flags about the finished build.
+/// Advisory only: nothing here blocks saving, it just tells the user what to
+/// expect if a choice fights the simulator. Stays quiet on a sound build.
+private struct BuildWarningsPanel: View {
+    let spec: EngineSpec
+
+    private var warnings: [BuildWarning] { EngineSpecValidator.warnings(for: spec) }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            if warnings.isEmpty {
+                Label("Build looks sound. Nothing flagged.",
+                      systemImage: "checkmark.seal.fill")
+                    .font(.system(size: Theme.FontSize.callout, weight: .bold, design: .monospaced))
+                    .foregroundColor(.accentOk)
+            } else {
+                Text("\(warnings.count) thing\(warnings.count == 1 ? "" : "s") to check")
+                    .font(.system(size: Theme.FontSize.callout, weight: .bold, design: .monospaced))
+                    .tracking(2)
+                    .foregroundColor(BuilderTheme.label)
+
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 10) {
+                        ForEach(warnings) { WarningRow(warning: $0) }
+                    }
+                }
+                .frame(maxHeight: 320)
+            }
+        }
+        .padding(.top, 4)
+        .frame(maxWidth: 460, alignment: .leading)
+    }
+}
+
+private struct WarningRow: View {
+    let warning: BuildWarning
+
+    private var tint: Color {
+        switch warning.severity {
+        case .critical: return .accentDanger
+        case .caution:  return .accentWarn
+        }
+    }
+
+    private var icon: String {
+        switch warning.severity {
+        case .critical: return "exclamationmark.octagon.fill"
+        case .caution:  return "exclamationmark.triangle.fill"
+        }
+    }
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: icon)
+                .font(.system(size: Theme.FontSize.callout, weight: .bold))
+                .foregroundColor(tint)
+                .padding(.top, 1)
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(warning.title)
+                    .font(.system(size: Theme.FontSize.callout, weight: .bold, design: .monospaced))
+                    .foregroundColor(.white)
+                Text(warning.detail)
+                    .font(.system(size: Theme.FontSize.body, weight: .regular, design: .monospaced))
+                    .foregroundColor(BuilderTheme.label)
+                    .lineSpacing(3)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(12)
+        .background(tint.opacity(0.08))
+        .overlay(
+            Rectangle().fill(tint).frame(width: 2),
+            alignment: .leading
+        )
     }
 }
 

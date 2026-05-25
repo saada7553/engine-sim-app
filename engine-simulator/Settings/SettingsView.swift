@@ -119,11 +119,12 @@ struct SettingsView: View {
                 FrameRateRow()
             }
 
-            #if os(iOS)
             SettingsSection(title: "FEEDBACK") {
+                BugReportRow()
+                #if os(iOS)
                 HapticsToggleRow()
+                #endif
             }
-            #endif
 
             SettingsSection(title: "ACCOUNT") {
                 PurchasesRow()
@@ -230,7 +231,7 @@ private struct DamageToggleRow: View {
 
     var body: some View {
         SettingsToggle(
-            title: "Engine damage",
+            title: "Engine damage (BETA)",
             subtitle: "Money shifts, over revving and wear can break the engine. Turn this off to drive however you like and nothing breaks.",
             isOn: $settings.engineDamageEnabled
         )
@@ -730,6 +731,64 @@ private struct SettingsButton: View {
     }
 }
 
+// MARK: - Bug report
+
+private struct BugReportRow: View {
+    @State private var draft = ""
+    @State private var sent = false
+    @FocusState private var focused: Bool
+
+    private var trimmed: String { draft.trimmingCharacters(in: .whitespacesAndNewlines) }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Hit a bug? Tell us what happened. Sent anonymously with basic "
+                 + "device info (model, OS, app version) so we can fix it.")
+                .font(.system(size: rowSubtitleFont))
+                .foregroundColor(.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            // TextEditor (not TextField(axis:.vertical), which renders its text
+            // unreliably under the app's global scaleEffect) with a hidden
+            // background + custom placeholder — mirrors the AI prompt editor.
+            ZStack(alignment: .topLeading) {
+                if draft.isEmpty {
+                    Text("Describe the problem…")
+                        .font(.system(size: rowTitleFont, weight: .semibold))
+                        .foregroundColor(.textSecondary)
+                        .padding(.top, 9)
+                        .padding(.leading, 5)
+                        .allowsHitTesting(false)
+                }
+                TextEditor(text: $draft)
+                    .focused($focused)
+                    .scrollContentBackground(.hidden)
+                    .font(.system(size: rowTitleFont, weight: .semibold))
+                    .foregroundColor(.textPrimary)
+                    .tint(.accentLive)
+                    .frame(height: rowTitleFont * 5)
+                    .onChange(of: draft) { _, new in
+                        if !new.isEmpty { sent = false }
+                    }
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 3)
+            .background(RoundedRectangle(cornerRadius: Theme.Radius.control).fill(Color.surfaceLow)
+                .overlay(RoundedRectangle(cornerRadius: Theme.Radius.control)
+                    .stroke(Color.strokeStrong, lineWidth: Theme.Stroke.thin)))
+
+            SettingsButton(label: sent ? "Sent — thank you" : "Send bug report",
+                           icon: sent ? "checkmark.circle" : "paperplane") {
+                focused = false   // dismiss the keyboard on send
+                sendBugReport(trimmed)
+                draft = ""
+                sent = true
+            }
+            .disabled(trimmed.isEmpty)
+        }
+    }
+}
+
 // MARK: - Name editor
 
 private struct NameEditorRow: View {
@@ -753,21 +812,33 @@ private struct NameEditorRow: View {
                 .fixedSize(horizontal: false, vertical: true)
 
             HStack(spacing: 10) {
-                TextField("Username", text: $draft)
-                    .textFieldStyle(.plain)
-                    .font(.system(size: rowTitleFont, weight: .semibold))
-                    .foregroundColor(.textPrimary)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 9)
-                    .background(RoundedRectangle(cornerRadius: Theme.Radius.control).fill(Color.surfaceLow)
-                        .overlay(RoundedRectangle(cornerRadius: Theme.Radius.control)
-                            .stroke(errorText == nil ? Color.strokeStrong : Color.accentDanger,
-                                    lineWidth: Theme.Stroke.thin)))
-                    .onSubmit(save)
-                    #if os(iOS)
-                    .autocorrectionDisabled()
-                    .textInputAutocapitalization(.never)
-                    #endif
+                // Custom themed placeholder instead of TextField's default, whose
+                // system gray ignores the app theme and reads poorly on the dark
+                // field — mirrors the bug-report editor above.
+                ZStack(alignment: .leading) {
+                    if draft.isEmpty {
+                        Text("Username")
+                            .font(.system(size: rowTitleFont, weight: .semibold))
+                            .foregroundColor(.textSecondary)
+                            .allowsHitTesting(false)
+                    }
+                    TextField("", text: $draft)
+                        .textFieldStyle(.plain)
+                        .font(.system(size: rowTitleFont, weight: .semibold))
+                        .foregroundColor(.textPrimary)
+                        .tint(.accentLive)
+                        .onSubmit(save)
+                        #if os(iOS)
+                        .autocorrectionDisabled()
+                        .textInputAutocapitalization(.never)
+                        #endif
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 9)
+                .background(RoundedRectangle(cornerRadius: Theme.Radius.control).fill(Color.surfaceLow)
+                    .overlay(RoundedRectangle(cornerRadius: Theme.Radius.control)
+                        .stroke(errorText == nil ? Color.strokeStrong : Color.accentDanger,
+                                lineWidth: Theme.Stroke.thin)))
 
                 Button(action: save) {
                     HStack(spacing: 5) {

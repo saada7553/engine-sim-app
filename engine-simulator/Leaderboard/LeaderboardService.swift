@@ -113,6 +113,7 @@ final class LeaderboardService {
             let (saveResults, _) = try await database.modifyRecords(
                 saving: [record], deleting: [], savePolicy: .allKeys, atomically: true)
             let saved = try saveResults[record.recordID]?.get() ?? record
+            ReviewRequest.registerHappyMoment()
             return Self.entry(from: saved) ?? Self.fallbackEntry(from: record, username: username,
                                                                   submission: submission)
         } catch {

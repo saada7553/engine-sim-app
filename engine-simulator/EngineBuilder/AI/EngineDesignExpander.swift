@@ -243,13 +243,15 @@ enum EngineDesignExpander {
     private static func applyVtec(_ spec: inout EngineSpec, intent: EngineIntent) {
         guard intent.vtec == true else { spec.vtecEnabled = false; return }
         spec.vtecEnabled = true
-        // Crossover sits below redline; the high cam is markedly more aggressive
-        // than the low one the cam step produced.
+        // Crossover sits below redline, raised a little so the mild cam is
+        // clearly running out of breath right as the high cam slams in. The high
+        // cam is far wilder than the low one (big lift + duration jump, tight
+        // lobe separation) so the switch lands as a violent surge, not a nudge.
         let crossoverCeiling = max(3500.0, spec.redlineRpm - 500)
-        spec.vtecCrossoverRpm = (spec.redlineRpm * 0.62).clamped(to: 3000...crossoverCeiling)
-        spec.vtecCamDurationDeg = (spec.camDurationDeg + 28).clamped(to: 220...300)
-        spec.vtecCamLiftMm = (spec.camLiftMm + 2.5).clamped(to: 9...16)
-        spec.vtecCamLobeSeparationDeg = (spec.camLobeSeparationDeg - 6).clamped(to: 98...116)
+        spec.vtecCrossoverRpm = (spec.redlineRpm * 0.66).clamped(to: 3000...crossoverCeiling)
+        spec.vtecCamDurationDeg = (spec.camDurationDeg + 52).clamped(to: 240...312)
+        spec.vtecCamLiftMm = (spec.camLiftMm + 4.5).clamped(to: 11...17)
+        spec.vtecCamLobeSeparationDeg = (spec.camLobeSeparationDeg - 11).clamped(to: 95...114)
     }
 
     // MARK: - Cam

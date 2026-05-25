@@ -105,6 +105,7 @@ final class CommunityService {
                 saving: [record], deleting: [], savePolicy: .allKeys, atomically: true)
             let saved = try saveResults[record.recordID]?.get() ?? record
             guard let engine = Self.engine(from: saved) else { throw CommunityError.decodeFailed }
+            ReviewRequest.registerHappyMoment()
             return engine
         } catch {
             reportFailure(error, op: "community_publish")

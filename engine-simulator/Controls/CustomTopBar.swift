@@ -78,7 +78,7 @@ struct CustomTopBar: View {
     private var iosQuickControls: some View {
         HStack(spacing: Theme.Bar.itemSpacing) {
             TopBarGearReadout(gear: vm.gear, gearCount: vm.gearCount)
-            TopBarThrottleSlider(value: $vm.throttlePosition)
+            TopBarThrottleSlider(value: vm.throttleInput)
                 .frame(width: 200)
             TopBarShiftButton(direction: .up,   action: vm.shiftUp)
             TopBarShiftButton(direction: .down, action: vm.shiftDown)

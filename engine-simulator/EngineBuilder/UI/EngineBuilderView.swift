@@ -306,6 +306,12 @@ private struct BuilderHeader: View {
         return state.isEditingExisting ? "Save Changes" : "Save Engine"
     }
 
+    /// Live build warnings, recomputed on every edit so the Save button can flag
+    /// them even when the user never opens the Review step. Cheap, pure
+    /// arithmetic, same recompute-per-edit pattern as the cost chip.
+    private var warnings: [BuildWarning] { EngineSpecValidator.warnings(for: state.spec) }
+    private var hasCriticalWarning: Bool { warnings.contains { $0.severity == .critical } }
+
     var body: some View {
         HStack(spacing: 24) {
             HStack(spacing: 10) {
@@ -338,9 +344,38 @@ private struct BuilderHeader: View {
                              style: .primary,
                              enabled: state.nameIsValid && !state.isValidatingContent,
                              action: onSave)
+                .overlay(alignment: .topTrailing) {
+                    if !warnings.isEmpty {
+                        SaveWarningBadge(count: warnings.count, hasCritical: hasCriticalWarning)
+                            .offset(x: 7, y: -7)
+                            .help("\(warnings.count) build warning\(warnings.count == 1 ? "" : "s"). Open Review to see details.")
+                    }
+                }
         }
         .padding(.horizontal, BuilderLayout.headerHorizontalPadding)
         .padding(.vertical, BuilderLayout.headerVerticalPadding)
+    }
+}
+
+// MARK: - Save warning badge
+
+/// Small count badge that rides the corner of the Save button when the build
+/// has open warnings, so a user who skips the Review step still sees there is
+/// something to look at. Red when any warning is critical, amber otherwise.
+private struct SaveWarningBadge: View {
+    let count: Int
+    let hasCritical: Bool
+
+    private var tint: Color { hasCritical ? .accentDanger : .accentWarn }
+
+    var body: some View {
+        Text("\(count)")
+            .font(.system(size: Theme.FontSize.footnote, weight: .bold, design: .monospaced))
+            .foregroundColor(.black)
+            .frame(minWidth: 18, minHeight: 18)
+            .padding(.horizontal, 4)
+            .background(Capsule().fill(tint))
+            .overlay(Capsule().stroke(Color.appBackground, lineWidth: 2))
     }
 }
 

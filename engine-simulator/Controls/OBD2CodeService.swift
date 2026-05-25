@@ -60,6 +60,13 @@ private let crankBoggingFraction: Double = 0.55
 private let assumedCrankTargetRpm: Double = 220.0
 // A starter geared this slow can't build enough speed to fire most engines.
 private let starterSpeedFloorRpm: Double = 180.0
+
+// MARK: - Dyno shift-lock window
+//
+// How long a shift attempt rejected while the dyno is engaged keeps its code
+// active — long enough for OBD2View's appear-debounce to commit and show it,
+// after which it ages out on its own.
+private let dynoShiftBlockWindow: TimeInterval = 3.0
 // Throttle while cranking: near-closed may be starving a big-cam engine that
 // needs a little air to catch.
 private let starvedThrottle: Double = 0.04
@@ -98,6 +105,7 @@ enum OBD2CodeService {
         codes.append(contentsOf: ignitionCutCodes(vm: vm))
         codes.append(contentsOf: tuneCodes(vm: vm))
         codes.append(contentsOf: startingCodes(vm: vm))
+        codes.append(contentsOf: dynoShiftCodes(vm: vm))
 
         // Severity then code ordering: critical first, then alphanumeric.
         return codes.sorted { lhs, rhs in
@@ -429,6 +437,21 @@ enum OBD2CodeService {
                       code: "P0327",
                       description: "Knock Sensor Circuit Low Input",
                       severity: .warning)]
+    }
+
+    // MARK: - Dyno shift lock
+
+    /// The transmission is locked in neutral while the dyno is engaged. A shift
+    /// attempt is rejected and surfaced here as a transient code that lingers
+    /// briefly, mirroring a real scanner flagging the inhibited shift request.
+    private static func dynoShiftCodes(vm: EngineViewModel) -> [OBD2Code] {
+        guard let blockedAt = vm.dynoShiftBlockedAt,
+              Date().timeIntervalSince(blockedAt) < dynoShiftBlockWindow else { return [] }
+        return [.init(id: "P0850-DYNO",
+                      code: "P0850",
+                      description: "Gear Shift Inhibited — Dyno Engaged",
+                      severity: .warning,
+                      action: "Disengage the dyno to change gears")]
     }
 
     // MARK: - Helpers

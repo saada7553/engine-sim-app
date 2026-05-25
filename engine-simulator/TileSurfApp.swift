@@ -103,6 +103,9 @@ struct TileSurfApp: App {
                 .onKeyPress { press in
                     handleKeyPress(press: press)
                 }
+                // App Store review prompt, fired only at happy moments (see
+                // ReviewRequest); Apple decides whether to actually show it.
+                .reviewPrompt()
             
                 // First-launch onboarding sits above everything at true window
                 // size (outside the iOS content scaleEffect) so its prose and

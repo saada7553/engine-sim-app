@@ -473,9 +473,9 @@ struct EngineSpec: Codable, Identifiable, Equatable {
 
             vtecEnabled: false,
             vtecCrossoverRpm: 5800,
-            vtecCamDurationDeg: 248,
-            vtecCamLiftMm: 11.5,
-            vtecCamLobeSeparationDeg: 105,
+            vtecCamDurationDeg: 272,
+            vtecCamLiftMm: 13.8,
+            vtecCamLobeSeparationDeg: 102,
 
             chamberVolumeCc: 50,
             intakeRunnerVolumeCc: 150,

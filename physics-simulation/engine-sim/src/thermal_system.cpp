@@ -113,17 +113,18 @@ namespace {
     // head gasket fails in well under a minute.
     constexpr double kHeadGasketDamagePerCDt     = 5.0e-4;
     constexpr double kHeadDamagePerCDt           = 3.0e-4;
-    // Knock damage requires very high pressure AND very high temp together.
-    // Modern engines routinely peak 100-150 bar with peaks of 2000-2300K
-    // in normal operation. Real knock is 180+ bar AND 2600+K simultaneously.
-    constexpr double kKnockPeakPa                = 19.0e6;  // 190 bar
-    constexpr double kKnockTempK                 = 2600.0;
-    constexpr double kDetonationPeakPa           = 22.0e6;  // 220 bar
-    constexpr double kDetonationPeakK            = 2700.0;
-    constexpr double kKnockRingDamage            = 0.0008;  // per knock event
-    // Over-rev damage uses ENGINE-RELATIVE thresholds (redline ratios) so
-    // the same rule works for an economy car and a 10k-redline race engine.
-    constexpr double kRodOverRevThreshRatio      = 1.15;
+    // Mechanical damage is driven by ENGINE-RELATIVE over-rev: nothing wears
+    // until the engine is spun well past its own rev limiter, and then harder
+    // the further past it goes. The limiter already sits above redline, so a
+    // normal pull (even bouncing on the limiter) is safe, with generous
+    // headroom for an aggressive downshift before anything breaks. Ratios are
+    // against the rev limiter so the same rule fits an economy four and a race
+    // V10. The ladder mirrors how an engine actually lets go on an over-rev:
+    // valves float first, then rings/pistons (ring flutter, valve-to-piston
+    // contact), then rods, then the crank.
+    constexpr double kRingOverRevThreshRatio     = 1.25;
+    constexpr double kRingOverRevDamageCoeff     = 1.2e-3;
+    constexpr double kRodOverRevThreshRatio      = 1.35;
     constexpr double kRodOverRevDamageCoeff      = 3.0e-3;
     // Oil starvation: bearings ride on a pressurized oil film, so losing oil
     // pressure while the engine is turning wipes them out FAST — at any running
@@ -134,11 +135,11 @@ namespace {
     constexpr double kOilStarveFilmPsi           = 12.0;    // film breaks below this (normal idle ~25)
     constexpr double kRodStarveDamageRate        = 0.05;    // ~15-40s to wipe a bearing at zero psi
     constexpr double kCamStarveDamageRate        = 0.015;
-    constexpr double kCrankOverRevRatio          = 1.25;
+    constexpr double kCrankOverRevRatio          = 1.45;
     constexpr double kCrankOverRevDamageCoeff    = 1.5e-2;
     constexpr double kWaterPumpHeatThreshC       = 125.0;
     constexpr double kWaterPumpDamagePerCDt      = 5.0e-5;
-    constexpr double kOilPumpOverRevRatio        = 1.20;
+    constexpr double kOilPumpOverRevRatio        = 1.40;
     constexpr double kOilPumpOverRevDamageCoeff  = 7.0e-4;
     // Exhaust valve damage hangs on coolant temp now (overall engine heat),
     // not wall temp. Only fires during real overheat events.
@@ -155,9 +156,10 @@ namespace {
     constexpr double kMoneyshiftBearingDamageCoeff = 0.08;
     constexpr double kMoneyshiftCrankDamageCoeff  = 0.05;
 
-    // Valve float.
-    constexpr double kValveFloatRatioThresh   = 1.10;
-    constexpr double kValveFloatProbCoeff     = 2.0;   // saturates at 0.5/s above 1.35
+    // Valve float — the first thing to let go on an over-rev, so it sits at the
+    // bottom of the over-rev ladder (still well clear of the limiter).
+    constexpr double kValveFloatRatioThresh   = 1.20;
+    constexpr double kValveFloatProbCoeff     = 2.0;   // saturates at 0.5/s above 1.45
     constexpr double kValveFloatDamage        = 0.20;
 
     // Seizure thresholds.
@@ -203,10 +205,7 @@ void ThermalSystem::initialize(int cylinderCount, const Engine *engine) {
     m_oilTempK = kNominalOilK;
     m_oilPressurePa = 0.0;
     m_wallTempK.assign(cylinderCount, kInitialWallK);
-    m_peakPressurePa.assign(cylinderCount, 0.0);
-    m_peakTempK.assign(cylinderCount, 0.0);
     m_bentValvePending.assign(cylinderCount, false);
-    m_knockArmed.assign(cylinderCount, false);
     m_cylinderDead.assign(cylinderCount, false);
     m_coolantPumpEnabled = true;
     m_oilPumpEnabled = true;
@@ -228,8 +227,6 @@ void ThermalSystem::repairAll() {
     m_oilTempK = kNominalOilK;
     m_oilPressurePa = 0.0;
     std::fill(m_wallTempK.begin(), m_wallTempK.end(), kInitialWallK);
-    std::fill(m_peakPressurePa.begin(), m_peakPressurePa.end(), 0.0);
-    std::fill(m_peakTempK.begin(), m_peakTempK.end(), 0.0);
     // Randomize how hard the revs sag from bearing-wear drag this run.
     m_bearingDragRandom = 0.6 + m_unit(m_rng) * 1.1;   // 0.6 - 1.7
 }
@@ -239,7 +236,6 @@ void ThermalSystem::resetHealthLocked() {
     for (auto &c : m_cylinders) c = CylinderComponents{};
     m_engineWide = EngineWideComponents{};
     std::fill(m_bentValvePending.begin(), m_bentValvePending.end(), false);
-    std::fill(m_knockArmed.begin(), m_knockArmed.end(), false);
     std::fill(m_cylinderDead.begin(), m_cylinderDead.end(), false);
     m_moneyshiftPending = false;
     m_catastrophicPending = false;
@@ -297,35 +293,6 @@ void ThermalSystem::update(double dt,
 
     if (m_moneyshiftCooldown > 0.0) m_moneyshiftCooldown -= dt;
     m_lastRpm = rpm;
-}
-
-void ThermalSystem::onCycleBoundary() {
-    std::lock_guard<std::mutex> lock(m_lock);
-    for (int i = 0; i < m_cylinderCount; ++i) {
-        const double peakPa = m_peakPressurePa[i];
-        const double peakK = m_peakTempK[i];
-
-        // Knock damage requires BOTH high pressure AND high temperature —
-        // either alone is just hard combustion, not knock. Real knock needs
-        // end-gas auto-ignition, which only happens above ~2600K end-gas
-        // temperatures. This protects high-performance engines that
-        // routinely peak above 150 bar from accumulating phantom damage.
-        if (m_damageEnabled && peakPa > kKnockPeakPa && peakK > kKnockTempK) {
-            m_cylinders[i].pistonRings -= kKnockRingDamage;
-        }
-        if (m_damageEnabled && peakPa > kDetonationPeakPa && peakK > kDetonationPeakK) {
-            const double over = (peakPa / kDetonationPeakPa) - 1.0;
-            m_cylinders[i].piston -= 5.0e-4 * over;
-        }
-
-        m_knockArmed[i] = false;
-        m_peakPressurePa[i] = 0.0;
-        m_peakTempK[i] = 0.0;
-    }
-    for (auto &c : m_cylinders) {
-        c.pistonRings = clamp01(c.pistonRings);
-        c.piston = clamp01(c.piston);
-    }
 }
 
 // --------------------------------------------------------------------------
@@ -497,9 +464,19 @@ void ThermalSystem::tickDamage(double dt, double rpm, double redline, double rev
     }
 
     // === Over-rev damage ===
-    // Engine-relative — uses redline ratios so it works for any engine type.
-    // An economy engine's redline is 6000; a race engine's is 10000; both
-    // damage at the same RATIO (1.15× their own redline).
+    // Engine-relative — uses rev-limiter ratios so it works for any engine
+    // type. Nothing wears until the engine is forced well past its limiter
+    // (a money-shift / botched downshift); a normal pull never gets here.
+    // Rings/pistons are the first mechanical parts to suffer (ring flutter and
+    // valve-to-piston contact), then rods, then the crank.
+    if (rpmRatio > kRingOverRevThreshRatio) {
+        const double over = rpmRatio - kRingOverRevThreshRatio;
+        for (int i = 0; i < m_cylinderCount; ++i) {
+            const double wear = over * over * kRingOverRevDamageCoeff * dt;
+            m_cylinders[i].pistonRings -= wear;
+            m_cylinders[i].piston      -= wear;
+        }
+    }
     if (rpmRatio > kRodOverRevThreshRatio) {
         const double over = rpmRatio - kRodOverRevThreshRatio;
         for (int i = 0; i < m_cylinderCount; ++i) {
@@ -1152,16 +1129,6 @@ bool ThermalSystem::popCatastrophicEvent() {
 // Hooks called from CombustionChamber
 // --------------------------------------------------------------------------
 
-void ThermalSystem::recordPeakPressure(int i, double pa) {
-    std::lock_guard<std::mutex> lock(m_lock);
-    if (i < 0 || i >= m_cylinderCount) return;
-    if (pa > m_peakPressurePa[i]) m_peakPressurePa[i] = pa;
-}
-void ThermalSystem::recordPeakTemp(int i, double k) {
-    std::lock_guard<std::mutex> lock(m_lock);
-    if (i < 0 || i >= m_cylinderCount) return;
-    if (k > m_peakTempK[i]) m_peakTempK[i] = k;
-}
 void ThermalSystem::accumulateWallHeat(int i, double joules) {
     std::lock_guard<std::mutex> lock(m_lock);
     if (i < 0 || i >= m_cylinderCount) return;

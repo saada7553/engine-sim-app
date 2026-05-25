@@ -94,7 +94,7 @@ struct ThrottleView: View {
                 // keyboard isn't an input there). On macOS it stays inline
                 // next to the manifold cross-section.
                 #if os(macOS)
-                PrecisionThrottleSlider(value: $vm.throttlePosition)
+                PrecisionThrottleSlider(value: vm.throttleInput)
                 #endif
             }
         }

@@ -273,10 +273,15 @@ struct CommunityDetailOverlay: View {
     private func dismiss() { onClose() }
 
     private func download() {
-        downloading = true
-        let ok = model.download(engine)
-        downloading = false
-        if ok { downloaded = true }
+        // Downloading a community engine adds it to the garage and selects it,
+        // which otherwise slips past the per-engine paywall. Gate it so a free
+        // user is sent to the paywall instead of getting a Pro engine for free.
+        PurchaseManager.shared.gatePro {
+            downloading = true
+            let ok = model.download(engine)
+            downloading = false
+            if ok { downloaded = true }
+        }
     }
 
     private func unpublish() {
