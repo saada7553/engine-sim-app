@@ -587,6 +587,7 @@ private struct LegalLinksRow: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
+            link("Support", LegalLinks.support)
             link("Privacy Policy", LegalLinks.privacyPolicy)
             link("Community Guidelines", LegalLinks.communityGuidelines)
             link("Terms of Use", LegalLinks.termsOfUse)

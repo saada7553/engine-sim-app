@@ -316,12 +316,12 @@ private struct ShaftPair: View {
         ZStack(alignment: .topLeading) {
             Rectangle()
                 .fill(metalMidColor)
-                .frame(width: engineShaftEnd, height: height)
+                .frame(width: max(engineShaftEnd, 0), height: height)
                 .offset(x: 0, y: cy - height / 2)
 
             Rectangle()
                 .fill(metalMidColor)
-                .frame(width: drawingWidth - outputShaftStart, height: height)
+                .frame(width: max(drawingWidth - outputShaftStart, 0), height: height)
                 .offset(x: outputShaftStart, y: cy - height / 2)
         }
     }

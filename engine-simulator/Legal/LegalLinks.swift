@@ -13,6 +13,7 @@ import SwiftUI
 enum LegalLinks {
     static let privacyPolicy = URL(string: "https://saada7553.github.io/privacy-policy.html")!
     static let communityGuidelines = URL(string: "https://saada7553.github.io/community-guidelines.html")!
+    static let support = URL(string: "https://saada7553.github.io/support.html")!
     static let termsOfUse = URL(string: "https://www.apple.com/legal/internet-services/itunes/dev/stdeula/")!
 
     /// Sentence shown at every point a user creates public content (setting a
