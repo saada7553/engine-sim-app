@@ -2,56 +2,80 @@
 //  EngineControlsView.swift
 //  engine-simulator
 //
-//  Consolidated control surface: status indicators plus the system,
-//  transmission and throttle controls in a single tile.
+//  Consolidated control surface. On macOS this is a clean 2×2 of the four
+//  driver controls — transmission, brake, clutch, intake — with no individual
+//  panel chrome wrapping each one; the gear readout and the slider labels name
+//  them. On iOS only the gear gate lives here (the rest sit in their own tiles).
 //
 
 import SwiftUI
-
-// Vertical share of the remaining space (after the status row) given to each
-// panel. Weights mirror the prior fixed heights (130 / 230 / 200) so the
-// proportions stay familiar while the panels now resize with the tile.
-private let transmissionPanelWeight: CGFloat = 230
-private let throttlePanelWeight: CGFloat = 200
 
 struct EngineControlsView: View {
     @ObservedObject var vm: EngineViewModel
 
     var body: some View {
-        VStack(spacing: Theme.Space.lg) {
-            GeometryReader { geo in
-                let totalWeight = transmissionPanelWeight + throttlePanelWeight
-                let spacing: CGFloat = Theme.Space.lg
-                let usableHeight = max(geo.size.height - 1 * spacing, 0)
-
-                VStack(spacing: spacing) {
-                    // On iOS the RetroPanel title bar is a heavy chrome that
-                    // duplicates labels already present on the inner views.
-                    // Strip it down to bare panels so the gauges/drawings
-                    // get the room. iOS also drops the throttle/clutch
-                    // drawings entirely — those live in their own
-                    // `clutchIntake` tile so the Track layout can place
-                    // them under the 3D viewer instead of stacked here.
-                    #if os(macOS)
-                    RetroPanel("TRANSMISSION") {
-                        GearShiftView(vm: vm)
-                    }
-                    .frame(height: usableHeight * transmissionPanelWeight / totalWeight)
-
-                    RetroPanel("THROTTLE & CLUTCH") {
-                        ThrottleView(vm: vm)
-                    }
-                    .frame(height: usableHeight * throttlePanelWeight / totalWeight)
-                    #else
-                    GearShiftView(vm: vm)
-                        .frame(maxHeight: .infinity)
-                    #endif
-                }
-            }
-        }
-        .padding(Theme.Space.lg)
-        .background(Color.appBackground)
+        #if os(macOS)
+        MacControlsGrid(vm: vm)
+            .padding(Theme.Space.md)
+            .background(Color.appBackground)
+        #else
+        GearShiftView(vm: vm)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .padding(Theme.Space.lg)
+            .background(Color.appBackground)
+        #endif
     }
 }
 
+#if os(macOS)
+/// Even 2×2 grid of the four controls, no per-cell bounding boxes. Each cell
+/// fills its quadrant equally so nothing crowds anything else.
+private struct MacControlsGrid: View {
+    @ObservedObject var vm: EngineViewModel
 
+    private let cellSpacing = Theme.Space.md
+
+    var body: some View {
+        VStack(spacing: cellSpacing) {
+            HStack(spacing: cellSpacing) {
+                cell { GearShiftView(vm: vm) }
+                cell { BrakeView(vm: vm) }
+            }
+            HStack(spacing: cellSpacing) {
+                cell { ClutchControl(vm: vm) }
+                cell { IntakeControl(vm: vm) }
+            }
+        }
+    }
+
+    private func cell<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
+        content()
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+/// Clutch cross-section over its precision pedal slider — no title or box, the
+/// slider's "CLUTCH PEDAL" label identifies it.
+private struct ClutchControl: View {
+    @ObservedObject var vm: EngineViewModel
+
+    var body: some View {
+        VStack(spacing: 6) {
+            ClutchPanelView(vm: vm)
+            PrecisionClutchSlider(pressure: vm.clutchPressure, onChange: vm.setClutchPressure)
+        }
+    }
+}
+
+/// Intake manifold cross-section over the throttle slider.
+private struct IntakeControl: View {
+    @ObservedObject var vm: EngineViewModel
+
+    var body: some View {
+        VStack(spacing: 6) {
+            IntakePanelView(vm: vm)
+            PrecisionThrottleSlider(value: vm.throttleInput)
+        }
+    }
+}
+#endif

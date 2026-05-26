@@ -24,6 +24,7 @@ struct ControlsMenuView: View {
         .init(key: "S", action: "Starter"),
         .init(key: "⇧", action: "Clutch"),
         .init(key: "Space", action: "Rev engine"),
+        .init(key: "B", action: "Brake"),
         .init(key: "↑", action: "Upshift"),
         .init(key: "↓", action: "Downshift"),
         .init(key: "D", action: "Dyno"),

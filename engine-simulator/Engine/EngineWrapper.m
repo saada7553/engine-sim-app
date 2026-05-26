@@ -367,6 +367,7 @@ static const double kCylinderPressurePeakDecay = 0.985;
                 // value "mph", so convert at the boundary.
                 state.vehicleSpeed = units::convert(_vehicle->getSpeed(), units::mile / units::hour);
                 state.clutchPressure = _sim->getTransmission()->getClutchPressure();
+                state.brakePressure = _vehicle->getBrakePressure();
                 state.isIgnitionOn = engine->getIgnitionModule()->m_enabled;
                 state.isStarterOn = _sim->m_starterMotor.m_enabled;
                 state.fuelConsumed = engine->getTotalVolumeFuelConsumed();
@@ -589,6 +590,16 @@ static const double kCylinderPressurePeakDecay = 0.985;
     _sim->m_starterMotor.m_enabled = state;
 }
 
+- (void)setIgnitionEnabled:(BOOL)enabled {
+    if (!_sim) return;
+    _sim->getEngine()->getIgnitionModule()->m_enabled = enabled;
+}
+
+- (void)setStarterEnabled:(BOOL)enabled {
+    if (!_sim) return;
+    _sim->m_starterMotor.m_enabled = enabled;
+}
+
 - (void)setThrottle:(double)val {
     _throttle = val;
     if (_engine) _engine->setSpeedControl(val);
@@ -608,6 +619,12 @@ static const double kCylinderPressurePeakDecay = 0.985;
     if (!_sim) return;
     double clamped = pressure < 0.0 ? 0.0 : (pressure > 1.0 ? 1.0 : pressure);
     _sim->getTransmission()->setClutchPressure(clamped);
+}
+
+- (void)setBrake:(double)pressure {
+    if (!_vehicle) return;
+    double clamped = pressure < 0.0 ? 0.0 : (pressure > 1.0 ? 1.0 : pressure);
+    _vehicle->setBrakePressure(clamped);
 }
 
 - (void)setIgnitionOffset:(double)offsetDegrees {

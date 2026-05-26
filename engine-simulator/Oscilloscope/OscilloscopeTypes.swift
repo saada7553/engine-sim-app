@@ -116,7 +116,7 @@ struct OscilloscopeConfig {
                 color: .scopePower,
                 lineWidth: 2.0,
                 xAxisLabel: "RPM",
-                yAxisLabel: "kW"
+                yAxisLabel: "hp"
             )
 
         case .sparkAdvance:

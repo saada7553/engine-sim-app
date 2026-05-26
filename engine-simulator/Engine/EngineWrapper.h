@@ -44,6 +44,7 @@
 @property (nonatomic, assign) int gear;
 @property (nonatomic, assign) double vehicleSpeed;
 @property (nonatomic, assign) double clutchPressure;
+@property (nonatomic, assign) double brakePressure;
 @property (nonatomic, assign) BOOL isIgnitionOn;
 @property (nonatomic, assign) BOOL isStarterOn;
 @property (nonatomic, assign) double fuelConsumed;
@@ -141,6 +142,10 @@ typedef NS_ENUM(NSInteger, EngineScopeType) {
 // Controls
 - (void)toggleIgnition;
 - (void)toggleStarter;
+/// Absolute (idempotent) ignition/starter control — sets the state directly
+/// rather than flipping, so "ensure on" never inverts off a stale assumption.
+- (void)setIgnitionEnabled:(BOOL)enabled;
+- (void)setStarterEnabled:(BOOL)enabled;
 - (void)setThrottle:(double)val;
 - (void)shiftUp;
 - (void)shiftDown;
@@ -156,6 +161,10 @@ typedef NS_ENUM(NSInteger, EngineScopeType) {
 /// 1.0 = fully engaged). Used by the continuous clutch slider in the UI; the
 /// keyboard shortcut still goes through toggleClutch.
 - (void)setClutchPressure:(double)pressure;
+
+/// Drives the vehicle's brake pressure (0.0 = off, 1.0 = full braking force).
+/// The brake only ever decelerates the car; it can't drive or reverse it.
+- (void)setBrake:(double)pressure;
 
 // Dynamometer controls
 - (void)setDynoEnabled:(BOOL)enabled;

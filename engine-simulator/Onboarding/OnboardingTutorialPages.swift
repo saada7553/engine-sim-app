@@ -255,7 +255,7 @@ private struct MacKeyLegend: View {
                 legendRow(("A", "Ignition"), ("S", "Starter"))
                 legendRow(("⇧", "Clutch"), ("Space", "Throttle"))
                 legendRow(("↑ ↓", "Shift gears"), ("D", "Dyno"))
-                legendRow(("H", "Throttle hold"), nil)
+                legendRow(("H", "Throttle hold"), ("B", "Brake"))
             }
 
             OnboardingNote(text: "Every key has a switch on the dash too, so you can point and click instead.")

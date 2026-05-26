@@ -428,26 +428,35 @@ struct DynoOscilloscopeView: View {
                 independentAxes: true,
                 showPeaks: !engineVm.dynoEnabled
             )
+            // The prompt only appears on an empty, idle chart — where there are
+            // no curves, peaks or labels to obscure. The moment a sweep produces
+            // data it disappears and never overlays the populated chart; on iOS
+            // the whole area stays tappable to start or stop the sweep.
             if !engineVm.dynoEnabled && hasNoData {
-                #if os(macOS)
-                Text("ENABLE DYNO (D) TO RUN")
+                Text(idleHintText)
                     .modifier(RetroFont(size: Theme.FontSize.callout))
                     .foregroundColor(.textMuted)
                     .padding(.horizontal, 12)
                     .padding(.vertical, 8)
                     .background(Color.black.opacity(0.55))
                     .cornerRadius(6)
-                #else
-                Text("TAP DYNO IN TOP BAR TO RUN")
-                    .modifier(RetroFont(size: Theme.FontSize.callout))
-                    .foregroundColor(.textMuted)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-                    .background(Color.black.opacity(0.55))
-                    .cornerRadius(6)
-                #endif
             }
         }
+        #if !os(macOS)
+        .contentShape(Rectangle())
+        .onTapGesture {
+            HapticManager.shared.tap(.firm)
+            engineVm.toggleDyno()
+        }
+        #endif
+    }
+
+    private var idleHintText: String {
+        #if os(macOS)
+        return "ENABLE DYNO (D) TO RUN"
+        #else
+        return "TAP TO START DYNO"
+        #endif
     }
 }
 

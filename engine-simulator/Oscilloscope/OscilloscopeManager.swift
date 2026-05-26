@@ -12,6 +12,12 @@ import Combine
 /// Manages oscilloscope data by fetching from C++ engine
 class OscilloscopeManager: ObservableObject {
 
+    // The C++ power scope reports SI kilowatts (getDynoPower / 1000). The dyno
+    // graph displays horsepower, so the power channel is scaled by this on the
+    // way out of `getPoints` / `getAxisBounds`. The raw `power` buffer stays in
+    // kW — the leaderboard reads it directly and does its own kW→hp conversion.
+    private static let hpPerKilowatt: Double = 1.341022
+
     // MARK: - Data Buffers (fetched from C++)
 
     @Published var torque: [CGPoint] = []
@@ -121,7 +127,7 @@ class OscilloscopeManager: ObservableObject {
     func getPoints(for type: EngineScopeType, config: OscilloscopeConfig) -> [CGPoint] {
         switch type {
         case .torque: return torque
-        case .power: return power
+        case .power: return power.map { CGPoint(x: $0.x, y: $0.y * Self.hpPerKilowatt) }
         case .sparkAdvance: return sparkAdvance
         case .totalExhaustFlow: return totalExhaustFlow
         case .exhaustFlow: return exhaustFlow
@@ -153,6 +159,13 @@ class OscilloscopeManager: ObservableObject {
                 yMin = bounds.yMin
                 yMax = bounds.yMax
             }
+        }
+
+        // Power is stored in kW but displayed in hp — scale the Y bounds to match
+        // the hp-scaled points from getPoints.
+        if type == .power {
+            yMin *= Self.hpPerKilowatt
+            yMax *= Self.hpPerKilowatt
         }
 
         // Ensure valid range

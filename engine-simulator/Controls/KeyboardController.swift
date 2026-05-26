@@ -29,6 +29,7 @@ final class KeyboardController {
         static let s: UInt16 = 1
         static let d: UInt16 = 2
         static let h: UInt16 = 4
+        static let b: UInt16 = 11
         static let space: UInt16 = 49
         static let arrowUp: UInt16 = 126
         static let arrowDown: UInt16 = 125
@@ -57,7 +58,7 @@ final class KeyboardController {
     /// Engine keys that should never reach the system while the tutorial is up,
     /// so pressing them drives the demo (or does nothing) instead of beeping.
     private static let engineKeyCodes: Set<UInt16> = [
-        KeyCode.a, KeyCode.s, KeyCode.d, KeyCode.h,
+        KeyCode.a, KeyCode.s, KeyCode.d, KeyCode.h, KeyCode.b,
         KeyCode.space, KeyCode.arrowUp, KeyCode.arrowDown
     ]
 
@@ -134,6 +135,12 @@ final class KeyboardController {
                 engineVm.beginRev()
             }
             return nil
+        case KeyCode.b:
+            // Press-and-hold brake — full pressure while held.
+            if !event.isARepeat {
+                engineVm.beginBrake()
+            }
+            return nil
         case KeyCode.a, KeyCode.s, KeyCode.d, KeyCode.h,
              KeyCode.arrowUp, KeyCode.arrowDown:
             // Toggles/shifts fire once per press, not on auto-repeat.
@@ -147,9 +154,16 @@ final class KeyboardController {
     }
 
     private func handleKeyUp(_ event: NSEvent) -> NSEvent? {
-        guard event.keyCode == KeyCode.space else { return event }
-        engineVm.endRev()
-        return nil
+        switch event.keyCode {
+        case KeyCode.space:
+            engineVm.endRev()
+            return nil
+        case KeyCode.b:
+            engineVm.endBrake()
+            return nil
+        default:
+            return event
+        }
     }
 
     private func performAction(for keyCode: UInt16) {

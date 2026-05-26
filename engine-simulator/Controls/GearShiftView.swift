@@ -69,23 +69,19 @@ struct GearShiftView: View {
 
     var body: some View {
         let count = clampedGearCount(vm.gearCount)
-        VStack(spacing: Theme.Space.lg) {
-            // GearHeader is duplicated chrome on iOS — the gear number lives
-            // on the top bar there, and the RetroPanel above already has a
-            // title. macOS keeps it inline.
-            #if os(macOS)
-            GearHeader(gear: vm.gear, gearCount: count)
-            #endif
+        VStack(spacing: Theme.Space.sm) {
             AspectLockedGate(
                 gear: vm.gear,
                 gearCount: count,
                 onShift: vm.setGear
             )
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            // The small up/down ShiftRow lives on the top bar on iOS so the
-            // gate can use the full tile height. macOS keeps it inline as a
-            // keyboard-shortcut fallback.
+            // The gear readout + up/down paddles sit below the gate to match the
+            // other controls (diagram on top, control beneath). On iOS both the
+            // readout and the paddles live on the top bar, so the gate gets the
+            // full tile.
             #if os(macOS)
+            GearReadout(gear: vm.gear, gearCount: count)
             ShiftRow(gear: vm.gear, gearCount: count, onShift: vm.setGear)
                 .frame(height: shiftButtonHeight)
             #endif
@@ -98,23 +94,26 @@ struct GearShiftView: View {
     }
 }
 
-// MARK: - Header (the sole gear readout)
+// MARK: - Gear readout (sits above the paddles)
 
-private struct GearHeader: View {
+/// Current gear + speed count, no "TRANSMISSION" label — the gate makes it
+/// obvious what this is. Placed below the gate so the layout matches the other
+/// controls (diagram on top, readout/control beneath).
+private struct GearReadout: View {
     let gear: Int
     let gearCount: Int
 
     var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: Theme.Space.md) {
-            Text("TRANSMISSION").modifier(RetroFont(size: Theme.FontSize.body)).foregroundColor(.textMuted)
+        HStack(alignment: .firstTextBaseline, spacing: Theme.Space.sm) {
             Spacer()
-            Text("\(gearCount)-SPEED")
-                .modifier(RetroFont(size: Theme.FontSize.footnote))
-                .foregroundColor(Color(white: 0.42))
             Text(gear == -1 ? "N" : "\(gear + 1)")
                 .modifier(RetroFont(size: Theme.FontSize.readout, weight: .black))
                 .foregroundColor(gear == -1 ? neutralColor : activeColor)
                 .shadow(color: (gear == -1 ? neutralColor : activeColor).opacity(0.5), radius: 4)
+            Text("\(gearCount)-SPEED")
+                .modifier(RetroFont(size: Theme.FontSize.footnote))
+                .foregroundColor(Color(white: 0.42))
+            Spacer()
         }
         .padding(.horizontal, Theme.Space.xs)
     }
@@ -467,8 +466,9 @@ private struct ShiftButton: View {
     let action: () -> Void
     @State private var pressed = false
 
-    private var chevron: String { direction == .up ? "chevron.right" : "chevron.left" }
-    private var label: String { direction == .up ? "UPSHIFT" : "DOWNSHIFT" }
+    // A bare + / − to save space — the gate and the gear readout already make
+    // the up/down meaning obvious.
+    private var symbol: String { direction == .up ? "+" : "−" }
 
     var body: some View {
         Button(action: {
@@ -477,25 +477,15 @@ private struct ShiftButton: View {
             action()
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) { pressed = false }
         }) {
-            HStack(spacing: 6) {
-                if direction == .down {
-                    Image(systemName: chevron).font(.system(size: 12, weight: .black))
-                    Text(label).modifier(RetroFont(size: Theme.FontSize.footnote))
-                    Spacer(minLength: 0)
-                } else {
-                    Spacer(minLength: 0)
-                    Text(label).modifier(RetroFont(size: Theme.FontSize.footnote))
-                    Image(systemName: chevron).font(.system(size: 12, weight: .black))
-                }
-            }
-            .padding(.horizontal, 12)
-            .foregroundColor(pressed ? shiftTextPressed : shiftText)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(pressed ? shiftBgPressed : shiftBg)
-            .overlay(Rectangle().stroke(
-                pressed ? shiftBorderPressed : shiftBorder,
-                lineWidth: 1
-            ))
+            Text(symbol)
+                .font(.system(size: 20, weight: .black, design: .monospaced))
+                .foregroundColor(pressed ? shiftTextPressed : shiftText)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(pressed ? shiftBgPressed : shiftBg)
+                .overlay(Rectangle().stroke(
+                    pressed ? shiftBorderPressed : shiftBorder,
+                    lineWidth: 1
+                ))
         }
         .buttonStyle(.plain)
         .disabled(!enabled)

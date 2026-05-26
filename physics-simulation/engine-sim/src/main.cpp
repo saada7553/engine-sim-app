@@ -195,6 +195,7 @@ int main() {
         vehParams.dragCoefficient = 0.25;
         vehParams.crossSectionArea = units::distance(6.0, units::foot) * units::distance(6.0, units::foot);
         vehParams.rollingResistance = 2000.0;
+        vehParams.maxBrakeForce = units::force(2000.0, units::lbf);
         vehicle = new Vehicle;
         vehicle->initialize(vehParams);
     }

@@ -143,6 +143,46 @@ struct DynoIcon: Shape {
     }
 }
 
+// MARK: - BRAKE (cross-drilled rotor + caliper)
+
+struct BrakeDiscIcon: Shape {
+    func path(in rect: CGRect) -> Path {
+        var p = Path()
+        let w = rect.width
+        let h = rect.height
+        let center = CGPoint(x: w / 2, y: h / 2)
+        let outerR = min(w, h) * 0.42
+        let hubR = outerR * 0.34
+        let holeRingR = outerR * 0.68
+        let holeR = outerR * 0.10
+        let holeCount = 6
+
+        // Disc + hub.
+        p.addEllipse(in: CGRect(x: center.x - outerR, y: center.y - outerR,
+                                width: outerR * 2, height: outerR * 2))
+        p.addEllipse(in: CGRect(x: center.x - hubR, y: center.y - hubR,
+                                width: hubR * 2, height: hubR * 2))
+
+        // Cross-drilled holes.
+        for i in 0..<holeCount {
+            let a = Double(i) / Double(holeCount) * 2 * .pi
+            let c = CGPoint(x: center.x + holeRingR * CGFloat(cos(a)),
+                            y: center.y + holeRingR * CGFloat(sin(a)))
+            p.addEllipse(in: CGRect(x: c.x - holeR, y: c.y - holeR,
+                                    width: holeR * 2, height: holeR * 2))
+        }
+
+        // Caliper straddling the top of the rim.
+        let calW = outerR * 0.9
+        let calH = outerR * 0.55
+        p.addRoundedRect(in: CGRect(x: center.x - calW / 2, y: center.y - outerR - calH * 0.45,
+                                    width: calW, height: calH),
+                         cornerSize: CGSize(width: w * 0.04, height: w * 0.04))
+
+        return p
+    }
+}
+
 // MARK: - HOLD (throttle latch)
 
 struct HoldIcon: Shape {

@@ -23,6 +23,10 @@ private func manifoldPressureToAbsoluteKpa(_ gaugeInHg: Double) -> Double {
 private let revAveragingFactor: Double = 0.35
 // Throttle below this is treated as fully idle and snapped to zero.
 private let revIdleThreshold: Double = 0.001
+// Brake pedal eases toward its held/released target each tick (same feel as the
+// rev ramp) so the keyboard brake isn't an instant on/off.
+private let brakeAveragingFactor: Double = 0.30
+private let brakeReleaseThreshold: Double = 0.001
 // A dyno pull holds the throttle wide open while the engine sweeps in neutral.
 private let dynoWideOpenThrottle: Double = 1.0
 // Native clutchPressure ≥ this means the clutch is engaged (power flows);
@@ -116,6 +120,9 @@ class EngineViewModel: ObservableObject {
     private var revTarget: Double = 0.0
     private var revActive: Bool = false
 
+    private var brakeTarget: Double = 0.0
+    private var brakeRamping: Bool = false
+
     // Gauge Data
     @Published var manifoldPressure: Double = 0.0      // inHg (gauge pressure)
     @Published var intakeFlowRate: Double = 0.0        // SCFM
@@ -167,6 +174,11 @@ class EngineViewModel: ObservableObject {
     /// Source of truth for both the cross-section visualizer and the
     /// precision slider. `clutchPressed` is derived from this on each poll.
     @Published var clutchPressure: Double = 0.0
+
+    /// Vehicle brake pressure (0.0 = off, 1.0 = full braking force). Drives the
+    /// brake rotor/caliper visualizer and the brake slider; the `B` key on macOS
+    /// and the iOS top-bar brake button feed this through `setBrake`.
+    @Published var brakePressure: Double = 0.0
 
     /// Number of forward gears available on the active engine's transmission.
     /// Sourced from the EngineSpec when present; falls back to defaultGearCount
@@ -319,6 +331,7 @@ class EngineViewModel: ObservableObject {
                 self.applyPolledGear(Int(state.gear))
                 self.clutchPressure = state.clutchPressure
                 self.clutchPressed = state.clutchPressure < clutchEngagedThreshold
+                self.brakePressure = state.brakePressure
                 self.isIgnitionOn = state.isIgnitionOn
                 self.isStarterOn = state.isStarterOn
                 // Stamp the moment the engine catches and clear it when it
@@ -415,6 +428,7 @@ class EngineViewModel: ObservableObject {
             }
 
         self.advanceRevRamp()
+        self.advanceBrakeRamp()
     }
 
     // Tuning Methods
@@ -700,7 +714,16 @@ class EngineViewModel: ObservableObject {
         }
     }
 
-    func toggleIgnition() { engine?.toggleIgnition() }
+    func toggleIgnition() {
+        engine?.toggleIgnition()
+        // Read the authoritative post-toggle state from native rather than
+        // inferring it from the cached flag, so the dyno-end decision can't be
+        // thrown off by a stale poll value.
+        let nowOn = engine?.isIgnitionOn() ?? false
+        isIgnitionOn = nowOn
+        // Killing the ignition ends any dyno pull — the engine can't sweep dead.
+        if !nowOn && dynoEnabled { endDynoRun() }
+    }
     func toggleStarter() { engine?.toggleStarter() }
 
     func toggleDyno() {
@@ -708,13 +731,25 @@ class EngineViewModel: ObservableObject {
         engine?.setDynoEnabled(newValue)
         dynoEnabled = newValue
 
-        // On enable, set the pull up for the user: drop into neutral so the dyno
+        // On enable, set the pull up for the user: fire up the engine (ignition
+        // + starter) if it isn't already running, drop into neutral so the dyno
         // isn't fighting the drivetrain, and pin the throttle wide open so the
         // sweep reads peak output without them having to hold it.
         if newValue {
+            startEngineForDyno()
             setGearUnchecked(-1)
             pinThrottleForDyno()
         }
+    }
+
+    /// Ensure the ignition and starter are on so arming the dyno also cranks the
+    /// engine over. Uses absolute setters (idempotent) rather than toggles, so a
+    /// stale cached flag can never invert an already-on switch back off.
+    private func startEngineForDyno() {
+        engine?.setIgnitionEnabled(true)
+        engine?.setStarterEnabled(true)
+        isIgnitionOn = true
+        isStarterOn = true
     }
 
     /// Hold the throttle wide open for a dyno pull, cancelling any in-progress
@@ -806,6 +841,49 @@ class EngineViewModel: ObservableObject {
         clutchPressure = clamped
         clutchPressed = clamped < clutchEngagedThreshold
         engine?.setClutchPressure(clamped)
+    }
+
+    /// Two-way binding for the brake slider (macOS controls section).
+    var brakeInput: Binding<Double> {
+        Binding(get: { [weak self] in self?.brakePressure ?? 0 },
+                set: { [weak self] in self?.setBrake($0) })
+    }
+
+    /// Drives the vehicle brake pressure (0 = off, 1 = full). Used by the brake
+    /// slider and the press-and-hold brake controls.
+    func setBrake(_ pressure: Double) {
+        let clamped = min(max(pressure, 0.0), 1.0)
+        brakePressure = clamped
+        engine?.setBrake(clamped)
+    }
+
+    /// Press-and-hold brake: while the `B` key (or iOS button) is held the pedal
+    /// eases toward full; on release it eases back to zero. Mirrors the rev ramp
+    /// so braking is progressive, not an instant on/off.
+    func beginBrake() {
+        brakeTarget = 1.0
+        brakeRamping = true
+    }
+    func endBrake() {
+        brakeTarget = 0.0
+        brakeRamping = true
+    }
+
+    /// Eases brake pressure toward its current target each polling tick. Stops
+    /// once it settles at the target (snapping to a clean 0 on full release).
+    private func advanceBrakeRamp() {
+        guard brakeRamping else { return }
+
+        let next = brakePressure + brakeAveragingFactor * (brakeTarget - brakePressure)
+        if brakeTarget == 0.0 && next < brakeReleaseThreshold {
+            setBrake(0.0)
+            brakeRamping = false
+        } else if abs(next - brakeTarget) < brakeReleaseThreshold {
+            setBrake(brakeTarget)
+            brakeRamping = false
+        } else {
+            setBrake(next)
+        }
     }
 
     // New function to support H-Shifter

@@ -52,8 +52,12 @@ void VehicleDragConstraint::calculate(Output *output, atg_scs::SystemState *syst
     const double c_d = m_vehicle->getDragCoefficient();
     const double A = m_vehicle->getCrossSectionArea();
     const double rollingResistance = m_vehicle->getRollingResistance();
+    // The brake adds to the resistive force the constraint may apply. Like drag
+    // and rolling resistance it only ever feeds the negative (decelerating)
+    // limit, so the solver can slow the car but never drive or reverse it.
+    const double brakeForce = m_vehicle->getBrakeForce();
 
     output->limits[0][0] =
-        -m_vehicle->linearForceToVirtualTorque(rollingResistance + 0.5 * airDensity * v_squared * c_d * A);
+        -m_vehicle->linearForceToVirtualTorque(rollingResistance + brakeForce + 0.5 * airDensity * v_squared * c_d * A);
     output->limits[0][1] = 0;
 }

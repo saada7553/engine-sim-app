@@ -118,6 +118,8 @@ struct TileView: View {
             return AnyView(EngineControlsView(vm: tile.engineVm))
         case .clutchIntake:
             return AnyView(ThrottleView(vm: tile.engineVm))
+        case .brakeIntake:
+            return AnyView(BrakeIntakeView(vm: tile.engineVm))
         case .clutchPanel:
             return AnyView(ClutchPanelView(vm: tile.engineVm))
         case .intakePanel:

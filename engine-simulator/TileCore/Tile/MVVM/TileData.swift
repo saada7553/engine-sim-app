@@ -68,6 +68,8 @@ enum TileType: String, Codable, CaseIterable, Identifiable {
     /// engineControls so the Track layout can place the shifter and the
     /// drawings in different cells.
     case clutchIntake = "Clutch & Intake"
+    /// iOS Track-only: the brake rotor + intake cross-section side by side.
+    case brakeIntake = "Brake & Intake"
     /// iOS Cockpit-only: just the clutch cross-section, on its own tile.
     case clutchPanel = "Clutch"
     /// iOS Cockpit-only: just the intake manifold cross-section.

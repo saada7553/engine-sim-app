@@ -720,9 +720,24 @@ struct PrecisionClutchSlider: View {
     }
 }
 
-/// Generic 0..1 horizontal slider with a labeled readout. Used by both
-/// throttle and clutch inputs so the styling stays in lockstep.
-private struct PercentageSlider: View {
+/// Continuous brake pressure slider. Shares the same track styling as the
+/// throttle and clutch sliders; tinted in the brake's heat accent.
+struct PrecisionBrakeSlider: View {
+    @Binding var value: Double
+
+    var body: some View {
+        PercentageSlider(
+            label: "BRAKE PRESSURE",
+            value: $value,
+            valueColor: .accentDanger,
+            fillColor: .accentDanger.opacity(0.30)
+        )
+    }
+}
+
+/// Generic 0..1 horizontal slider with a labeled readout. Used by the
+/// throttle, clutch and brake inputs so the styling stays in lockstep.
+struct PercentageSlider: View {
     let label: String
     @Binding var value: Double
     let valueColor: Color
@@ -741,8 +756,11 @@ private struct PercentageSlider: View {
             }
 
             GeometryReader { geo in
-                let width = geo.size.width - handleWidth
-                let x = width * CGFloat(value)
+                // Guard against a vanishing width when the tile is dragged very
+                // thin: a negative track width pushed the fill/handle outside the
+                // bounds. Clamp the track to a sane floor and clip the handle in.
+                let width = max(geo.size.width - handleWidth, 1)
+                let x = min(max(width * CGFloat(value), 0), width)
 
                 ZStack(alignment: .leading) {
                     Rectangle().fill(Color.white.opacity(0.05))
@@ -770,6 +788,7 @@ private struct PercentageSlider: View {
                         })
                         .offset(x: x)
                 }
+                .clipped()
                 .overlay(Rectangle().stroke(Color.white.opacity(0.2), lineWidth: 1))
                 .gesture(DragGesture(minimumDistance: 0).onChanged { v in
                     value = min(max(0, Double((v.location.x - handleWidth/2) / width)), 1)

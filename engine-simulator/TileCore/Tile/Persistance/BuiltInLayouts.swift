@@ -252,7 +252,7 @@ enum BuiltInLayouts {
                                 size: CGSize(width: 1600, height: 140)),
             BuiltInBuilder.split(.horizontal, [
                 BuiltInBuilder.leaf(.engineControls,
-                                    size: CGSize(width: 360, height: 860)),
+                                    size: CGSize(width: 460, height: 860)),
                 BuiltInBuilder.leaf(.engine3DProcedural,
                                     size: CGSize(width: 820, height: 860)),
                 BuiltInBuilder.split(.vertical, [
@@ -280,11 +280,13 @@ enum BuiltInLayouts {
                     BuiltInBuilder.leaf(.engineControls,
                                         size: CGSize(width: 360, height: 440)),
                 ], size: CGSize(width: 360, height: 860)),
-                // Middle: 3D engine on top, clutch + intake drawings under.
+                // Middle: 3D engine on top, brake + intake drawings under (the
+                // clutch is a top-bar toggle on iOS; braking is what matters on
+                // a track run).
                 BuiltInBuilder.split(.vertical, [
                     BuiltInBuilder.leaf(.engine3DProcedural,
                                         size: CGSize(width: 820, height: 560)),
-                    BuiltInBuilder.leaf(.clutchIntake,
+                    BuiltInBuilder.leaf(.brakeIntake,
                                         size: CGSize(width: 820, height: 300)),
                 ], size: CGSize(width: 820, height: 860)),
                 // Right: speedo + rpm gauges, no timer (it moved left).

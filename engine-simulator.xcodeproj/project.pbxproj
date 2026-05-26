@@ -330,7 +330,7 @@
 				CODE_SIGN_ENTITLEMENTS = "engine-simulator/engine-simulator.entitlements";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 5;
+				CURRENT_PROJECT_VERSION = 6;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				DEVELOPMENT_TEAM = 72T59L235C;
 				ENABLE_APP_SANDBOX = YES;
@@ -406,7 +406,7 @@
 				CODE_SIGN_ENTITLEMENTS = "engine-simulator/engine-simulator.entitlements";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 5;
+				CURRENT_PROJECT_VERSION = 6;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				DEVELOPMENT_TEAM = 72T59L235C;
 				ENABLE_APP_SANDBOX = YES;

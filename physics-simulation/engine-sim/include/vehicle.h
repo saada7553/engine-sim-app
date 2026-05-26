@@ -12,6 +12,7 @@ class Vehicle {
             double diffRatio;
             double tireRadius;
             double rollingResistance;
+            double maxBrakeForce;
         };
 
     public:
@@ -27,6 +28,11 @@ class Vehicle {
         inline double getCrossSectionArea() const { return m_crossSectionArea; }
         inline double getDiffRatio() const { return m_diffRatio; }
         inline double getTireRadius() const { return m_tireRadius; }
+        inline double getMaxBrakeForce() const { return m_maxBrakeForce; }
+        inline void setBrakePressure(double pressure) { m_brakePressure = pressure; }
+        inline double getBrakePressure() const { return m_brakePressure; }
+        // Brake force currently demanded at the contact patch (N).
+        inline double getBrakeForce() const { return m_brakePressure * m_maxBrakeForce; }
         double getSpeed() const;
         inline double getTravelledDistance() const { return m_travelledDistance; }
         inline void resetTravelledDistance() { m_travelledDistance = 0; }
@@ -42,6 +48,8 @@ class Vehicle {
         double m_tireRadius;
         double m_travelledDistance;
         double m_rollingResistance;
+        double m_maxBrakeForce;
+        double m_brakePressure;
 };
 
 #endif /* ATG_ENGINE_SIM_VEHICLE_H */

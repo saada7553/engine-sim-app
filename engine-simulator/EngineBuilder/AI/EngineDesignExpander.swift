@@ -498,7 +498,11 @@ enum EngineDesignExpander {
 
     // MARK: - Vehicle
 
-    private struct VehicleProfile { let massLb, drag, w, h, diff, tire, roll: Double }
+    private struct VehicleProfile {
+        let massLb, drag, w, h, diff, tire, roll: Double
+        // Brakes: rotor diameter (in), pad friction (µ), caliper clamp force (N).
+        let discIn, padMu, clampN: Double
+    }
 
     private static func applyVehicle(_ spec: inout EngineSpec, intent: EngineIntent) {
         let p = vehicleProfile(intent.vehicleClass)
@@ -509,18 +513,21 @@ enum EngineDesignExpander {
         spec.diffRatio = p.diff
         spec.tireRadiusIn = p.tire
         spec.rollingResistanceN = p.roll
+        spec.brakeDiscDiameterIn = p.discIn
+        spec.brakePadFriction = p.padMu
+        spec.brakeClampForceN = p.clampN
     }
 
     private static func vehicleProfile(_ c: DesignVehicleClass) -> VehicleProfile {
         switch c {
-        case .lightweight: return .init(massLb: 1800, drag: 0.31, w: 60, h: 48, diff: 4.10, tire: 9,  roll: 200)
-        case .sportsCar:   return .init(massLb: 3000, drag: 0.32, w: 70, h: 48, diff: 3.70, tire: 10, roll: 250)
-        case .sedan:       return .init(massLb: 3400, drag: 0.30, w: 72, h: 56, diff: 3.40, tire: 11, roll: 300)
-        case .muscle:      return .init(massLb: 3800, drag: 0.38, w: 74, h: 52, diff: 3.40, tire: 12, roll: 350)
-        case .supercar:    return .init(massLb: 3200, drag: 0.33, w: 76, h: 45, diff: 3.90, tire: 11, roll: 220)
-        case .truck:       return .init(massLb: 5000, drag: 0.45, w: 80, h: 75, diff: 4.10, tire: 14, roll: 500)
-        case .raceCar:     return .init(massLb: 2200, drag: 0.30, w: 72, h: 42, diff: 4.30, tire: 12, roll: 180)
-        case .motorcycle:  return .init(massLb: 600,  drag: 0.55, w: 28, h: 44, diff: 2.40, tire: 12, roll: 120)
+        case .lightweight: return .init(massLb: 1800, drag: 0.31, w: 60, h: 48, diff: 4.10, tire: 9,  roll: 200, discIn: 11, padMu: 0.42, clampN: 16_000)
+        case .sportsCar:   return .init(massLb: 3000, drag: 0.32, w: 70, h: 48, diff: 3.70, tire: 10, roll: 250, discIn: 12.5, padMu: 0.45, clampN: 20_000)
+        case .sedan:       return .init(massLb: 3400, drag: 0.30, w: 72, h: 56, diff: 3.40, tire: 11, roll: 300, discIn: 12, padMu: 0.38, clampN: 18_000)
+        case .muscle:      return .init(massLb: 3800, drag: 0.38, w: 74, h: 52, diff: 3.40, tire: 12, roll: 350, discIn: 13, padMu: 0.42, clampN: 22_000)
+        case .supercar:    return .init(massLb: 3200, drag: 0.33, w: 76, h: 45, diff: 3.90, tire: 11, roll: 220, discIn: 14.5, padMu: 0.50, clampN: 28_000)
+        case .truck:       return .init(massLb: 5000, drag: 0.45, w: 80, h: 75, diff: 4.10, tire: 14, roll: 500, discIn: 14, padMu: 0.38, clampN: 26_000)
+        case .raceCar:     return .init(massLb: 2200, drag: 0.30, w: 72, h: 42, diff: 4.30, tire: 12, roll: 180, discIn: 15, padMu: 0.55, clampN: 32_000)
+        case .motorcycle:  return .init(massLb: 600,  drag: 0.55, w: 28, h: 44, diff: 2.40, tire: 12, roll: 120, discIn: 12, padMu: 0.48, clampN: 12_000)
         }
     }
 }

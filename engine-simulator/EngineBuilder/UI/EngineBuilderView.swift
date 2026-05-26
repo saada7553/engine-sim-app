@@ -55,7 +55,7 @@ private enum BuilderSectionGroup: String, CaseIterable {
         case .engine:     return [.layout, .bottomEnd]
         case .timing:     return [.cam, .firingOrder, .ignitionFuel]
         case .airflow:    return [.induction, .exhaust]
-        case .drivetrain: return [.transmission, .vehicle]
+        case .drivetrain: return [.transmission, .vehicle, .brakes]
         case .finalize:   return [.advanced, .review]
         }
     }
@@ -74,6 +74,7 @@ enum BuilderStep: Int, CaseIterable, Identifiable {
     case ignitionFuel
     case transmission
     case vehicle
+    case brakes
     case advanced
     case review
 
@@ -91,6 +92,7 @@ enum BuilderStep: Int, CaseIterable, Identifiable {
         case .ignitionFuel: return "Ignition · Fuel"
         case .transmission: return "Transmission"
         case .vehicle:      return "Vehicle"
+        case .brakes:       return "Brakes"
         case .advanced:     return "Advanced"
         case .review:       return "Review"
         }
@@ -254,6 +256,7 @@ struct EngineBuilderView: View {
         case .ignitionFuel: IgnitionFuelStep(state: state)
         case .transmission: TransmissionStep(state: state)
         case .vehicle:      VehicleStep(state: state)
+        case .brakes:       BrakesStep(state: state)
         case .advanced:     AdvancedStep(state: state)
         case .review:       ReviewStep(state: state)
         }

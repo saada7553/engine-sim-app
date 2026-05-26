@@ -58,8 +58,10 @@ private let baseVStackSpacing: CGFloat = 18
 private let baseTargetSelectorSpacing: CGFloat = 8
 private let baseButtonRowSpacing: CGFloat = 10
 private let baseStatusLineSpacing: CGFloat = 10
-private let baseSpeedRowSpacing: CGFloat = 6
-private let baseSpeedRowHorizontalPadding: CGFloat = 4
+// Gap between the time and speed readouts, and how much smaller the paired
+// hero font is vs the old single clock so both values fit on one line.
+private let baseReadoutPairSpacing: CGFloat = 22
+private let readoutPairFontFraction: CGFloat = 0.7
 
 private let baseDisplayVerticalPadding: CGFloat = 18
 #if os(macOS)
@@ -83,16 +85,12 @@ private let baseChipHorizontalPadding: CGFloat = 12
 private let baseHeaderFontSize: CGFloat = 14
 private let baseStatusIconFontSize: CGFloat = 18
 private let baseStatusTextFontSize: CGFloat = 19
-private let baseSpeedLabelFontSize: CGFloat = 13
-private let baseSpeedValueFontSize: CGFloat = 22
 private let baseButtonFontSize: CGFloat = 18
 private let baseChipFontSize: CGFloat = 17
 #else
 private let baseHeaderFontSize: CGFloat = 17
 private let baseStatusIconFontSize: CGFloat = 22
 private let baseStatusTextFontSize: CGFloat = 23
-private let baseSpeedLabelFontSize: CGFloat = 17
-private let baseSpeedValueFontSize: CGFloat = 26
 private let baseButtonFontSize: CGFloat = 22
 private let baseChipFontSize: CGFloat = 20
 #endif
@@ -123,12 +121,9 @@ struct ZeroToSixtyView: View {
             VStack(spacing: baseVStackSpacing * scale) {
                 header(scale: scale)
                 targetSelector(scale: scale)
-                timeDisplay(scale: scale)
+                readoutDisplay(scale: scale)
                 statusLine(scale: scale)
                 buttonRow(scale: scale)
-                // Speed readout row removed — speedometer tile + the
-                // launch target chip already cover that info, and the
-                // extra row was eating into the timer's tile height.
             }
             .padding(baseOuterPadding * scale)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
@@ -180,31 +175,38 @@ struct ZeroToSixtyView: View {
         }
     }
 
-    /// Big monospaced clock face — the hero of the tile. No boxed panel; just
-    /// large light-weight digits with a small unit, so it reads as a clean
-    /// readout rather than a bordered widget. Font scales with tile size with a
-    /// generous `minimumScaleFactor` so the digits never wrap or truncate.
-    private func timeDisplay(scale: CGFloat) -> some View {
+    /// The hero readout: elapsed time and current speed sitting side by side in
+    /// the same large monospaced style, centered. The "s" and "mph" units make
+    /// it obvious which is which, so neither needs a separate label row.
+    private func readoutDisplay(scale: CGFloat) -> some View {
         // Running clock driven by the shared UI clock (vm.frameDate). The view
         // observes the VM so it re-renders each poll tick; the recorded launch
         // result is still computed from real timestamps, not this display.
         let now = vm.frameDate.timeIntervalSinceReferenceDate
-        return HStack(alignment: .lastTextBaseline, spacing: 4 * scale) {
-            Text(displayTimeString(at: now))
-                .font(.system(size: baseDisplayFontSize * scale,
-                              weight: .light,
-                              design: .monospaced))
-                .foregroundColor(phase == .idle ? .white.opacity(0.85) : .white)
-                .lineLimit(1)
-                .minimumScaleFactor(displayShrinkFloor)
-            Text("s")
-                .font(.system(size: baseDisplayFontSize * scale * 0.32,
-                              weight: .regular,
-                              design: .monospaced))
-                .foregroundColor(.textMuted)
+        return HStack(alignment: .lastTextBaseline, spacing: baseReadoutPairSpacing * scale) {
+            valueUnit(value: displayTimeString(at: now), unit: "s",
+                      valueColor: phase == .idle ? .white.opacity(0.85) : .white, scale: scale)
+            valueUnit(value: String(format: "%.0f", vm.vehicleSpeed), unit: "mph",
+                      valueColor: .white, scale: scale)
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, baseDisplayVerticalPadding * scale * 0.5)
+    }
+
+    /// One value + its unit in the hero style. Sized down from the old
+    /// single-value clock so the two readouts fit side by side.
+    private func valueUnit(value: String, unit: String, valueColor: Color, scale: CGFloat) -> some View {
+        let size = baseDisplayFontSize * scale * readoutPairFontFraction
+        return HStack(alignment: .lastTextBaseline, spacing: 3 * scale) {
+            Text(value)
+                .font(.system(size: size, weight: .light, design: .monospaced))
+                .foregroundColor(valueColor)
+                .lineLimit(1)
+                .minimumScaleFactor(displayShrinkFloor)
+            Text(unit)
+                .font(.system(size: size * 0.32, weight: .regular, design: .monospaced))
+                .foregroundColor(.textMuted)
+        }
     }
 
     private func statusLine(scale: CGFloat) -> some View {
@@ -236,29 +238,6 @@ struct ZeroToSixtyView: View {
                 action: reset
             )
         }
-    }
-
-    private func speedRow(scale: CGFloat) -> some View {
-        HStack(spacing: baseSpeedRowSpacing * scale) {
-            Text("CURRENT")
-                .modifier(RetroFont(size: baseSpeedLabelFontSize * scale, weight: .bold))
-                .foregroundColor(.white.opacity(0.45))
-                .tracking(1.2)
-                .lineLimit(1)
-                .minimumScaleFactor(textShrinkFloor)
-            Spacer()
-            Text(String(format: "%.1f", vm.vehicleSpeed))
-                .modifier(RetroFont(size: baseSpeedValueFontSize * scale))
-                .foregroundColor(.white)
-                .lineLimit(1)
-                .minimumScaleFactor(textShrinkFloor)
-            Text("mph")
-                .modifier(RetroFont(size: baseSpeedLabelFontSize * scale))
-                .foregroundColor(.white.opacity(0.45))
-                .lineLimit(1)
-                .minimumScaleFactor(textShrinkFloor)
-        }
-        .padding(.horizontal, baseSpeedRowHorizontalPadding * scale)
     }
 
     // MARK: Phase-driven labels & colors
@@ -313,7 +292,7 @@ struct ZeroToSixtyView: View {
         if target.requiresStop {
             return vm.vehicleSpeed > launchHysteresisMph
                 ? "Bring the car to a stop to start."
-                : "Floor it — clock starts at first movement."
+                : "Floor it."
         }
         let lower = target.startMph - rollingMatchToleranceMph
         let upper = target.startMph + rollingMatchToleranceMph

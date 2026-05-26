@@ -423,6 +423,16 @@ struct EngineSpec: Codable, Identifiable, Equatable {
     /// is shared to the community. Distinct from `name` (the short title).
     var engineDescription: String? = nil
 
+    // MARK: Brakes
+    //
+    // Stored optional + trailing so specs saved before brakes existed still
+    // decode (synthesized Decodable treats a missing Optional key as nil). The
+    // non-optional `brakeDisc/Pad/Clamp` facade below fills in defaults, so the
+    // rest of the app never deals with the optionality.
+    var brakeDiscDiameterInRaw: Double? = nil
+    var brakePadFrictionRaw: Double? = nil
+    var brakeClampForceNRaw: Double? = nil
+
     // MARK: Derived
 
     /// Rev limit derives from redline — single source of truth for "max RPM".
@@ -438,6 +448,49 @@ struct EngineSpec: Codable, Identifiable, Equatable {
     }
 
     var displacementLitres: Double { displacementCc / 1000.0 }
+
+    // MARK: Brakes (derived)
+
+    /// Brake design constants. Grouped so the derivation reads cleanly and the
+    /// defaults live in one place.
+    private enum Brake {
+        static let defaultDiscDiameterIn: Double = 12.0
+        static let defaultPadFriction: Double = 0.4        // typical organic/semi-met pad µ
+        static let defaultClampForceN: Double = 18_000     // hydraulic clamp per caliper
+        static let inchToMeter: Double = 0.0254
+        // Effective friction radius as a fraction of the disc radius (pads bite
+        // near the outer edge, not the rim).
+        static let effectiveRadiusFraction: Double = 0.85
+        // Two friction faces per disc.
+        static let frictionFaces: Double = 2.0
+        static let minTireRadiusIn: Double = 4.0
+    }
+
+    var brakeDiscDiameterIn: Double {
+        get { brakeDiscDiameterInRaw ?? Brake.defaultDiscDiameterIn }
+        set { brakeDiscDiameterInRaw = newValue }
+    }
+    var brakePadFriction: Double {
+        get { brakePadFrictionRaw ?? Brake.defaultPadFriction }
+        set { brakePadFrictionRaw = newValue }
+    }
+    var brakeClampForceN: Double {
+        get { brakeClampForceNRaw ?? Brake.defaultClampForceN }
+        set { brakeClampForceNRaw = newValue }
+    }
+
+    /// Max braking force at the contact patch (N), derived from the caliper
+    /// clamp force, pad friction and rotor size, referred through the tire
+    /// radius. This is the single number the physics consumes (`max_brake_force`
+    /// in the .mr vehicle node).
+    var maxBrakeForceN: Double {
+        let effectiveDiscRadiusM =
+            (brakeDiscDiameterIn / 2.0) * Brake.effectiveRadiusFraction * Brake.inchToMeter
+        let tireRadiusM = max(tireRadiusIn, Brake.minTireRadiusIn) * Brake.inchToMeter
+        let brakeTorqueNm =
+            Brake.frictionFaces * brakeClampForceN * brakePadFriction * effectiveDiscRadiusM
+        return brakeTorqueNm / tireRadiusM
+    }
 
     // MARK: Defaults
 
@@ -517,6 +570,11 @@ struct EngineSpec: Codable, Identifiable, Equatable {
         )
         // Size-appropriate starter (the literal 200/200 above is a placeholder).
         spec.resyncStarterForLayout()
+        // Carry concrete brake values so freshly built engines serialize them
+        // (older saved specs fall back to the facade defaults).
+        spec.brakeDiscDiameterIn = 12.0
+        spec.brakePadFriction = 0.4
+        spec.brakeClampForceN = 18_000
         return spec
     }
 

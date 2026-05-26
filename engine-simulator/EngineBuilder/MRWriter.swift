@@ -669,7 +669,8 @@ enum MRWriter {
         \(mrIndent)\(mrIndent)\(mrIndent)cross_sectional_area: (\(spec.frontalAreaWidthIn) * units.inch) * (\(spec.frontalAreaHeightIn) * units.inch),
         \(mrIndent)\(mrIndent)\(mrIndent)diff_ratio: \(spec.diffRatio),
         \(mrIndent)\(mrIndent)\(mrIndent)tire_radius: \(spec.tireRadiusIn) * units.inch,
-        \(mrIndent)\(mrIndent)\(mrIndent)rolling_resistance: \(spec.rollingResistanceN) * units.N
+        \(mrIndent)\(mrIndent)\(mrIndent)rolling_resistance: \(spec.rollingResistanceN) * units.N,
+        \(mrIndent)\(mrIndent)\(mrIndent)max_brake_force: \(spec.maxBrakeForceN) * units.N
         \(mrIndent)\(mrIndent));
         }
 
