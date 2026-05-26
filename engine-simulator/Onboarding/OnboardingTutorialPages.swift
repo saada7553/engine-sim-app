@@ -52,18 +52,21 @@ final class OnboardingEngineDemo: ObservableObject {
     @Published var ignitionOn = false
     @Published var cranking = false
     @Published var clutchEngaged = false
+    @Published var brakeHeld = false
 
     // Everything is a plain toggle in the tutorial — press (or the key) flips it
     // on/off, in any order. Nothing here is gated or auto-resets.
     func toggleIgnition() { ignitionOn.toggle() }
     func toggleStarter() { cranking.toggle() }
     func toggleClutch() { clutchEngaged.toggle() }
+    func toggleBrake() { brakeHeld.toggle() }
 
     /// Wipe state so replaying the tutorial always starts cold.
     func reset() {
         ignitionOn = false
         cranking = false
         clutchEngaged = false
+        brakeHeld = false
     }
 }
 
@@ -76,6 +79,7 @@ struct StartEngineDemo: View {
     #endif
 
     private let clutchStepText = "Tap the clutch to disengage, tap again to drive"
+    private let brakeStepText = "Tap the brake to hold it on, tap again to release"
 
     var body: some View {
         OnboardingTwoColumn(
@@ -99,6 +103,9 @@ struct StartEngineDemo: View {
                 OnboardingListRow(text: "Flip the ignition switch to RUN")
                 OnboardingListRow(text: "Press the starter to crank it over")
                 OnboardingListRow(text: clutchStepText)
+                #if os(iOS)
+                OnboardingListRow(text: brakeStepText)
+                #endif
             }
 
             #if os(iOS)
@@ -132,6 +139,14 @@ struct StartEngineDemo: View {
                                  accent: .accentClutch,
                                  imageName: "clutch",
                                  onTap: demo.toggleClutch)
+            // The brake toggle is iOS-only on the dash (macOS uses the `B` key
+            // + slider), so it only joins the tutorial cluster on iOS.
+            #if os(iOS)
+            DashWarningTile(label: "BRAKE",
+                            active: demo.brakeHeld,
+                            accent: .accentDanger,
+                            onTap: demo.toggleBrake) { BrakeDiscIcon() }
+            #endif
         }
     }
 }

@@ -130,7 +130,10 @@ struct CustomTopBar: View {
                                  accent: .accentClutch,
                                  imageName: "clutch",
                                  onTap: { vm.toggleClutch() })
-            TopBarBrakeButton(vm: vm)
+            DashWarningTile(label: "BRAKE",
+                            active: vm.brakeHeld,
+                            accent: .accentDanger,
+                            onTap: { vm.toggleBrake() }) { BrakeDiscIcon() }
             warningLights
             #endif
         }
@@ -692,8 +695,9 @@ private struct DashTileChrome<Glyph: View>: View {
     }
 }
 
-/// Shape-glyph dash light (battery, gear, lock, etc.).
-private struct DashWarningTile<Icon: Shape>: View {
+/// Shape-glyph dash light (battery, gear, lock, etc.). Internal so the iOS brake
+/// toggle and the onboarding tutorial can reuse the real tile.
+struct DashWarningTile<Icon: Shape>: View {
     let label: String
     let active: Bool
     let accent: Color
@@ -863,44 +867,6 @@ private struct TopBarGearReadout: View {
                 .foregroundColor(.white.opacity(0.35))
         }
         .frame(width: topBarGearReadoutWidth)
-    }
-}
-
-// Press-and-hold brake on iOS: full braking force while the finger is down,
-// released on lift — the touch equivalent of holding `B` on macOS. Built on the
-// shared DashTileChrome so it matches the ignition / starter / shift controls.
-private struct TopBarBrakeButton: View {
-    @ObservedObject var vm: EngineViewModel
-    @State private var pressed = false
-
-    private var active: Bool { pressed || vm.brakePressure > 0.01 }
-
-    var body: some View {
-        DashTileChrome(label: "BRAKE",
-                       active: active,
-                       accent: .accentDanger,
-                       onTap: nil,
-                       style: .button) {
-            BrakeDiscIcon()
-                .stroke(active ? Color.accentDanger : Color.accentDanger.opacity(0.45),
-                        style: StrokeStyle(lineWidth: 1.4, lineJoin: .round))
-        }
-        .contentShape(Rectangle())
-        .simultaneousGesture(
-            DragGesture(minimumDistance: 0)
-                .onChanged { _ in
-                    if !pressed {
-                        pressed = true
-                        HapticManager.shared.tap(.firm)
-                        vm.beginBrake()
-                    }
-                }
-                .onEnded { _ in
-                    pressed = false
-                    vm.endBrake()
-                }
-        )
-        .animation(.easeOut(duration: 0.12), value: active)
     }
 }
 

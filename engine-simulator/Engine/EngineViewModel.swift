@@ -180,6 +180,11 @@ class EngineViewModel: ObservableObject {
     /// and the iOS top-bar brake button feed this through `setBrake`.
     @Published var brakePressure: Double = 0.0
 
+    /// Latched state of the iOS top-bar brake toggle. The button taps on/off like
+    /// the clutch, so this holds the intent for instant button feedback while
+    /// `brakePressure` eases toward it through the shared ramp.
+    @Published var brakeHeld: Bool = false
+
     /// Number of forward gears available on the active engine's transmission.
     /// Sourced from the EngineSpec when present; falls back to defaultGearCount
     /// for built-ins with no editable spec.
@@ -867,6 +872,14 @@ class EngineViewModel: ObservableObject {
     func endBrake() {
         brakeTarget = 0.0
         brakeRamping = true
+    }
+
+    /// Tap-to-toggle brake for the iOS top bar: flips the latched brake on/off,
+    /// easing pressure toward full or zero through the same ramp the `B` key
+    /// uses. Mirrors `toggleClutch` so both on/off controls behave alike on touch.
+    func toggleBrake() {
+        brakeHeld.toggle()
+        if brakeHeld { beginBrake() } else { endBrake() }
     }
 
     /// Eases brake pressure toward its current target each polling tick. Stops
