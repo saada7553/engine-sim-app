@@ -34,12 +34,15 @@ enum EngineGenerationError: LocalizedError {
     case unsupportedOS
     case modelUnavailable(String)
     case emptyDescription
+    case inappropriateDescription
 
     var errorDescription: String? {
         switch self {
         case .unsupportedOS:           return "AI generation requires macOS 26 or iOS 26."
         case .modelUnavailable(let r): return r
         case .emptyDescription:        return "Describe the engine you want first."
+        case .inappropriateDescription:
+            return "That description isn't allowed. Try describing the engine differently."
         }
     }
 }
@@ -56,11 +59,23 @@ enum AIEngineGeneration {
         let trimmed = String(description.trimmingCharacters(in: .whitespacesAndNewlines).prefix(maxPromptLength))
         guard !trimmed.isEmpty else { throw EngineGenerationError.emptyDescription }
 
+        // Screen the prompt the same way shared engine text is screened. Without
+        // this an objectionable description silently slips through the per-axis
+        // calls (each swallows the model's guardrail throw and falls back), so
+        // the user would just get a generic engine with no idea why. Gate it up
+        // front and tell them the description was rejected.
+        guard await ContentModerator.isClean(trimmed, modelInstructions: promptInstructions) else {
+            throw EngineGenerationError.inappropriateDescription
+        }
+
         if #available(macOS 26.0, iOS 26.0, *) {
             return try await AIEngineGenerator().generate(from: trimmed)
         }
         throw EngineGenerationError.unsupportedOS
     }
+
+    private static let promptInstructions =
+        "You screen the prompts players type to generate an engine in a car game. Decide if the prompt is appropriate for an audience of all ages."
 }
 
 // MARK: - Extraction enums (each generated directly; "unspecified" = not stated)

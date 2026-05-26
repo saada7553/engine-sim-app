@@ -53,7 +53,13 @@ struct AIEnginePromptView: View {
                     .padding(.horizontal, 40)
                     .padding(.vertical, 32)
             }
+            #if os(iOS)
+            .scrollDismissesKeyboard(.interactively)
+            #endif
         }
+        // Tap anywhere off the editor to drop focus and dismiss the keyboard.
+        .contentShape(Rectangle())
+        .onTapGesture { editorFocused = false }
     }
 
     // MARK: Content
@@ -103,11 +109,16 @@ struct AIEnginePromptView: View {
                     .foregroundColor(BuilderTheme.dim.opacity(0.3))
                     .padding(.top, 8)
                     .padding(.leading, 5)
+                    .allowsHitTesting(false)
             }
             TextEditor(text: $prompt)
                 .focused($editorFocused)
+                .textEditorStyle(.plain)
                 .font(.system(size: Theme.FontSize.title, weight: .regular, design: .monospaced))
+                // .foregroundColor, not .foregroundStyle — the latter applies
+                // unreliably to TextEditor's live text (intermittently invisible).
                 .foregroundColor(.white)
+                .tint(BuilderTheme.accent)
                 .scrollContentBackground(.hidden)
                 .frame(minHeight: PromptLayout.editorMinHeight)
                 .disabled(isGenerating)

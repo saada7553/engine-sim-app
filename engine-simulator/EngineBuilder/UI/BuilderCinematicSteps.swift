@@ -1150,6 +1150,17 @@ private enum FiringOrderDiagram {
     static let stepInterval: Double = 0.45     // seconds per cylinder fire in the preview
     static let lightBumpDuration: Double = 0.35
     static let diagramSize: CGFloat = 240
+    static let diagramMinSize: CGFloat = 150   // floor when scaled to a narrow column
+    static let columnSpacing: CGFloat = 40     // gap between controls and preview side by side
+    static let maxGridColumns = 8              // a V12 fits 8 across at full width
+    // Below this the control column + fixed diagram can't sit side by side
+    // without the diagram or chip grid bleeding past the edge, so stack them.
+    static let sideBySideMinWidth: CGFloat = 560
+}
+
+private struct FiringStepWidthKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = nextValue() }
 }
 
 /// Drag-to-reorder firing order editor.
@@ -1161,45 +1172,107 @@ private enum FiringOrderDiagram {
 struct FiringOrderStep: View {
     @ObservedObject var state: EngineBuilderState
 
+    /// The detail panel's real width, measured each layout pass. Everything sizes
+    /// off this rather than guessing from a size class, so the step fits whatever
+    /// width the builder gives it — iPhone, iPad, or a narrow macOS window.
+    @State private var width: CGFloat = 0
+
+    /// Below the side-by-side threshold the two columns stack vertically.
+    private var isStacked: Bool { width > 0 && width < FiringOrderDiagram.sideBySideMinWidth }
+
+    /// The control column's usable width: the whole panel when stacked, or what's
+    /// left beside the diagram when side by side.
+    private var controlsWidth: CGFloat {
+        guard width > 0 else { return 0 }
+        if isStacked { return width }
+        return max(0, width - FiringOrderDiagram.diagramSize - FiringOrderDiagram.columnSpacing)
+    }
+
+    /// How many fixed-size chips fit across the control column. The grid wraps the
+    /// rest onto more rows, so a V12 stays on-screen on a phone instead of bleeding
+    /// past the safe area. A small default avoids overflow before the first measure.
+    private var gridColumns: Int {
+        let cylinders = state.spec.firingOrder.count
+        guard controlsWidth > 0 else { return min(cylinders, 3) }
+        let stride = FiringOrderDiagram.chipSize + FiringOrderDiagram.chipSpacing
+        let fit = Int((controlsWidth + FiringOrderDiagram.chipSpacing) / stride)
+        return max(1, min(cylinders, min(fit, FiringOrderDiagram.maxGridColumns)))
+    }
+
+    /// The diagram shrinks to fit a narrow stacked column rather than overflowing.
+    private var diagramSide: CGFloat {
+        guard isStacked, width > 0 else { return FiringOrderDiagram.diagramSize }
+        return max(FiringOrderDiagram.diagramMinSize, min(FiringOrderDiagram.diagramSize, width))
+    }
+
     var body: some View {
-        HStack(alignment: .top, spacing: 40) {
-            VStack(alignment: .leading, spacing: 22) {
-                BuilderSectionHeading(title: "Step 5 · Firing order")
-                Text("Drag a cylinder to a new position to reorder.\nThe preview on the right cycles through your firing order.")
-                    .font(.system(size: Theme.FontSize.control, weight: .regular, design: .monospaced))
-                    .foregroundColor(BuilderTheme.label)
-                    .lineSpacing(4)
-
-                DraggableFiringSequence(order: orderBinding,
-                                         bankCount: state.spec.layout.bankCount)
-
-                HStack(spacing: 10) {
-                    builderChip(label: "USE DEFAULT", action: useLayoutDefault)
-                    Spacer()
-                    Text("ORDER · \(state.spec.firingOrder.map(String.init).joined(separator: "-"))")
-                        .font(.system(size: Theme.FontSize.body, weight: .bold, design: .monospaced))
-                        .tracking(1.2)
-                        .foregroundColor(BuilderTheme.accent)
+        layout
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                GeometryReader { geo in
+                    Color.clear.preference(key: FiringStepWidthKey.self, value: geo.size.width)
                 }
-                .frame(maxWidth: 600)
-            }
-            .frame(maxWidth: 600)
+            )
+            .onPreferenceChange(FiringStepWidthKey.self) { width = $0 }
+            .onAppear { ensureFullOrder() }
+    }
 
-            VStack(spacing: 14) {
-                BuilderSectionHeading(title: "Firing preview")
-                FiringAnimation(layout: state.spec.layout,
-                                 order: state.spec.firingOrder)
-                    .frame(width: FiringOrderDiagram.diagramSize,
-                           height: FiringOrderDiagram.diagramSize)
-                Text("Each cylinder pulses as it fires.\nEven spacing = smoother engine.")
-                    .font(.system(size: Theme.FontSize.callout, weight: .regular, design: .monospaced))
-                    .foregroundColor(BuilderTheme.label)
-                    .lineSpacing(3)
-                    .frame(width: FiringOrderDiagram.diagramSize, alignment: .leading)
+    @ViewBuilder private var layout: some View {
+        if isStacked {
+            VStack(alignment: .leading, spacing: 32) {
+                controlsColumn
+                previewColumn
             }
-            Spacer()
+        } else {
+            HStack(alignment: .top, spacing: FiringOrderDiagram.columnSpacing) {
+                controlsColumn.frame(maxWidth: .infinity, alignment: .leading)
+                previewColumn
+            }
         }
-        .onAppear { ensureFullOrder() }
+    }
+
+    private var controlsColumn: some View {
+        VStack(alignment: .leading, spacing: 22) {
+            BuilderSectionHeading(title: "Step 5 · Firing order")
+            Text("Drag a cylinder to a new position to reorder.\nThe preview cycles through your firing order.")
+                .font(.system(size: Theme.FontSize.control, weight: .regular, design: .monospaced))
+                .foregroundColor(BuilderTheme.label)
+                .lineSpacing(4)
+                .fixedSize(horizontal: false, vertical: true)
+
+            DraggableFiringSequence(order: orderBinding,
+                                     bankCount: state.spec.layout.bankCount,
+                                     maxColumns: gridColumns)
+
+            // Chip and readout sit together at the leading edge — a trailing
+            // Spacer used to fling the order text to the far right, which read as
+            // a stray label once the column went full-width in the stacked layout.
+            HStack(alignment: .firstTextBaseline, spacing: 14) {
+                builderChip(label: "USE DEFAULT", action: useLayoutDefault)
+                Text("ORDER · \(state.spec.firingOrder.map(String.init).joined(separator: "-"))")
+                    .font(.system(size: Theme.FontSize.body, weight: .bold, design: .monospaced))
+                    .tracking(1.2)
+                    .foregroundColor(BuilderTheme.accent)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.5)
+                Spacer(minLength: 0)
+            }
+        }
+    }
+
+    private var previewColumn: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            BuilderSectionHeading(title: "Firing preview")
+            FiringAnimation(layout: state.spec.layout,
+                             order: state.spec.firingOrder)
+                .frame(width: diagramSide, height: diagramSide)
+            Text("Each cylinder pulses as it fires.\nEven spacing = smoother engine.")
+                .font(.system(size: Theme.FontSize.callout, weight: .regular, design: .monospaced))
+                .foregroundColor(BuilderTheme.label)
+                .lineSpacing(3)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(width: diagramSide, alignment: .leading)
+        }
     }
 
     private var orderBinding: Binding<[Int]> {
@@ -1245,12 +1318,13 @@ struct FiringOrderStep: View {
 private struct DraggableFiringSequence: View {
     @Binding var order: [Int]
     let bankCount: Int
+    let maxColumns: Int
 
     @State private var dragging: Int? = nil       // cylinder id under drag
     @State private var dragOffset: CGSize = .zero
     @State private var targetIndex: Int? = nil
 
-    private var columnCount: Int { max(1, min(order.count, 8)) }
+    private var columnCount: Int { max(1, min(order.count, maxColumns)) }
     private var stride: CGFloat { FiringOrderDiagram.chipSize + FiringOrderDiagram.chipSpacing }
 
     var body: some View {
